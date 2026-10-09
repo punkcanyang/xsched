@@ -16,7 +16,7 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 | 要驗證 | 能否從 x.com 頁面穩定讀出「Unsent posts → Scheduled」列表：每則的排程時間、文字前段。不靠 API。 |
 | 要交出 | DOM 結構依據、讀取方式、改版風險、一個只讀的測試小擴充、老闆實測 ≤5 步（讀出的則數與時間是否和 X 上一致）。 |
 | 讀不出來 | 停下，回報替代方案（例如只記本機自己排過的）。 |
-| 狀態（2026-10-09 17:45） | Cursor 雲端額度用完，已交接。前一個 Cursor agent（bc-4ccfe624）做到 probe／fixture／e2e 一半，**沒推任何東西**（工作區已失，只剩 transcript 當線索）。改由 **CodeWhale（deepseek-flash）寫、Codex（gpt-6.1-sol high，非 Fast）審**，在共享 Linux 機重做，分支 `gate0/scheduled-read`。交接：`notes/HANDOFF-gate0.md`。 |
+| 狀態（2026-10-09 18:50） | PR #2 已合 main（`bb0e453`）：唯讀探針 `probe/`＋fixtures＋測試＋`notes/GATE0.md`＋Logo B。寫：CodeWhale deepseek-flash；審：Codex gpt-6.1-sol high（APPROVE）。結論**有條件可行**（真頁未驗證），等老闆照 `notes/GATE0.md` §6 實測（≤5 步）。 |
 
 閘 0 做完回報商務拓展，老闆實測通過才往下做 1.0。
 
