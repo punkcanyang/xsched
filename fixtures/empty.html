@@ -1,0 +1,29 @@
+<!-- 依公開來源重建，非真頁快照｜local fixture, not a real x.com page. All data is fake. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>xsched fixture — empty (Scheduled, nothing queued)</title>
+<style>
+  body { font: 15px/1.45 system-ui, sans-serif; background:#000; color:#e7e9ea; margin:0; padding:16px; }
+  .banner { color:#ffd400; font-size:12px; margin:0 0 12px; }
+  [role="dialog"] { border:1px solid #2f3336; border-radius:16px; max-width:520px; padding:12px 14px; }
+  [role="tablist"] { display:flex; gap:16px; border-bottom:1px solid #2f3336; margin-bottom:6px; }
+  [role="tab"] { padding:8px 2px; color:#8b98a5; }
+  [role="tab"][aria-selected="true"] { color:#e7e9ea; box-shadow: inset 0 -2px 0 #1d9bf0; }
+  .empty { color:#71767b; padding:24px 4px; text-align:center; }
+</style>
+</head>
+<body>
+<p class="banner">本機 fixture，依公開來源重建，非真頁快照（資料全為假）</p>
+<div role="dialog" aria-label="Unsent posts">
+  <div role="tablist">
+    <div role="tab" aria-selected="false">Drafts</div>
+    <div role="tab" aria-selected="true">Scheduled</div>
+  </div>
+  <div id="sched-list">
+    <div class="empty">Nothing scheduled yet.</div>
+  </div>
+</div>
+</body>
+</html>

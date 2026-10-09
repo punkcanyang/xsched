@@ -1,0 +1,42 @@
+<!-- 依公開來源重建，非真頁快照｜local fixture, not a real x.com page. All data is fake. -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>xsched fixture — ko (예약됨)</title>
+<style>
+  body { font: 15px/1.45 system-ui, sans-serif; background:#000; color:#e7e9ea; margin:0; padding:16px; }
+  .banner { color:#ffd400; font-size:12px; margin:0 0 12px; }
+  [role="dialog"] { border:1px solid #2f3336; border-radius:16px; max-width:520px; padding:12px 14px; }
+  [role="tablist"] { display:flex; gap:16px; border-bottom:1px solid #2f3336; margin-bottom:6px; }
+  [role="tab"] { padding:8px 2px; color:#8b98a5; }
+  [role="tab"][aria-selected="true"] { color:#e7e9ea; box-shadow: inset 0 -2px 0 #1d9bf0; }
+  [data-testid="cellInnerDiv"] { display:block; padding:10px 2px; border-top:1px solid #2f3336; }
+  .when { color:#71767b; font-size:13px; }
+  .body { margin-top:2px; }
+</style>
+</head>
+<body>
+<p class="banner">本機 fixture，依公開來源重建，非真頁快照（資料全為假）</p>
+<div role="dialog" aria-label="전송되지 않은 게시물">
+  <div role="tablist">
+    <div role="tab" aria-selected="false">임시 저장</div>
+    <div role="tab" aria-selected="true">예약됨</div>
+  </div>
+  <div id="sched-list">
+    <div data-testid="cellInnerDiv">
+      <div role="button" aria-label="2026년 10월 10일 오전 9:00에 전송됩니다 로컬 픽스처 초안 본문">
+        <div class="when">2026년 10월 10일 오전 9:00에 전송됩니다</div>
+        <div class="body" data-testid="tweetText">로컬 픽스처 초안 본문</div>
+      </div>
+    </div>
+    <div data-testid="cellInnerDiv">
+      <div role="button" aria-label="2026년 11월 9일 오후 8:05에 전송됩니다 두 번째 가짜 본문">
+        <div class="when">2026년 11월 9일 오후 8:05에 전송됩니다</div>
+        <div class="body" data-testid="tweetText">두 번째 가짜 본문</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

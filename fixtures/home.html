@@ -1,0 +1,34 @@
+<!-- 依公開來源重建，非真頁快照｜local fixture, not a real x.com page. All data is fake. -->
+<!-- 首頁時間線：probe 必須在這裡 0 命中（路徑不是 Scheduled，內容也沒有「送信」句型）。 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>xsched fixture — home timeline (must read 0)</title>
+<style>
+  body { font: 15px/1.45 system-ui, sans-serif; background:#000; color:#e7e9ea; margin:0; padding:16px; }
+  .banner { color:#ffd400; font-size:12px; margin:0 0 12px; }
+  [data-testid="primaryColumn"] { max-width:560px; border:1px solid #2f3336; border-radius:16px; padding:8px; }
+  [data-testid="cellInnerDiv"] { padding:10px 4px; border-top:1px solid #2f3336; }
+  .name { color:#8b98a5; font-size:13px; }
+  .body { margin-top:2px; }
+</style>
+</head>
+<body>
+<p class="banner">本機 fixture，依公開來源重建，非真頁快照（資料全為假）</p>
+<div data-testid="primaryColumn">
+  <div data-testid="cellInnerDiv">
+    <div class="name">@local_fixture</div>
+    <div class="body" data-testid="tweetText">Reminder: the local fixture demo is on Oct 10, 2024 at 9:00 AM.</div>
+  </div>
+  <div data-testid="cellInnerDiv">
+    <div class="name">@local_fixture</div>
+    <div class="body" data-testid="tweetText">2026年10月10日 上午9:00 是這則假推文的時間，不是排程。</div>
+  </div>
+  <div data-testid="cellInnerDiv">
+    <div class="name">@local_fixture</div>
+    <div class="body" data-testid="tweetText">Just landed. Will post tomorrow at 8:00 AM local time.</div>
+  </div>
+</div>
+</body>
+</html>
