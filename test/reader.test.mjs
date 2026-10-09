@@ -216,7 +216,7 @@ test("mergeItems accumulates across a virtualized window swap and dedups", () =>
 test("buildDiagnostic carries counters only, no tweet body / time / account / url", () => {
   const report = snap(fixture("en.html"));
   const diag = R.buildDiagnostic({ ...report, scrolled: 1 });
-  assert.match(diag, /^xsched-gate0 v0\.0\.1 /);
+  assert.match(diag, /^xsched-gate0 v0\.0\.2 /);
   assert.match(diag, /onScheduled=1 /);
   assert.match(diag, /layer=1 /);
 
