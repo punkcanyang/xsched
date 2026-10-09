@@ -15,6 +15,13 @@
 // has been verified against a logged-in x.com page. See notes/GATE0.md for the source
 // table. When the real page drifts, the diagnostic counters (l1/l2/l3, cell, button,
 // phrase, timeFail) are meant to say *which* assumption broke.
+//
+// Everything lives inside an IIFE: Chrome runs reader.js and content.js as two classic
+// scripts in the SAME isolated world, so a top-level `const` here would collide with the
+// same-named one in content.js ("Identifier 'PROBE_VERSION' has already been declared").
+// Only `globalThis.XSCHED_READER` is exported.
+(() => {
+"use strict";
 
 const PROBE_VERSION = "0.0.1";
 
@@ -488,3 +495,4 @@ globalThis.XSCHED_READER = {
   mergeItems,
   buildDiagnostic,
 };
+})();
