@@ -1,0 +1,88 @@
+<!-- 依公開來源重建，非真頁快照｜local fixture, not a real x.com page. All data is fake. -->
+<!-- 虛擬化情境：捲動時整批 cell 被替換（舊的從 DOM 消失），模擬 X 的虛擬列表。
+     測試程式會「自己捲」（模擬使用者）；probe 本身絕不自動捲動。 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>xsched fixture — virtualized scheduled list</title>
+<style>
+  body { font: 15px/1.45 system-ui, sans-serif; background:#000; color:#e7e9ea; margin:0; padding:16px; }
+  .banner { color:#ffd400; font-size:12px; margin:0 0 12px; }
+  [role="dialog"] { border:1px solid #2f3336; border-radius:16px; max-width:520px; padding:12px 14px; }
+  [role="tablist"] { display:flex; gap:16px; border-bottom:1px solid #2f3336; margin-bottom:6px; }
+  [role="tab"] { padding:8px 2px; color:#8b98a5; }
+  [role="tab"][aria-selected="true"] { color:#e7e9ea; box-shadow: inset 0 -2px 0 #1d9bf0; }
+  [data-testid="cellInnerDiv"] { display:block; padding:10px 2px; border-top:1px solid #2f3336; }
+  .when { color:#71767b; font-size:13px; }
+  .body { margin-top:2px; }
+</style>
+</head>
+<body>
+<p class="banner">本機 fixture，依公開來源重建，非真頁快照（資料全為假）</p>
+<div role="dialog" aria-label="Unsent posts">
+  <div role="tablist">
+    <div role="tab" aria-selected="false">Drafts</div>
+    <div role="tab" aria-selected="true">Scheduled</div>
+  </div>
+  <div id="sched-list" style="height:120px;overflow:auto">
+    <div id="sched-track" style="transform: translateY(0px)"></div>
+  </div>
+</div>
+<script>
+  // Two disjoint windows of a long queue. A real virtualized list unmounts the rows that
+  // scroll away; we mirror that so the probe must accumulate across snapshots.
+  const WINDOWS = [
+    [
+      "Will send on Tue, Dec 1, 2026 at 7:00 AM Local fixture queue row one",
+      "Will send on Tue, Dec 1, 2026 at 12:30 PM Local fixture queue row two",
+      "Will send on Wed, Dec 2, 2026 at 8:00 PM Local fixture queue row three"
+    ],
+    [
+      "Will send on Thu, Dec 3, 2026 at 9:15 AM Local fixture queue row four",
+      "Will send on Fri, Dec 4, 2026 at 6:45 PM Local fixture queue row five",
+      "Will send on Sat, Dec 5, 2026 at 11:30 AM Local fixture queue row six"
+    ]
+  ];
+  const track = document.getElementById("sched-track");
+  const list = document.getElementById("sched-list");
+
+  function render(index) {
+    while (track.firstChild) track.removeChild(track.firstChild);
+    const phraseRe = /^(Will send on .+? (?:AM|PM))\s+([\s\S]+)$/;
+    for (const row of WINDOWS[index] || []) {
+      const m = phraseRe.exec(row);
+      const phrase = m ? m[1] : row;
+      const bodyText = m ? m[2] : "";
+      const cell = document.createElement("div");
+      cell.setAttribute("data-testid", "cellInnerDiv");
+      const button = document.createElement("div");
+      button.setAttribute("role", "button");
+      button.setAttribute("aria-label", row);
+      const when = document.createElement("div");
+      when.className = "when";
+      when.textContent = phrase;
+      const body = document.createElement("div");
+      body.className = "body";
+      body.setAttribute("data-testid", "tweetText");
+      body.textContent = bodyText;
+      button.append(when, body);
+      cell.append(button);
+      track.append(cell);
+    }
+  }
+
+  let windowIndex = 0;
+  render(windowIndex);
+  list.addEventListener("scroll", () => {
+    if (list.scrollTop > 20 && windowIndex === 0) {
+      windowIndex = 1;
+      render(1);
+    } else if (list.scrollTop < 5 && windowIndex === 1) {
+      windowIndex = 0;
+      render(0);
+    }
+  });
+</script>
+</body>
+</html>
