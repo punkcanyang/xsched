@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { scanSource, checkManifest, checkProbeDir } from "../scripts/verify.mjs";
+import { scanSource, checkManifest, checkProbeDir, attackSelfTest } from "../scripts/verify.mjs";
 import { allowedRequest, hasExtensionInitiator } from "../scripts/network-policy.mjs";
 await import("../probe/reader.js");
 const R = globalThis.XSCHED_READER;
@@ -15,6 +15,15 @@ const snap = (html, pathname = path) => R.readSnapshot(doc(html), { pathname });
 const phrase = "Will send on Oct 10, 2026 at 9:00 AM";
 const row = (body = "fake body") => `<div data-testid="cellInnerDiv"><div role="button" aria-label="${phrase} ${body}"><span>${phrase}</span><span data-testid="tweetText">${body}</span></div></div>`;
 const goodManifest = { manifest_version: 3, content_scripts: [{ matches: ["https://x.com/*"], js: ["ok.js"] }] };
+
+test("privacy self-test actually fails when skeleton or time masking leaks", () => {
+  assert.doesNotThrow(() => attackSelfTest());
+  const S = globalThis.XSCHED_SKELETON;
+  assert.throws(() => attackSelfTest(R, { ...S, buildSkeleton: () => 'https://example.com/a?b=c' }), /leaked/);
+  assert.throws(() => attackSelfTest({ ...R, maskSample: (text) => text }, S), /unmasked|kept content/);
+  assert.throws(() => attackSelfTest({ ...R, buildDiagnostic: () => 'lang=VibeEyeX doclang=VibeEyeX' }, S), /language tags/);
+  assert.throws(() => attackSelfTest(R, { ...S, hostnameOf: () => 'privateuser' }), /iframe/);
+});
 
 test("network policy rejects same-URL fetches, extension initiators, and external assets", () => {
   const url = "https://x.com/compose/post/unsent/scheduled?fixture=en";
@@ -139,7 +148,7 @@ test("diagnostic accepts only safe nonnegative integers and numeric enum codes",
   const secret = "@private https://private.example/ Oct 10 2026 9:00 AM private post";
   const report = Object.fromEntries(["onScheduled", "tab", "scope", "cell", "button", "listitem", "link", "tweetText", "phrase", "l1", "l2", "l3", "layer", "mounted", "timeOk", "timeFail", "unparsed", "loose", "needsScroll", "virtualized", "empty", "scrolled"].map((key) => [key, secret]));
   const diagnostic = R.buildDiagnostic(report);
-  assert.match(diagnostic, /^xsched-gate0 v0\.0\.1 (?:\w+=\d+ ?)+$/);
+  assert.match(diagnostic, /^xsched-gate0 v0\.0\.2 (?:\w+=[\w%|-]* ?)+$/);
   assert.ok(!diagnostic.includes(secret));
   for (const value of [-1, NaN, Infinity, 1.5, {}, () => secret]) {
     assert.match(R.buildDiagnostic({ cell: value }), /cell=0 /);

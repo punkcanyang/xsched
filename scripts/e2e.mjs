@@ -14,7 +14,7 @@
 //   npm run e2e
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -114,24 +114,28 @@ async function probeState(page) {
     return {
       present: true,
       on: host.dataset.xschedOn || "",
+      mode: host.dataset.xschedMode || "",
+      mounted: host.dataset.xschedMounted || "",
+      remounts: Number(host.dataset.xschedRemounts || "0"),
       count: Number(host.dataset.xschedCount || "0"),
       scrolled: host.dataset.xschedScrolled || "",
       diag: host.dataset.xschedDiag || "",
       countText: pick(".count"),
       times: shadow ? [...shadow.querySelectorAll(".time")].map((el) => el.textContent) : [],
       hint: pick(".hint"),
+      fallback: shadow && shadow.querySelector("textarea.fallback") ? shadow.querySelector("textarea.fallback").value : "",
     };
   });
 }
 
 const CASES = [
-  { fixture: "en", file: "gate0-en.png", count: 2, times: ["Fri, Oct 10, 2026 at 9:00 AM", "Mon, Nov 9, 2026 at 8:05 PM"] },
-  { fixture: "ja", file: "gate0-ja.png", count: 2, times: ["2026年7月20日(月)の午後4:24に送信されます", "2026年8月3日(月)の午前9:05に送信されます"] },
-  { fixture: "zh-Hans", file: "gate0-zh-Hans.png", count: 2, times: ["将于2026年10月10日 上午9:00发送", "将于2026年11月9日 下午8:05发送"] },
-  { fixture: "zh-Hant", file: "gate0-zh-Hant.png", count: 2, times: ["將於2026年10月10日 上午9:00傳送", "將於2026年11月9日 下午8:05傳送"] },
-  { fixture: "ko", file: "gate0-ko.png", count: 2, times: ["2026년 10월 10일 오전 9:00에 전송됩니다", "2026년 11월 9일 오후 8:05에 전송됩니다"] },
-  { fixture: "roles", file: "gate0-roles-fallback.png", count: 2, layer: "a11y", times: ["Fri, Oct 16, 2026 at 7:30 AM", "Sat, Oct 17, 2026 at 6:00 PM"] },
-  { fixture: "empty", file: "gate0-empty.png", count: 0 },
+  { fixture: "en", file: "gate0.1-en.png", count: 2, times: ["Fri, Oct 10, 2026 at 9:00 AM", "Mon, Nov 9, 2026 at 8:05 PM"] },
+  { fixture: "ja", file: "gate0.1-ja.png", count: 2, times: ["2026年7月20日(月)の午後4:24に送信されます", "2026年8月3日(月)の午前9:05に送信されます"] },
+  { fixture: "zh-Hans", file: "gate0.1-zh-Hans.png", count: 2, times: ["将于2026年10月10日 上午9:00发送", "将于2026年11月9日 下午8:05发送"] },
+  { fixture: "zh-Hant", file: "gate0.1-zh-Hant.png", count: 2, times: ["將於2026年10月10日 上午9:00傳送", "將於2026年11月9日 下午8:05傳送"] },
+  { fixture: "ko", file: "gate0.1-ko.png", count: 2, times: ["2026년 10월 10일 오전 9:00에 전송됩니다", "2026년 11월 9일 오후 8:05에 전송됩니다"] },
+  { fixture: "roles", file: "gate0.1-roles-fallback.png", count: 2, layer: "a11y", times: ["Fri, Oct 16, 2026 at 7:30 AM", "Sat, Oct 17, 2026 at 6:00 PM"] },
+  { fixture: "empty", file: "gate0.1-empty.png", count: 0 },
 ];
 
 async function main() {
@@ -208,6 +212,19 @@ async function main() {
     page.on("pageerror", (err) => consoleLogs.push("pageerror " + err.message));
     await page.setViewport({ width: 1100, height: 820 });
 
+    // Locate the extension's isolated world on the *current* page (context ids change
+    // per navigation, so this is re-run whenever we need it).
+    async function findExtensionContext() {
+      for (const context of contexts.values()) {
+        if (context.auxData?.isDefault) continue;
+        try {
+          const result = await network.send("Runtime.evaluate", { contextId: context.id, expression: "typeof globalThis.XSCHED_READER !== 'undefined'", returnByValue: true });
+          if (result.result.value) return context.id;
+        } catch { /* context replaced mid-flight */ }
+      }
+      return null;
+    }
+
     async function open(fixture, subpath = "/compose/post/unsent/scheduled") {
       const url = `https://x.com${subpath}?fixture=${encodeURIComponent(fixture)}`;
       navigations.add(url);
@@ -227,7 +244,7 @@ async function main() {
       await open(testCase.fixture);
       const state = await until(async () => {
         const s = await probeState(page);
-        if (!s.present) return null;
+        if (!s.present || s.mode === "") return null; // mode is only written by a real render
         return s.count === testCase.count ? s : null;
       }, `${testCase.fixture}: overlay count=${testCase.count}`);
 
@@ -256,12 +273,7 @@ async function main() {
     // calls. No clipboard permission, page-world injection, or real account is used.
     await open("en");
     await until(async () => (await probeState(page)).count === 2, "clipboard: initial rows");
-    let extensionContext;
-    for (const context of contexts.values()) {
-      if (context.auxData?.isDefault) continue;
-      const result = await network.send("Runtime.evaluate", { contextId: context.id, expression: "typeof globalThis.XSCHED_READER !== 'undefined'", returnByValue: true });
-      if (result.result.value) extensionContext = context.id;
-    }
+    const extensionContext = await findExtensionContext();
     assert(extensionContext, "reader must run in an isolated extension context");
     const iconInfo = await network.send("Runtime.evaluate", {
       contextId: extensionContext,
@@ -312,8 +324,127 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched-gate0 v0\.0\.1 (?:\w+=\d+ ?)+$/.test(copied.result.value[0]), "copied diagnostic contains numeric fields only even if DOM dataset is tampered");
+    assert(/^xsched-gate0 v0\.0\.2 (?:\w+=[\w%|.:-]* ?)+$/.test(copied.result.value[0]), "copied diagnostic contains counters/langs/masked samples only even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
+
+    // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
+    await open("selectors-broken");
+    const broken = await until(async () => {
+      const s = await probeState(page);
+      return s.present && s.mode === "scheduled" && s.mounted === "1" ? s : null;
+    }, "selectors-broken: overlay mounted on a scheduled page");
+    assert(broken.count === 0, `selectors-broken: expected 0 rows, got ${broken.count}`);
+    assert(broken.countText === "讀到 0 則", `selectors-broken: count text "${broken.countText}"`);
+    const failMatch = /timeFail=(\d+)/.exec(broken.diag);
+    assert(failMatch && Number(failMatch[1]) > 0, `selectors-broken: expected timeFail>0: ${broken.diag}`);
+    const sampleMatch = /samples=([^ ]*)/.exec(broken.diag);
+    assert(sampleMatch && sampleMatch[1] !== "none", `selectors-broken: expected masked samples: ${broken.diag}`);
+    for (const encoded of sampleMatch[1].split("|")) {
+      const sample = decodeURIComponent(encoded);
+      assert(!/[A-Za-z\u00c0-\uffff]/.test(sample.replace(/x/g, "")), `selectors-broken: unmasked letters in sample "${sample}"`);
+      assert(/^[\x20-\x7e]*$/.test(sample), `selectors-broken: non-ASCII in sample "${sample}"`);
+      assert(sample.includes("x"), `selectors-broken: sample carries no mask marker: "${sample}"`);
+    }
+    for (const leak of ["Arrives", "UTC", "placeholder body"]) {
+      assert(!broken.diag.includes(leak), `selectors-broken: diag leaked "${leak}": ${broken.diag}`);
+    }
+    await page.screenshot({ path: join(DOCS, "gate0.1-selectors-broken.png") });
+    console.log("  ✓ selectors-broken: mounted, 0 rows, masked samples only");
+
+    // ── 0.1: X's SPA redraw removes the host → the probe must re-mount it ──────
+    await open("en");
+    await until(async () => (await probeState(page)).count === 2, "remount: initial rows");
+    const removed = await page.evaluate(() => {
+      document.getElementById("xsched-probe-root").remove();
+      return !document.getElementById("xsched-probe-root");
+    });
+    assert(removed, "remount: test failed to remove the host");
+    const remounted = await until(async () => {
+      const s = await probeState(page);
+      return s.present && s.remounts >= 1 ? s : null;
+    }, "remount: overlay re-attached after host removal");
+    assert(remounted.mounted === "1", `remount: host must be laid out, mounted=${remounted.mounted}`);
+    // A wholesale body replacement (X swapping a whole subtree) must re-mount too.
+    await page.evaluate(() => { document.body.replaceChildren(); });
+    const remounted2 = await until(async () => {
+      const s = await probeState(page);
+      return s.present && s.remounts >= 2 ? s : null;
+    }, "remount: overlay re-attached after body replacement");
+    assert(remounted2.mounted === "1", `remount: relayed-out host after body swap, mounted=${remounted2.mounted}`);
+    await sleep(3100); // start the fight with a fresh creation window
+    // A hostile redraw must stay bounded and resume through polling after it stops.
+    await page.evaluate(() => {
+      window.fixtureRemoves = 0;
+      window.fixtureHostFight = new MutationObserver(() => {
+        const host = document.getElementById('xsched-probe-root');
+        if (host) { window.fixtureRemoves += 1; host.remove(); }
+      });
+      window.fixtureHostFight.observe(document.body, { childList: true });
+      document.getElementById('xsched-probe-root').remove();
+    });
+    await sleep(1000);
+    const fighting = await page.evaluate(() => {
+      window.fixtureHostFight.disconnect();
+      return window.fixtureRemoves;
+    });
+    assert(fighting <= 3, `remount: at most 3 creations per window, got ${fighting}`);
+    assert(fighting > 0, 'remount: adversarial redraw must actually exercise retry creation');
+    await until(async () => {
+      const s = await probeState(page);
+      return s.present && s.mounted === '1';
+    }, 'remount: polling recovers after repeated redraws stop', 6000);
+    await page.evaluate(() => document.getElementById('xsched-probe-root').style.setProperty('display', 'none', 'important'));
+    await until(async () => (await probeState(page)).mounted === '0', 'mounted: hidden host reports zero');
+    await page.evaluate(() => document.getElementById('xsched-probe-root').style.setProperty('display', 'block', 'important'));
+    await until(async () => (await probeState(page)).mounted === '1', 'mounted: visible host reports one');
+    await open("en");
+    await until(async () => (await probeState(page)).count === 2, "remount: fixture restored");
+    console.log("  ✓ remount: host/body removal; bounded retries recover through polling; mounted tracks layout");
+
+    // ── 0.1: "copy page structure" yields a content-free skeleton ──────────────
+    const skeletonContext = await findExtensionContext();
+    assert(skeletonContext, "skeleton: extension isolated world lost");
+    await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: `
+      globalThis.__fixtureCopies = [];
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+        writeText(text) { globalThis.__fixtureCopies.push(text); return Promise.resolve(); }
+      }});
+    ` });
+    const skeletonButton = await page.evaluateHandle(() => document.getElementById("xsched-probe-root").shadowRoot.querySelector('[data-xsched-skeleton="1"]'));
+    await skeletonButton.asElement().click();
+    await skeletonButton.dispose();
+    const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
+    assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
+    const skeleton = skeletonCopies.result.value[0];
+    assert(/^xsched-skeleton v0\.0\.2 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
+    for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture"]) {
+      assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
+    }
+    writeFileSync(join(DOCS, "gate0.1-skeleton-sample.txt"), skeleton + "\n");
+    await page.screenshot({ path: join(DOCS, "gate0.1-skeleton-copied.png") });
+    // The clipboard may be denied; then the overlay must offer the readonly textarea.
+    await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: `
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() { return Promise.reject(new Error('denied')); } } });
+    ` });
+    const retry = await page.evaluateHandle(() => document.getElementById("xsched-probe-root").shadowRoot.querySelector('[data-xsched-skeleton="1"]'));
+    await retry.asElement().click();
+    await retry.dispose();
+    const fallbackState = await until(async () => {
+      const s = await probeState(page);
+      return s.fallback ? s : null;
+    }, "skeleton: clipboard-denied fallback textarea");
+    assert(/^xsched-skeleton v0\.0\.2 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
+    await select.asElement().click();
+    await select.dispose();
+    const selected = await page.evaluate(() => {
+      const area = document.getElementById('xsched-probe-root').shadowRoot.querySelector('textarea.fallback');
+      return area.selectionStart === 0 && area.selectionEnd === area.value.length;
+    });
+    assert(selected, 'fallback: user can select the entire skeleton');
+    await page.screenshot({ path: join(DOCS, "gate0.1-skeleton-fallback.png") });
+    console.log("  ✓ skeleton: content-free map copied; textarea fallback when clipboard is denied");
 
     // ── virtualized list: the TEST scrolls, the probe only accumulates ──────────
     await open("virtual");
@@ -324,7 +455,7 @@ async function main() {
     assert(before.scrolled === "0", "virtual: probe must not have scrolled on its own");
     assert(before.diag.includes("virtualized=1"), `virtual: expected virtualized=1: ${before.diag}`);
     assert(before.hint.includes("請自己往下捲"), `virtual: expected the do-not-auto-scroll hint: ${before.hint}`);
-    await page.screenshot({ path: join(DOCS, "gate0-virtual-before.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.1-virtual-before.png") });
 
     await page.evaluate(() => {
       const list = document.getElementById("sched-list");
@@ -345,7 +476,7 @@ async function main() {
     ]) {
       assert(after.times.includes(want), `virtual: missing accumulated time "${want}"`);
     }
-    await page.screenshot({ path: join(DOCS, "gate0-virtual-after.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.1-virtual-after.png") });
     console.log("  ✓ virtual: 3 → 6 rows after a test-driven scroll");
 
     await page.evaluate(() => {
@@ -376,11 +507,11 @@ async function main() {
     await open("en");
     await until(async () => (await probeState(page)).count === 2, "SPA: initial Scheduled");
     await page.evaluate(() => document.querySelector('[role="tab"][aria-selected="true"]').setAttribute("aria-selected", "false"));
-    await until(async () => !(await probeState(page)).present, "SPA: deselected tab hides overlay");
+    await until(async () => (await probeState(page)).mode === "other", "SPA: deselected tab turns the overlay into a capsule");
     await page.evaluate(() => document.querySelectorAll('[role="tab"]')[1].setAttribute("aria-selected", "true"));
     await until(async () => (await probeState(page)).count === 2, "SPA: selected tab restores overlay");
     await page.evaluate(() => history.replaceState({}, "", "/home"));
-    await until(async () => !(await probeState(page)).present, "SPA: route poll hides overlay on home");
+    await until(async () => (await probeState(page)).mode === "other", "SPA: route poll turns the overlay into a capsule on home");
     await page.evaluate(() => history.replaceState({}, "", "/compose/post/unsent/scheduled"));
     await until(async () => (await probeState(page)).count === 2, "SPA: route poll restores overlay");
     console.log("  ✓ SPA: attribute-only tabs and route changes");
@@ -422,7 +553,8 @@ async function main() {
 
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
     await sleep(500);
-    assert(!(await probeState(page)).present, "pagehide stops timers/observer and removes overlay");
+    const afterHide = await probeState(page);
+    assert(afterHide.present && afterHide.mode === "scheduled", "pagehide stops timers/observer but keeps the overlay mounted (deliberate)");
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
     await until(async () => (await probeState(page)).count === 2, "bfcache restore restarts probe");
     assert((await probeState(page)).count === 2, "bfcache restore reconstructs current rows without stale state");
@@ -432,13 +564,16 @@ async function main() {
     await open("home", "/home");
     await sleep(900);
     const homeState = await probeState(page);
-    assert(!homeState.present, `home: overlay should be hidden, got ${JSON.stringify(homeState)}`);
-    console.log("  ✓ home: 0 rows (overlay hidden)");
+    assert(homeState.present && homeState.mode === "other" && homeState.count === 0, `home: overlay should be a 0-row capsule, got ${JSON.stringify(homeState)}`);
+    assert(homeState.countText === "xsched 探針：非 Scheduled 頁", `home: capsule text was "${homeState.countText}"`);
+    await page.screenshot({ path: join(DOCS, "gate0.1-not-scheduled.png") });
+    console.log("  ✓ home: 0 rows (capsule stays mounted off the Scheduled page)");
 
     for (const subpath of ["/home", "/compose/post/unsent/drafts", "/compose/post/schedule"]) {
       await open("en", subpath); // intentionally contains a selected Scheduled tab
       await sleep(500);
-      assert(!(await probeState(page)).present, `${subpath}: selected tab must not override route`);
+      const state = await probeState(page);
+      assert(state.present && state.mode === "other", `${subpath}: selected tab must not override route (mode=${state.mode})`);
     }
     console.log("  ✓ non-Scheduled: home, Drafts, picker with adversarial selected tabs");
 

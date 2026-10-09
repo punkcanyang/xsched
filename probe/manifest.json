@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "xsched gate0 probe",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Read-only probe for X's Scheduled list. No permissions, no network, no storage.",
   "content_scripts": [
     {
@@ -11,6 +11,7 @@
       ],
       "js": [
         "reader.js",
+        "skeleton.js",
         "content.js"
       ],
       "run_at": "document_idle"

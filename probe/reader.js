@@ -23,7 +23,7 @@
 (() => {
 "use strict";
 
-const PROBE_VERSION = "0.0.1";
+const PROBE_VERSION = "0.0.2";
 
 // Tab labels that mean "Scheduled". en / ja are from public sources; zh-Hant, zh-Hans
 // and ko are *guesses* (no public source found) and are marked as such in GATE0.md.
@@ -154,6 +154,57 @@ function normalize(value) {
 // First `limit` code points, so emoji / CJK are not cut in half.
 function previewText(value, limit = 20) {
   return Array.from(String(value == null ? "" : value)).slice(0, limit).join("");
+}
+
+// A language-shaped username is still private. Keep registered two-letter languages
+// and common script/region subtags only; private-use/variants and arbitrary words mask.
+const LANG_CODES = new Set("aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu".split(" "));
+const LANG_SCRIPTS = new Set("Arab Armn Beng Cyrl Deva Ethi Geor Grek Gujr Guru Hans Hant Hebr Jpan Kana Khmr Knda Kore Latn Mlym Mong Mymr Orya Sinh Taml Telu Thai Tibt".split(" "));
+function sanitizeLang(value) {
+  const text = String(value == null ? "" : value);
+  const match = /^([a-z]{2})(?:-([A-Z][a-z]{3}))?(?:-([A-Z]{2}|[0-9]{3}))?$/i.exec(text);
+  if (!match || !LANG_CODES.has(match[1].toLowerCase())) return "x";
+  const script = match[2] && match[2][0].toUpperCase() + match[2].slice(1).toLowerCase();
+  if (script && !LANG_SCRIPTS.has(script)) return "x";
+  return [match[1].toLowerCase(), script, match[3] && match[3].toUpperCase()].filter(Boolean).join("-");
+}
+
+// Mask a diagnostic sample so it can never carry tweet text or an account.
+// Digits and punctuation/space are kept (they carry no readable content); every
+// letter/mark (\p{L}\p{M}) and every other symbol (emoji, \p{S}) becomes "x".
+// Code points are preserved one-for-one so length information survives; capped at 60.
+function maskSample(value) {
+  const text = String(value == null ? "" : value);
+  const masked = text.replace(/[^\p{Nd}\p{P}\s]/gu, "x");
+  return Array.from(masked).slice(0, 60).join("");
+}
+
+// True only when the overlay host is actually in the document *and* laid out.
+function hostMounted(el) {
+  if (!el || !el.isConnected) return false;
+  let width = 0;
+  let height = 0;
+  if (typeof el.getBoundingClientRect === "function") {
+    try {
+      const rect = el.getBoundingClientRect();
+      width = Number(rect && rect.width) || 0;
+      height = Number(rect && rect.height) || 0;
+    } catch { /* ignore */ }
+  }
+  if (!width && !height) {
+    width = Number(el.offsetWidth) || 0;
+    height = Number(el.offsetHeight) || 0;
+  }
+  return width > 0 && height > 0;
+}
+
+function dedupStrings(values) {
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    if (value && !seen.has(value)) { seen.add(value); out.push(value); }
+  }
+  return out;
 }
 
 function classifyPath(pathname) {
@@ -405,6 +456,7 @@ function blank(onScheduled) {
     l3: 0,
     layer: "none",
     mounted: 0,
+    samples: [],
     timeOk: 0,
     timeFail: 0,
     unparsed: 0,
@@ -461,6 +513,21 @@ function readSnapshot(doc, { pathname = "" } = {}) {
     if (!parseSchedule(text, { allowLoose: true })) timeFail += 1;
   }
 
+  // Sample only a recognized time phrase in an isolated leaf, never an aggregate
+  // row or tweetText subtree. A year alone is not evidence of a time label.
+  const sampleRows = new Set(pool);
+  const failNodes = [...scope.querySelectorAll("*")].filter((el) => {
+    if (!readable(el, scope) || el.children.length || sampleRows.has(el) || el.tagName === "BUTTON" || el.closest('[data-testid="tweetText"]')) return false;
+    const text = el.textContent;
+    if (!YEAR_RE.test(normalize(text || "")) || !SEND_VERB_RE.test(text || "")) return false;
+    const parsed = parseSchedule(text, { allowLoose: true });
+    return !parsed || parsed.unparsed === true;
+  });
+  const samples = dedupStrings(failNodes.map((el) => {
+    const parsed = parseSchedule(el.textContent, { allowLoose: true });
+    return maskSample(parsed ? parsed.time : normalize(el.textContent || ""));
+  })).slice(0, 3);
+
   const layout = detectLayout(scope, doc);
   return {
     onScheduled: 1,
@@ -477,7 +544,9 @@ function readSnapshot(doc, { pathname = "" } = {}) {
     l2: fromA11y.length,
     l3: fromText.length,
     layer,
-    mounted: items.length,
+    // Real mount state is computed by the content glue; the reader cannot know it.
+    mounted: 0,
+    samples,
     timeOk: items.filter((item) => item.at !== null).length,
     timeFail,
     unparsed: items.filter((item) => item.unparsed).length,
@@ -498,12 +567,25 @@ function mergeItems(previous, next, { replace = false } = {}) {
 
 const DIAG_ORDER = [
   "onScheduled", "tab", "scope", "cell", "button", "listitem", "link", "tweetText",
-  "phrase", "l1", "l2", "l3", "layer", "mounted", "timeOk", "timeFail", "unparsed",
-  "loose", "needsScroll", "virtualized", "empty", "scrolled",
+  "phrase", "l1", "l2", "l3", "layer", "mounted", "items", "remounts", "timeOk",
+  "timeFail", "unparsed", "loose", "needsScroll", "virtualized", "empty", "scrolled",
 ];
 
-// Diagnostic string: counters / booleans / version only.
-// Never a tweet body, account, URL, or schedule-time string.
+// Masked, percent-encoded time samples (max 3). The pipe separator is safe because
+// maskSample already replaced every non-digit/punct/space symbol, including the pipe.
+function sampleField(samples) {
+  if (!Array.isArray(samples)) return "none";
+  const out = [];
+  for (const sample of samples) {
+    if (typeof sample !== "string" || !sample) continue;
+    out.push(encodeURIComponent(maskSample(sample)));
+    if (out.length >= 3) break;
+  }
+  return out.length ? out.join("|") : "none";
+}
+
+// Diagnostic string: counters / booleans / language tags / masked samples / version only.
+// Never a tweet body, account, URL, or unmasked schedule-time string.
 function buildDiagnostic(report) {
   const scopeCode = { none: 0, panel: 1, dialog: 2, column: 3, region: 4, body: 5 };
   const layerCode = { none: 0, cell: 1, a11y: 2, text: 3, loose: 4 };
@@ -516,7 +598,7 @@ function buildDiagnostic(report) {
     const value = report[key];
     return `${key}=${typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0}`;
   });
-  return `xsched-gate0 v${PROBE_VERSION} ${parts.join(" ")}`;
+  return `xsched-gate0 v${PROBE_VERSION} ${parts.join(" ")} lang=${sanitizeLang(report.lang)} doclang=${sanitizeLang(report.doclang)} samples=${sampleField(report.samples)}`;
 }
 
 // Shared API. `globalThis` so a classic content script loaded right after this file (same
@@ -534,5 +616,8 @@ globalThis.XSCHED_READER = {
   readSnapshot,
   mergeItems,
   buildDiagnostic,
+  maskSample,
+  sanitizeLang,
+  hostMounted,
 };
 })();
