@@ -162,3 +162,11 @@ npm run e2e
 - 複審 session `01a12013` 跑到一半撞 Codex 用量上限（訊息：2:10 AM 後再試），**沒有 VERDICT**。它在工作樹的部分修正已外部 commit 為 `1f784f7`（點擊需 isTrusted 才導覽、`fmt=` 改獨立一行、洩漏自測 25→32）。
 - `1f784f7` 上：`npm test` 105/105、`npm run verify` OK；`npm run e2e` **FAILED**：selectors-broken 情境的 samples 斷言因 `fmt=` 換行而不符（複審改到一半）。
 - 接回：02:10 後 `codex exec resume 01a12013-6780-77c1-9466-bb1e9f78097f "..." </dev/null`，請它修完 e2e 斷言並給 VERDICT；未 APPROVE 不合併。
+
+## 收尾（2026-10-10 07:10 UTC+8）
+
+- 複審第二輪 `01a12013`：**VERDICT: APPROVE**（修 e2e samples 解析、GATE0 複審節），外部 commit。
+- 用 merge（非 rebase／force）把 origin/main（#6 公開 repo 衛生、#7 LICENSE）併進分支，無衝突。
+- 外部實跑：`npm test` 105/105、`npm run verify` OK（30 API／14 icon／9 SVG／32 洩漏自測）、`npm run e2e` OK 323 斷言；截圖已更新。
+- 公開 repo 掃描：原始 340KB 骨架不在任何 commit；`fixtures/real/`、`docs/` 無網址／email／handle／id／密鑰／真實資料。
+- 合併 main（--no-ff）。結論：**則數依骨架可讀、時間格式待老闆診斷確認**。
