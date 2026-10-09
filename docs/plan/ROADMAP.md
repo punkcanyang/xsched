@@ -32,7 +32,6 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 ## 之後（未排，要老闆拍板）
 
 - 上架 Chrome Web Store（US$5 開發者費）。
-- repo 公開與否（目前 private）。
 
 ## 已知風險
 
