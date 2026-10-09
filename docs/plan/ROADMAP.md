@@ -1,6 +1,6 @@
 # xsched（X 預排推文擴充）路線圖
 
-更新：2026-10-09（UTC+8）。老闆 2026-10-09 點頭開工。
+更新：2026-10-09 17:45（UTC+8）。老闆 2026-10-09 點頭開工。
 規格以開工卡為準：`docs/plan/cards/开工卡-X预排推文扩展-2026-10-09.md`（與 `notes/` 裡同名檔相同）。競品報告：`docs/plan/X预排推文-竞品-2026-10-09.md`。接手前先讀根目錄 `AGENTS.md`。
 
 ## 定位
@@ -16,7 +16,7 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 | 要驗證 | 能否從 x.com 頁面穩定讀出「Unsent posts → Scheduled」列表：每則的排程時間、文字前段。不靠 API。 |
 | 要交出 | DOM 結構依據、讀取方式、改版風險、一個只讀的測試小擴充、老闆實測 ≤5 步（讀出的則數與時間是否和 X 上一致）。 |
 | 讀不出來 | 停下，回報替代方案（例如只記本機自己排過的）。 |
-| 狀態（2026-10-09 17:10） | repo 只有 `main` 上的 `init: spec and competitor notes`（`3c0ac32`），還沒有 gate0 分支或 PR。产品开发已在做。 |
+| 狀態（2026-10-09 17:45） | Cursor 雲端額度用完，已交接。前一個 Cursor agent（bc-4ccfe624）做到 probe／fixture／e2e 一半，**沒推任何東西**（工作區已失，只剩 transcript 當線索）。改由 **CodeWhale（deepseek-flash）寫、Codex（gpt-6.1-sol high，非 Fast）審**，在共享 Linux 機重做，分支 `gate0/scheduled-read`。交接：`notes/HANDOFF-gate0.md`。 |
 
 閘 0 做完回報商務拓展，老闆實測通過才往下做 1.0。
 
