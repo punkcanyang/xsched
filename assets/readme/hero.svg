@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">xsched：在 X 网页上排程发文，一眼看清已经排了什么</title>
+  <desc id="desc">深色底上，左侧是 Dagaz 符文标志、xsched 名称、用符文刻出的 XSCHED 字样和一句说明；右侧是一张示意卡，模仿目前 Gate 0 探针的浮层：读到 2 则排程，每则一行排程时间、一行开头文字，底部是「複製診斷」按钮。卡片标明是示例数据。</desc>
+
+  <rect x="1" y="1" width="1198" height="418" rx="24" fill="#0B1220" stroke="#22304A" stroke-width="2"/>
+
+  <g id="title-block" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif">
+    <text x="64" y="84" fill="#3DDC97" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="18" letter-spacing="2">CHROME 扩展 · 改造 X 网页 · 不用 API</text>
+
+    <!-- Logo B: Dagaz, a closed X -->
+    <g transform="translate(64 108) scale(1.25)">
+      <defs><clipPath id="dagaz-clip"><rect x="0" y="6" width="64" height="52"/></clipPath></defs>
+      <g clip-path="url(#dagaz-clip)">
+        <path d="M12 10 L12 54 L52 10 L52 54 Z" fill="none" stroke="#3DDC97" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="10"/>
+      </g>
+    </g>
+    <text x="158" y="172" fill="#E8EEF7" font-size="80" font-weight="700" letter-spacing="-1">xsched</text>
+
+    <!-- XSCHED carved in Elder Futhark: gebo sowilo kaunan hagalaz ehwaz dagaz -->
+    <g id="rune-row" transform="translate(66 200)" fill="none" stroke="#3DDC97" stroke-width="3.5" stroke-linecap="butt" stroke-linejoin="miter" opacity="0.7">
+      <path d="M1 0 L17 28 M17 0 L1 28"/>
+      <path transform="translate(30 0)" d="M12 0 L4 10 L13 18 L5 28"/>
+      <path transform="translate(58 0)" d="M13 6 L4 14 L13 22"/>
+      <path transform="translate(84 0)" d="M3 0 V28 M14 0 V28 M3 9 L14 18"/>
+      <path transform="translate(112 0)" d="M2 28 V0 L8 10 L14 0 V28"/>
+      <path transform="translate(140 0)" d="M2 0 V28 L20 0 V28 Z"/>
+      <path d="M0 40 H164" stroke="#22304A" stroke-width="2"/>
+    </g>
+
+    <text x="64" y="298" fill="#C5D0E2" font-size="30">在 X 网页上排程发文，一眼看清排了什么。</text>
+    <text x="64" y="340" fill="#8B9BB4" font-size="22">不用 API，推文照样由 X 自带的排程送出。</text>
+    <text x="64" y="384" fill="#8B9BB4" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="18">Gate 0 · 只读探针 v0.0.1 · 零权限 · 零网络请求</text>
+  </g>
+
+  <!-- Schematic of the Gate 0 overlay (sample data; labels match the probe UI) -->
+  <g id="project-proof" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif">
+    <rect x="724" y="48" width="412" height="308" rx="16" fill="#111A2B" stroke="#22304A" stroke-width="2"/>
+    <text x="748" y="82" fill="#8B9BB4" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="16">xsched 探针 · 示例数据</text>
+    <text x="748" y="120" fill="#E8EEF7" font-size="28" font-weight="700">讀到 2 則</text>
+
+    <g font-size="18">
+      <path d="M748 138 H1112" stroke="#22304A" stroke-width="2"/>
+      <text x="748" y="166" fill="#3DDC97" font-weight="600">将于2026年10月10日 上午9:00发送</text>
+      <text x="748" y="192" fill="#C5D0E2">周末读书会提醒，这周六下午两点…</text>
+      <path d="M748 208 H1112" stroke="#22304A" stroke-width="2"/>
+      <text x="748" y="236" fill="#3DDC97" font-weight="600">将于2026年10月10日 下午12:30发送</text>
+      <text x="748" y="262" fill="#C5D0E2">新文章上线了，聊聊排程这件事…</text>
+      <path d="M748 278 H1112" stroke="#22304A" stroke-width="2"/>
+    </g>
+
+    <rect x="748" y="296" width="128" height="36" rx="18" fill="#E8EEF7"/>
+    <text x="812" y="320" text-anchor="middle" fill="#0B1220" font-size="18" font-weight="700">複製診斷</text>
+    <text x="1112" y="320" text-anchor="end" fill="#8B9BB4" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="16">只含计数</text>
+  </g>
+</svg>

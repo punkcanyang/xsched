@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">xsched 路线：Gate 0 现在，1.0 规划中</title>
+  <desc id="desc">两段刻痕轨道。左段 Gate 0 是现在：只读探针已完成，等真帐号实测。右段 1.0 是规划中、尚未开工：快速选时段、可选的自动预排、避开已排的推文、排程总览。</desc>
+  <rect x="1" y="1" width="1198" height="298" rx="24" fill="#0B1220" stroke="#22304A" stroke-width="2"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif">
+    <text x="64" y="62" fill="#3DDC97" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="18" letter-spacing="2">ROADMAP · 实测通过才往下走</text>
+
+    <!-- Gate 0: solid carved rail -->
+    <path d="M64 104 H452" stroke="#3DDC97" stroke-width="4"/>
+    <path d="M64 118 L80 104 L96 118" fill="none" stroke="#3DDC97" stroke-width="6"/>
+    <!-- 1.0: dashed, not yet carved -->
+    <path d="M500 104 H1136" stroke="#22304A" stroke-width="4" stroke-dasharray="14 10"/>
+    <path d="M500 118 L516 104 L532 118" fill="none" stroke="#8B9BB4" stroke-width="6"/>
+
+    <g transform="translate(64 162)">
+      <text fill="#E8EEF7" font-size="30" font-weight="700">Gate 0</text>
+      <rect x="118" y="-24" width="70" height="32" rx="16" fill="#3DDC97"/>
+      <text x="153" y="-1" text-anchor="middle" fill="#0B1220" font-size="18" font-weight="700">现在</text>
+      <text y="46" fill="#C5D0E2" font-size="20">只读探针：读出 Scheduled 列表</text>
+      <text y="80" fill="#8B9BB4" font-size="20">本机测试页通过，等真帐号实测</text>
+    </g>
+
+    <g transform="translate(500 162)">
+      <text fill="#E8EEF7" font-size="30" font-weight="700">1.0</text>
+      <rect x="62" y="-24" width="92" height="32" rx="16" fill="none" stroke="#8B9BB4" stroke-width="2"/>
+      <text x="108" y="-1" text-anchor="middle" fill="#8B9BB4" font-size="18" font-weight="700">规划中</text>
+      <text y="46" fill="#C5D0E2" font-size="20">快速选时段</text>
+      <text y="80" fill="#C5D0E2" font-size="20">自动预排（可开关，默认关）</text>
+      <text x="320" y="46" fill="#C5D0E2" font-size="20">避开 X 上已经排好的推文</text>
+      <text x="320" y="80" fill="#C5D0E2" font-size="20">排程总览（周视图／列表）</text>
+    </g>
+  </g>
+</svg>
