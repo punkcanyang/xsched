@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
+  <title id="title">xsched Gate 0 探针怎么运作</title>
+  <desc id="desc">四步：打开 X 的排程列表；内容脚本只读画面上已显示的列表，不发网络请求；右下角浮层显示则数、时间和前 20 个字；按复制诊断，只复制计数。</desc>
+  <rect x="1" y="1" width="1198" height="278" rx="24" fill="#0B1220" stroke="#22304A" stroke-width="2"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif">
+    <text x="64" y="62" fill="#3DDC97" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="18" letter-spacing="2">HOW IT WORKS · 只读，不存，不传</text>
+
+    <!-- carved rail: one stave, four notches -->
+    <path d="M64 98 H1136" stroke="#22304A" stroke-width="4"/>
+    <g fill="none" stroke="#3DDC97" stroke-width="6" stroke-linecap="butt" stroke-linejoin="miter">
+      <path d="M64 112 L80 98 L96 112"/>
+      <path d="M342 112 L358 98 L374 112"/>
+      <path d="M620 112 L636 98 L652 112"/>
+      <path d="M898 112 L914 98 L930 112"/>
+    </g>
+
+    <g transform="translate(64 158)">
+      <text fill="#3DDC97" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="20">01</text>
+      <text x="36" fill="#E8EEF7" font-size="26" font-weight="700">打开排程列表</text>
+      <text y="44" fill="#C5D0E2" font-size="20">X 的「未发送」</text>
+      <text y="74" fill="#C5D0E2" font-size="20">→ Scheduled 页签</text>
+    </g>
+    <g transform="translate(342 158)">
+      <text fill="#3DDC97" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="20">02</text>
+      <text x="36" fill="#E8EEF7" font-size="26" font-weight="700">只读画面</text>
+      <text y="44" fill="#C5D0E2" font-size="20">三层读法互相备援</text>
+      <text y="74" fill="#C5D0E2" font-size="20">不发网络请求</text>
+    </g>
+    <g transform="translate(620 158)">
+      <text fill="#3DDC97" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="20">03</text>
+      <text x="36" fill="#E8EEF7" font-size="26" font-weight="700">浮层显示</text>
+      <text y="44" fill="#C5D0E2" font-size="20">读到几则、每则时间</text>
+      <text y="74" fill="#C5D0E2" font-size="20">和前 20 个字</text>
+    </g>
+    <g transform="translate(898 158)">
+      <text fill="#3DDC97" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="20">04</text>
+      <text x="36" fill="#E8EEF7" font-size="26" font-weight="700">复制诊断</text>
+      <text y="44" fill="#C5D0E2" font-size="20">只有计数，不含推文</text>
+      <text y="74" fill="#C5D0E2" font-size="20">帐号或网址</text>
+    </g>
+  </g>
+</svg>
