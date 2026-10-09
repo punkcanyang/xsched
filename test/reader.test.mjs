@@ -218,7 +218,7 @@ test("buildDiagnostic carries counters only, no tweet body / time / account / ur
   const diag = R.buildDiagnostic({ ...report, scrolled: 1 });
   assert.match(diag, /^xsched-gate0 v0\.0\.1 /);
   assert.match(diag, /onScheduled=1 /);
-  assert.match(diag, /layer=cell /);
+  assert.match(diag, /layer=1 /);
 
   const forbidden = [
     "Local fixture", "Will send", "@local_fixture", "9:00", "8:05", "Oct", "Nov",

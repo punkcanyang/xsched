@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
+import { allowedRequest, hasExtensionInitiator } from "./network-policy.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
 const ROOT = join(dirname(SELF), "..");
@@ -31,6 +32,7 @@ const FIXTURES = join(ROOT, "fixtures");
 if (!process.env.DISPLAY && !process.env.XSCHED_E2E_REEXEC) {
   const result = spawnSync("xvfb-run", ["-a", process.execPath, SELF], {
     stdio: "inherit",
+    timeout: 180000,
     env: { ...process.env, XSCHED_E2E_REEXEC: "1" },
   });
   process.exit(result.status == null ? 1 : result.status);
@@ -40,7 +42,9 @@ const CHROME_PATH = process.env.CHROME_PATH || "/tmp/cft/chrome/linux-155.0.8059
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+let assertions = 0;
 function assert(cond, msg) {
+  assertions += 1;
   if (!cond) throw new Error("ASSERT: " + msg);
 }
 
@@ -142,7 +146,7 @@ async function main() {
     "-days", "2", "-nodes",
     "-subj", "/CN=x.com",
     "-addext", "subjectAltName=DNS:x.com,DNS:www.x.com,DNS:twitter.com,DNS:www.twitter.com",
-  ], { stdio: "ignore" });
+  ], { stdio: "ignore", timeout: 10000 });
 
   const server = createServer({ key: readFileSync(key), cert: readFileSync(cert) }, serveFixture);
   let port;
@@ -154,6 +158,7 @@ async function main() {
 
   const profile = mkdtempSync(join(tmpdir(), "xsched-profile-"));
   const requests = [];
+  const denied = [];
   const consoleLogs = [];
   let browser;
   let failed = null;
@@ -174,7 +179,9 @@ async function main() {
         "--disable-background-timer-throttling",
         "--disable-backgrounding-occluded-windows",
         "--disable-renderer-backgrounding",
-        `--host-resolver-rules=MAP x.com:443 127.0.0.1:${port}, MAP www.x.com:443 127.0.0.1:${port}, MAP twitter.com:443 127.0.0.1:${port}, EXCLUDE localhost`,
+        `--host-resolver-rules=MAP x.com:443 127.0.0.1:${port}, MAP www.x.com:443 127.0.0.1:${port}, MAP twitter.com:443 127.0.0.1:${port}, MAP www.twitter.com:443 127.0.0.1:${port}, MAP * ~NOTFOUND, EXCLUDE localhost`,
+        "--no-proxy-server",
+        "--disable-background-networking",
         "--window-size=1100,820",
         `--disable-extensions-except=${PROBE}`,
         `--load-extension=${PROBE}`,
@@ -182,12 +189,25 @@ async function main() {
     });
 
     const page = await browser.newPage();
-    page.on("request", (req) => requests.push(req.url()));
+    const navigations = new Set();
+    const network = await page.createCDPSession();
+    const contexts = new Map();
+    network.on("Runtime.executionContextCreated", ({ context }) => contexts.set(context.id, context));
+    network.on("Runtime.executionContextsCleared", () => contexts.clear());
+    network.on("Runtime.executionContextDestroyed", ({ executionContextId }) => contexts.delete(executionContextId));
+    await network.send("Runtime.enable");
+    await network.send("Network.enable");
+    network.on("Network.requestWillBeSent", (event) => requests.push(event));
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      const allowed = allowedRequest({ url: req.url(), type: req.resourceType(), navigation: req.isNavigationRequest() && req.frame() === page.mainFrame() }, navigations);
+      if (!allowed) denied.push(`${req.resourceType()} ${req.url()}`);
+      void (allowed ? req.continue() : req.abort()).catch((error) => consoleLogs.push(error.message));
+    });
     page.on("console", (msg) => consoleLogs.push(msg.text()));
     page.on("pageerror", (err) => consoleLogs.push("pageerror " + err.message));
     await page.setViewport({ width: 1100, height: 820 });
 
-    const navigations = new Set();
     async function open(fixture, subpath = "/compose/post/unsent/scheduled") {
       const url = `https://x.com${subpath}?fixture=${encodeURIComponent(fixture)}`;
       navigations.add(url);
@@ -222,7 +242,7 @@ async function main() {
         assert(state.countText === "讀到 0 則", `${testCase.fixture}: count text "${state.countText}"`);
       }
       if (testCase.layer) {
-        assert(state.diag.includes(`layer=${testCase.layer}`), `${testCase.fixture}: diag should say layer=${testCase.layer}: ${state.diag}`);
+        assert(state.diag.includes("layer=2"), `${testCase.fixture}: diag should say layer=2 (a11y): ${state.diag}`);
       }
       // Diagnostics must never carry content.
       for (const leak of ["Local", "本機", "ローカル", "로컬", "Will send", "http", "x.com"]) {
@@ -231,6 +251,35 @@ async function main() {
       await page.screenshot({ path: join(DOCS, testCase.file) });
       console.log(`  ✓ ${testCase.fixture}: ${testCase.count} row(s)`);
     }
+
+    // Instrument only the fixture's extension isolated world to observe clipboard
+    // calls. No clipboard permission, page-world injection, or real account is used.
+    await open("en");
+    await until(async () => (await probeState(page)).count === 2, "clipboard: initial rows");
+    let extensionContext;
+    for (const context of contexts.values()) {
+      if (context.auxData?.isDefault) continue;
+      const result = await network.send("Runtime.evaluate", { contextId: context.id, expression: "typeof globalThis.XSCHED_READER !== 'undefined'", returnByValue: true });
+      if (result.result.value) extensionContext = context.id;
+    }
+    assert(extensionContext, "reader must run in an isolated extension context");
+    await network.send("Runtime.evaluate", { contextId: extensionContext, expression: `
+      globalThis.__fixtureCopies = [];
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+        writeText(text) { globalThis.__fixtureCopies.push(text); return Promise.resolve(); }
+      }});
+    ` });
+    await sleep(200);
+    const copyCount = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies.length", returnByValue: true });
+    assert(copyCount.result.value === 0, "no clipboard call before user click");
+    await page.evaluate(() => { document.getElementById("xsched-probe-root").dataset.xschedDiag = "@fake_account https://fake.example/ private body 9:00 AM"; });
+    const copyButton = await page.evaluateHandle(() => document.getElementById("xsched-probe-root").shadowRoot.querySelector('[data-xsched-copy="1"]'));
+    await copyButton.asElement().click();
+    await copyButton.dispose();
+    const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
+    assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
+    assert(/^xsched-gate0 v0\.0\.1 (?:\w+=\d+ ?)+$/.test(copied.result.value[0]), "copied diagnostic contains numeric fields only even if DOM dataset is tampered");
+    console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── virtualized list: the TEST scrolls, the probe only accumulates ──────────
     await open("virtual");
@@ -265,32 +314,112 @@ async function main() {
     await page.screenshot({ path: join(DOCS, "gate0-virtual-after.png") });
     console.log("  ✓ virtual: 3 → 6 rows after a test-driven scroll");
 
+    await page.evaluate(() => {
+      // Keep the reader's dialog scope, but remove the fixture's scroll listener:
+      // shrinking scrollHeight otherwise triggers its deliberate window-0 rebuild.
+      const list = document.getElementById("sched-list");
+      list.replaceWith(list.cloneNode(true));
+      const track = document.getElementById("sched-track");
+      window.fixtureVirtualRows = [...track.children].map((row) => row.cloneNode(true));
+      track.replaceChildren();
+    });
+    await until(async () => (await probeState(page)).count === 0, "virtual: same-scope empty list clears accumulation");
+    await page.evaluate(() => document.getElementById("sched-track").append(...window.fixtureVirtualRows));
+    await until(async () => (await probeState(page)).count === 3, "virtual: repopulated scope starts from 3");
+    console.log("  ✓ virtual empty reset: 6 → 0 → 3 in the same scope");
+
+    // Same route, entirely new list scope: previously seen virtual rows must clear.
+    await page.evaluate(() => {
+      const dialog = document.querySelector('[role="dialog"]');
+      const replacement = dialog.cloneNode(true);
+      replacement.querySelector("#sched-track").replaceChildren();
+      dialog.replaceWith(replacement);
+    });
+    await until(async () => (await probeState(page)).count === 0, "virtual: new empty scope clears old rows");
+    console.log("  ✓ virtual reset: 3 → 0 on list replacement");
+
+    // Attribute-only tab switch and SPA route switch (no patched page history).
+    await open("en");
+    await until(async () => (await probeState(page)).count === 2, "SPA: initial Scheduled");
+    await page.evaluate(() => document.querySelector('[role="tab"][aria-selected="true"]').setAttribute("aria-selected", "false"));
+    await until(async () => !(await probeState(page)).present, "SPA: deselected tab hides overlay");
+    await page.evaluate(() => document.querySelectorAll('[role="tab"]')[1].setAttribute("aria-selected", "true"));
+    await until(async () => (await probeState(page)).count === 2, "SPA: selected tab restores overlay");
+    await page.evaluate(() => history.replaceState({}, "", "/home"));
+    await until(async () => !(await probeState(page)).present, "SPA: route poll hides overlay on home");
+    await page.evaluate(() => history.replaceState({}, "", "/compose/post/unsent/scheduled"));
+    await until(async () => (await probeState(page)).count === 2, "SPA: route poll restores overlay");
+    console.log("  ✓ SPA: attribute-only tabs and route changes");
+
+    // Stable DOM must keep the same button (no observer/render loop). Continuous
+    // changes faster than SETTLE_MS must still produce an updated count.
+    const stable = await page.evaluate(async () => {
+      const button = document.getElementById("xsched-probe-root").shadowRoot.querySelector("button");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return button === document.getElementById("xsched-probe-root").shadowRoot.querySelector("button");
+    });
+    assert(stable, "stable DOM should not continuously replace overlay controls");
+    await page.evaluate(() => {
+      const list = document.getElementById("sched-list");
+      const row = list.firstElementChild.cloneNode(true);
+      row.querySelector('[data-testid="tweetText"]').textContent = "Mutation burst fake row";
+      list.append(row);
+      window.fixtureBurst = setInterval(() => document.querySelector(".banner").textContent = String(Date.now()), 10);
+    });
+    try {
+      await until(async () => (await probeState(page)).count === 3, "continuous mutations cannot starve reader", 2000);
+    } finally { await page.evaluate(() => clearInterval(window.fixtureBurst)); }
+    console.log("  ✓ mutations: stable controls and bounded throttle");
+
+    // A composer chip inside a Scheduled dialog must not turn into a third row.
+    await open("en");
+    await until(async () => (await probeState(page)).count === 2, "chip: initial rows");
+    await page.evaluate(() => {
+      const form = document.createElement("form");
+      const chip = document.createElement("div");
+      chip.setAttribute("role", "button");
+      chip.textContent = "Will send on Oct 20, 2026 at 1:00 PM";
+      form.append(chip);
+      document.querySelector('[role="dialog"]').append(form);
+    });
+    await sleep(200);
+    assert((await probeState(page)).count === 2, "composer chip must not count as list row");
+    console.log("  ✓ composer chip: excluded from Scheduled rows");
+
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
+    await sleep(500);
+    assert(!(await probeState(page)).present, "pagehide stops timers/observer and removes overlay");
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+    await until(async () => (await probeState(page)).count === 2, "bfcache restore restarts probe");
+    assert((await probeState(page)).count === 2, "bfcache restore reconstructs current rows without stale state");
+    console.log("  ✓ lifecycle: pagehide cleanup and bfcache restart");
+
     // ── home timeline: probe must hide and read nothing ─────────────────────────
     await open("home", "/home");
     await sleep(900);
     const homeState = await probeState(page);
-    assert(!homeState.present || homeState.count === 0, `home: overlay should be hidden or 0, got ${JSON.stringify(homeState)}`);
+    assert(!homeState.present, `home: overlay should be hidden, got ${JSON.stringify(homeState)}`);
     console.log("  ✓ home: 0 rows (overlay hidden)");
 
-    // ── network discipline ─────────────────────────────────────────────────────
-    const external = requests.filter((u) => {
-      if (u.startsWith("chrome-extension://") || u.startsWith("data:") || u.startsWith("blob:")) return false;
-      return !(u.startsWith("https://x.com/") || u.startsWith("https://www.x.com/") || u.startsWith("https://twitter.com/"));
-    });
-    assert(external.length === 0, `non-x.com request(s): ${external.join(", ")}`);
+    for (const subpath of ["/home", "/compose/post/unsent/drafts", "/compose/post/schedule"]) {
+      await open("en", subpath); // intentionally contains a selected Scheduled tab
+      await sleep(500);
+      assert(!(await probeState(page)).present, `${subpath}: selected tab must not override route`);
+    }
+    console.log("  ✓ non-Scheduled: home, Drafts, picker with adversarial selected tabs");
 
-    const xcom = requests.filter((u) => u.startsWith("https://x.com/") || u.startsWith("https://twitter.com/"));
-    for (const u of xcom) {
-      const { pathname } = new URL(u);
-      const allowed = navigations.has(u) || pathname === "/favicon.ico";
-      assert(allowed, `unexpected x.com request (extension should not fetch): ${u}`);
+    // ── network discipline ─────────────────────────────────────────────────────
+    assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);
+    for (const event of requests) {
+      assert(allowedRequest({ url: event.request.url, type: event.type, navigation: event.type === "Document", extensionInitiator: hasExtensionInitiator(event.initiator) }, navigations), `unexpected request or extension initiator: ${event.type} ${event.request.url}`);
     }
     // The overlay only exists if the content script ran, which only happens if the
     // extension was loaded from probe/.
     assert(sawOverlay, "extension content script never ran (overlay never appeared)");
-    console.log(`  ✓ network: ${requests.length} request(s), all fixture documents / extension files`);
+    console.log(`  ✓ network: ${requests.length} request(s), only local fixture documents / browser favicon; 0 extension requests`);
 
-    console.log("\ne2e: OK");
+    assert(!consoleLogs.some((entry) => entry.startsWith("pageerror ")), "no uncaught page/content-script errors");
+    console.log(`\ne2e: OK — ${assertions} assertions`);
   } catch (err) {
     failed = err;
     if (consoleLogs.length) console.error("page logs:\n  " + consoleLogs.slice(-20).join("\n  "));

@@ -47,7 +47,7 @@ const MONTH_INDEX = {
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
 };
 
-const MONTH = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\.?";
+const MONTH = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?";
 // Optional weekday prefix, e.g. "Fri, " or "Friday ". Non-capturing on purpose so the
 // component group numbers stay stable across every pattern below.
 const WEEKDAY_PREFIX = "(?:(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*\\.?,?\\s*)?";
@@ -158,10 +158,10 @@ function previewText(value, limit = 20) {
 
 function classifyPath(pathname) {
   const path = pathname || "";
-  if (/\/compose\/(?:post|tweet)\/schedule(?:\/|$)/.test(path)) return "picker";
-  if (/\/compose\/(?:post|tweet)\/unsent\/scheduled(?:\/|$)/.test(path)) return "scheduled";
-  if (/\/compose\/(?:post|tweet)\/unsent\/drafts?(?:\/|$)/.test(path)) return "drafts";
-  if (/\/compose\/(?:post|tweet)\/unsent(?:\/|$)/.test(path)) return "unsent";
+  if (/^\/compose\/(?:post|tweet)\/schedule(?:\/|$)/.test(path)) return "picker";
+  if (/^\/compose\/(?:post|tweet)\/unsent\/scheduled(?:\/|$)/.test(path)) return "scheduled";
+  if (/^\/compose\/(?:post|tweet)\/unsent\/drafts?(?:\/|$)/.test(path)) return "drafts";
+  if (/^\/compose\/(?:post|tweet)\/unsent(?:\/|$)/.test(path)) return "unsent";
   return "other";
 }
 
@@ -187,19 +187,20 @@ function toDate(parts) {
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   if (minute < 0 || minute > 59) return null;
   const mer = String(parts.meridiem || "").replace(/[.\s]/g, "").toLowerCase();
+  if (mer && (hour < 1 || hour > 12)) return null;
   if (parts.meridiemStyle === "en") {
     if (mer === "am") hour = hour % 12;
     else if (mer === "pm") hour = hour < 12 ? hour + 12 : hour;
   } else {
     // 午前 / 上午 / 오전 → before noon; 午後 / 下午 / 오후 → after noon.
     if (/^(午前|上午|오전|凌晨|清晨)$/.test(mer)) hour = hour % 12;
-    else if (/^(午後|下午|晚上|오후)$/.test(mer)) hour = hour < 12 ? hour + 12 : hour;
+    else if (/^(午後|下午|晚上|中午|오후)$/.test(mer)) hour = hour < 12 ? hour + 12 : hour;
   }
   if (hour < 0 || hour > 23) return null;
   const date = new Date(year, month - 1, day, hour, minute, 0, 0);
   if (Number.isNaN(date.getTime())) return null;
   // Reject silently-rolled dates such as Feb 30.
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day || date.getHours() !== hour || date.getMinutes() !== minute) return null;
   return date;
 }
 
@@ -216,7 +217,8 @@ function parseSchedule(raw, { allowLoose = true } = {}) {
     const offset = m[0].indexOf(m[1]);
     const start = m.index + Math.max(0, offset);
     const body = normalize(text.slice(start + m[1].length));
-    const at = toDate(pattern.parts(m));
+    const suffix = text.slice(m.index + m[0].length);
+    const at = pattern.lang === "en" && /^[\d:]/.test(suffix) ? null : toDate(pattern.parts(m));
     return { lang: pattern.lang, tier: "strict", time, body, at, unparsed: at === null };
   }
   if (!allowLoose) return null;
@@ -225,7 +227,7 @@ function parseSchedule(raw, { allowLoose = true } = {}) {
     if (!m) continue;
     const time = normalize(m[1]);
     const body = normalize(text.slice(time.length));
-    const at = toDate(pattern.parts(m));
+    const at = /^[\d:]/.test(text.slice(m[0].length)) ? null : toDate(pattern.parts(m));
     return { lang: pattern.lang, tier: "loose", time, body, at, unparsed: at === null };
   }
   return null;
@@ -236,7 +238,7 @@ function toItem(parsed) {
   return {
     time: parsed.time,
     preview,
-    key: `${parsed.time}\u0000${preview}`,
+    key: `${parsed.time}\u0000${normalize(parsed.body)}`,
     lang: parsed.lang,
     tier: parsed.tier,
     at: parsed.at,
@@ -251,51 +253,82 @@ function dedup(items) {
 }
 
 function outermost(elements) {
-  return elements.filter((el) => !elements.some((other) => other !== el && other.contains(el)));
+  const candidates = new Set(elements);
+  return [...candidates].filter((el) => {
+    for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+      if (candidates.has(parent)) return false;
+    }
+    return true;
+  });
+}
+
+function deepest(elements) {
+  const ancestors = new Set();
+  for (const el of elements) {
+    for (let parent = el.parentElement; parent; parent = parent.parentElement) ancestors.add(parent);
+  }
+  return elements.filter((el) => !ancestors.has(el));
+}
+
+// Composer chips and editor bodies are never list rows, even inside the unsent dialog.
+const COMPOSER = 'form, [contenteditable="true"], [data-testid="tweetTextarea_0"], [data-testid="scheduledDateField"], [data-testid="scheduledTimeField"], [data-testid="scheduleConfirm"], [data-testid="scheduleOption"], [data-testid="scheduleChip"]';
+function readable(el, scope) {
+  for (let node = el; node; node = node.parentElement) {
+    if (node.id === "xsched-probe-root" || node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true" || node.matches(COMPOSER)) return false;
+    if (node !== scope && node.getAttribute("role") === "dialog") return false;
+    if (node === scope) break;
+  }
+  return true;
 }
 
 function parseElement(el, allowLoose) {
-  const aria = el.getAttribute ? el.getAttribute("aria-label") : "";
+  const named = el.querySelector && el.querySelector('[role="button"][aria-label], [role="listitem"][aria-label]');
+  const aria = (el.getAttribute && el.getAttribute("aria-label")) || (named && named.getAttribute("aria-label")) || "";
   const fromAria = aria ? parseSchedule(aria, { allowLoose }) : null;
   const fromText = parseSchedule(el.textContent, { allowLoose });
   let parsed = fromAria || fromText;
   if (!parsed) return null;
-  if (!parsed.body) {
+  {
     const tweet = el.querySelector && el.querySelector('[data-testid="tweetText"]');
     const body = normalize(tweet ? tweet.textContent : "");
-    if (body && !parseSchedule(body, { allowLoose: false })) parsed = { ...parsed, body };
+    if (body) parsed = { ...parsed, body };
   }
   if (!parsed.body && parsed.tier === "loose") {
     const ariaBody = normalize(fromAria ? el.textContent : aria);
-    if (ariaBody && ariaBody !== parsed.time) parsed = { ...parsed, body: normalize(ariaBody.slice(parsed.time.length)) };
+    const other = parseSchedule(ariaBody, { allowLoose });
+    const body = other ? other.body : ariaBody;
+    if (body) parsed = { ...parsed, body };
   }
+  // A standalone time-only button is a composer chip, not sufficient list evidence.
+  if (!parsed.body && !el.closest('[data-testid="cellInnerDiv"], [role="listitem"]')) return null;
   return toItem(parsed);
 }
 
 function textFallback(scope) {
-  const all = [...scope.querySelectorAll("*")].filter((el) => parseSchedule(el.textContent, { allowLoose: true }));
-  const deepest = all.filter((el) => !all.some((other) => other !== el && el.contains(other)));
+  const all = [...scope.querySelectorAll("*")].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER) && parseSchedule(el.textContent, { allowLoose: false }));
+  const leaves = deepest(all);
   const items = [];
-  for (const el of deepest) {
+  for (const el of leaves) {
     let hit = parseSchedule(el.textContent, { allowLoose: true });
     const parent = el.parentElement;
-    if (hit && !hit.body && parent && scope.contains(parent) && parent !== scope) {
+    if (hit && !hit.body && parent && scope.contains(parent) && parent !== scope && readable(parent, scope) && !parent.querySelector(COMPOSER)) {
       const parentHit = parseSchedule(parent.textContent, { allowLoose: true });
       if (parentHit && parentHit.body) hit = parentHit;
     }
-    if (hit) items.push(toItem(hit));
+    if (hit && hit.body) items.push(toItem(hit));
   }
   return dedup(items);
 }
 
 function countDeep(scope, re) {
-  const all = [...scope.querySelectorAll("*")].filter((el) => re.test(normalize(el.textContent)));
-  return all.filter((el) => !all.some((other) => other !== el && el.contains(other))).length;
+  const all = [...scope.querySelectorAll("*")].filter((el) => readable(el, scope) && re.test(normalize(el.textContent)));
+  return deepest(all).length;
 }
 
 function findScheduledTab(doc) {
   const tabs = [...doc.querySelectorAll('[role="tab"]')];
-  return tabs.find((el) => isScheduledLabel(labelOf(el))) || null;
+  const scheduled = tabs.filter((el) => readable(el, el.closest('[role="dialog"]') || doc.body) && isScheduledLabel(labelOf(el)));
+  return scheduled.find(tabIsSelected) || scheduled[0] || null;
 }
 
 function tabIsSelected(tab) {
@@ -311,7 +344,7 @@ function findScope(doc, tab) {
       if (panel) return { el: panel, name: "panel" };
     }
   }
-  const dialog = doc.querySelector('[role="dialog"]');
+  const dialog = (tab && tab.closest('[role="dialog"]')) || doc.querySelector('[role="dialog"]');
   if (dialog) return { el: dialog, name: "dialog" };
   const column = doc.querySelector('[data-testid="primaryColumn"]');
   if (column) return { el: column, name: "column" };
@@ -325,7 +358,7 @@ function computedOverflow(doc, el) {
   if (!view || typeof view.getComputedStyle !== "function") return "";
   try {
     const style = view.getComputedStyle(el);
-    return `${style.overflow || ""} ${style.overflowY || ""}`;
+    return `overflow:${style.overflow || ""};overflow-y:${style.overflowY || ""}`;
   } catch {
     return "";
   }
@@ -389,27 +422,28 @@ function readSnapshot(doc, { pathname = "" } = {}) {
   const selected = tabIsSelected(tab);
   let onScheduled = 0;
   if (kind !== "picker" && kind !== "drafts") {
-    if (kind === "scheduled" || selected) onScheduled = 1;
+    if ((kind === "scheduled" && (!tab || selected)) || (kind === "unsent" && selected)) onScheduled = 1;
   }
   if (!onScheduled) return blank(0);
 
   const found = findScope(doc, tab);
   if (!found) return { ...blank(1), tab: tab ? 1 : 0 };
   const scope = found.el;
+  const candidates = (selector) => [...scope.querySelectorAll(selector)].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER));
 
-  const cells = outermost([...scope.querySelectorAll('[data-testid="cellInnerDiv"]')]);
-  const buttons = outermost([...scope.querySelectorAll('[role="button"]')]);
-  const listitems = outermost([...scope.querySelectorAll('[role="listitem"]')]);
-  const links = outermost([...scope.querySelectorAll('[role="link"]')]);
+  const cells = outermost(candidates('[data-testid="cellInnerDiv"]'));
+  const buttons = outermost(candidates('[role="button"]'));
+  const listitems = outermost(candidates('[role="listitem"]'));
+  const links = outermost(candidates('[role="link"]'));
 
   const fromCells = dedup(cells.map((el) => parseElement(el, true)).filter(Boolean));
-  const fromA11y = dedup([...listitems, ...links, ...buttons].map((el) => parseElement(el, true)).filter(Boolean));
+  const fromA11y = dedup(outermost([...listitems, ...links, ...buttons]).map((el) => parseElement(el, true)).filter(Boolean));
   const fromText = fromCells.length === 0 && fromA11y.length === 0 ? textFallback(scope) : [];
 
   let items = [];
   let layer = "none";
   if (fromCells.length) {
-    items = fromCells;
+    items = dedup([...fromCells, ...fromA11y]);
     layer = fromCells.some((item) => item.tier === "strict") ? "cell" : "loose";
   } else if (fromA11y.length) {
     items = fromA11y;
@@ -430,6 +464,7 @@ function readSnapshot(doc, { pathname = "" } = {}) {
   const layout = detectLayout(scope, doc);
   return {
     onScheduled: 1,
+    scopeElement: scope,
     tab: tab ? 1 : 0,
     scope: found.name,
     cell: cells.length,
@@ -470,11 +505,16 @@ const DIAG_ORDER = [
 // Diagnostic string: counters / booleans / version only.
 // Never a tweet body, account, URL, or schedule-time string.
 function buildDiagnostic(report) {
+  const scopeCode = { none: 0, panel: 1, dialog: 2, column: 3, region: 4, body: 5 };
+  const layerCode = { none: 0, cell: 1, a11y: 2, text: 3, loose: 4 };
   const parts = DIAG_ORDER.map((key) => {
-    if (key === "scrolled") return `scrolled=${report.scrolled ? 1 : 0}`;
-    if (key === "scope" || key === "layer") return `${key}=${report[key] || "none"}`;
+    if (key === "scope" || key === "layer") {
+      const codes = key === "scope" ? scopeCode : layerCode;
+      const value = report[key];
+      return `${key}=${typeof value === "string" && Object.hasOwn(codes, value) ? codes[value] : 0}`;
+    }
     const value = report[key];
-    return `${key}=${value == null ? 0 : value}`;
+    return `${key}=${typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0}`;
   });
   return `xsched-gate0 v${PROBE_VERSION} ${parts.join(" ")}`;
 }

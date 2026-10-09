@@ -9,6 +9,8 @@
 
 ## 已完成（本次 CodeWhale session，已 commit 並 push 到 `gate0/scheduled-read`）
 
+以下為 CodeWhale 首版的歷史紀錄；複審後的行為、診斷代碼與測試數字以 `notes/GATE0.md` 為準。
+
 1. **DOM 依據表** → `notes/GATE0.md` §1：每條附來源 URL、標「已親讀／未親讀／推論」、真頁一律「未驗證」。
 2. **`probe/` 最小 MV3 唯讀探針**（name `xsched gate0 probe`，v0.0.1）：
    - `reader.js`：純讀取邏輯，classic 共享腳本（IIFE，只掛 `globalThis.XSCHED_READER`；因 Chrome content script 不支援 ES module import，已實測）。多層選擇器 L1 cell → L2 a11y → L3 文字掃描，scope 備援（aria-controls → dialog → primaryColumn → region → body）；五語系時間解析，解析不出標 `unparsed` 不猜；虛擬化累加去重。
@@ -22,16 +24,16 @@
 8. **`notes/GATE0.md`**：依據表、讀法、改版風險、結論（**有條件可行**）、老闆實測 ≤5 步、讀不出來的替代方案、已知限制。
 9. `package.json`（private, type module；devDeps 只有 `puppeteer-core`＋`linkedom`，未下載 Chrome）＋ `.gitignore`。`AGENTS.md` 補上 `npm test`／`npm run verify`／`npm run e2e` 說明。
 
-## 未完成（交給複審／商務拓展）
+## 複審後現況（交給产品开发／商務拓展）
 
-1. **獨立 session／模型複審**（AGENTS.md 規矩：不同 session／模型；Opus 5.5 有額度就用，沒有就 Grok 4.7 high 非 Fast）。PR 說明要寫明是誰審的。
-2. **開 PR**（`gate0/scheduled-read` → `main`）：由产品开发開；PR 說明附 `notes/GATE0.md` 的 1–7 與截圖。**本次未開 PR、未 merge、未改 main。**
+1. **獨立複審已完成**：依老闆指定，由 Codex 在本次獨立 session（與 CodeWhale 寫碼 session 不同）讀完整差異、直接修正守門／日期／scope／去重／浮層節流與清理／e2e 網路證據／文件。最新結果以 `notes/GATE0.md` §5 為準，PR 說明請補上複審身分與結果。
+2. **PR 已開**：[PR #2](https://github.com/punkcanyang/xsched/pull/2)，`gate0/scheduled-read` → `main`（使用者提供的 PR 資訊）。複審只在本機 commit，**未 push、未 merge、未改 main 或 PR 說明**；由产品开发推送複審 commits 並更新 PR 的 1–7。
 3. **老闆真帳號實測**（在他的 Chrome，`AGENTS.md` 規矩 7）：照 `notes/GATE0.md` §6 的 ≤5 步；回報「複製診斷」與語系。**在真頁驗證前，結論只能是「有條件可行」。**
 
 ## 下一步
 
-1. 找複審（不同模型／session）跑 `npm test && npm run verify && npm run e2e`。
-2. 開 PR，請老闆實測並貼回「複製診斷」。
+1. 产品开发推送本機複審 commits 到 PR #2，PR 說明更新 reviewer、最新測試數字／截图與已知限制；交商務拓展。
+2. 請老闆照 `notes/GATE0.md` 的五步在自己的 Chrome 實測並貼回「複製診斷」。
 3. 視實測結果修選擇器／標籤／時間格式；真頁通了才進 1.0。
 
 ## 硬規矩（違反不能合）

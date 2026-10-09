@@ -7,7 +7,7 @@
 //
 // Classic script: reader.js is injected first and exposes `globalThis.XSCHED_READER`.
 
-const { PROBE_VERSION, buildDiagnostic, classifyPath, mergeItems, readSnapshot } = globalThis.XSCHED_READER;
+const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot } = globalThis.XSCHED_READER;
 
 const HOST_ID = "xsched-probe-root";
 const POLL_MS = 400;
@@ -55,6 +55,10 @@ let session = "";
 let collapsed = false;
 let pollId = 0;
 let lastLocation = "";
+let scopeElement = null;
+let observer = null;
+let lastRender = "";
+let copyTimer = 0;
 
 function ensureHost() {
   if (host && host.isConnected) return host;
@@ -79,14 +83,18 @@ function hide() {
   if (!host) return;
   host.remove();
   host = null;
+  lastRender = "";
 }
 
 function copyDiagnostic(text, button) {
   const done = () => {
+    if (!button.isConnected) return;
     button.textContent = "已複製";
-    window.setTimeout(() => { button.textContent = "複製診斷"; }, 1500);
+    window.clearTimeout(copyTimer);
+    copyTimer = window.setTimeout(() => { button.textContent = "複製診斷"; }, 1500);
   };
   const fallback = () => {
+    if (!button.isConnected) return;
     const area = document.createElement("textarea");
     area.value = text;
     area.setAttribute("readonly", "readonly");
@@ -94,9 +102,11 @@ function copyDiagnostic(text, button) {
     if (!shadow) return;
     shadow.append(area);
     area.select();
-    try { document.execCommand("copy"); } catch { /* ignore */ }
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch { /* ignore */ }
     area.remove();
-    done();
+    if (copied) done();
+    else button.textContent = "複製失敗";
   };
   const clipboard = navigator.clipboard;
   if (clipboard && typeof clipboard.writeText === "function") {
@@ -114,11 +124,6 @@ function line(text, className) {
 }
 
 function render(report, items) {
-  const node = ensureHost();
-  const shadow = node.shadowRoot;
-  const panel = shadow.querySelector("section");
-  while (panel.firstChild) panel.removeChild(panel.firstChild);
-
   const diag = buildDiagnostic({
     ...report,
     mounted: report.mounted,
@@ -127,6 +132,13 @@ function render(report, items) {
     empty: report.onScheduled && items.length === 0 && report.timeFail === 0 ? 1 : 0,
     scrolled,
   });
+  const signature = JSON.stringify([diag, collapsed, items]);
+  if (host && host.isConnected && signature === lastRender) return;
+  lastRender = signature;
+  const node = ensureHost();
+  const shadow = node.shadowRoot;
+  const panel = shadow.querySelector("section");
+  while (panel.firstChild) panel.removeChild(panel.firstChild);
   node.dataset.xschedOn = "1";
   node.dataset.xschedCount = String(items.length);
   node.dataset.xschedScrolled = scrolled ? "1" : "0";
@@ -155,9 +167,7 @@ function render(report, items) {
 
   if (collapsed) return;
 
-  if (report.needsScroll) {
-    panel.append(line("虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", "hint"));
-  }
+  panel.append(line("虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", "hint"));
   if (items.length === 0) {
     panel.append(line(report.timeFail > 0 ? "看到疑似排程列，但時間格式解析不出來（格式可能改版）。" : "這一頁目前沒有解析到排程時間。", "hint"));
   }
@@ -178,7 +188,7 @@ function render(report, items) {
   copy.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    copyDiagnostic(node.dataset.xschedDiag || "", copy);
+    copyDiagnostic(diag, copy);
   });
   controls.append(copy);
   panel.append(controls);
@@ -189,9 +199,10 @@ function render(report, items) {
 function tick() {
   const pathname = location.pathname || "";
   const snap = readSnapshot(document, { pathname });
-  const next = `${pathname}|${snap.onScheduled}`;
-  if (next !== session) {
+  const next = `${pathname}${location.search || ""}|${snap.onScheduled}`;
+  if (next !== session || scopeElement !== snap.scopeElement || (snap.empty && snap.items.length === 0)) {
     session = next;
+    scopeElement = snap.scopeElement || null;
     accumulated = [];
     scrolled = 0;
   }
@@ -205,13 +216,15 @@ function tick() {
 }
 
 function schedule() {
-  window.clearTimeout(timer);
-  timer = window.setTimeout(tick, SETTLE_MS);
+  // A bounded throttle: continuous mutations cannot postpone reading forever.
+  if (timer) return;
+  timer = window.setTimeout(() => { timer = 0; tick(); }, SETTLE_MS);
 }
 
 function onScroll(event) {
   const target = event.target;
   if (host && target && typeof target === "object" && (target === host || host.contains(target) || target === host.shadowRoot)) return;
+  if (!scopeElement || (target !== document && target !== document.documentElement && target !== document.body && !scopeElement.contains(target) && !target.contains?.(scopeElement))) return;
   scrolled = 1;
   schedule();
 }
@@ -226,10 +239,21 @@ function pollLocation() {
 
 function start() {
   document.addEventListener("scroll", onScroll, true);
-  new MutationObserver(() => schedule()).observe(document.documentElement, {
+  observer = new MutationObserver((records) => {
+    // Appending/removing our host is visible to the document observer; shadow DOM
+    // updates are not. Ignore our own host mutation to avoid a read/render loop.
+    if (records.some((record) => {
+      if (record.target === host || host?.contains(record.target)) return false;
+      const changed = [...record.addedNodes, ...record.removedNodes];
+      return changed.length === 0 || changed.some((node) => node.id !== HOST_ID);
+    })) schedule();
+  });
+  observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
     characterData: true,
+    attributes: true,
+    attributeFilter: ["aria-selected", "aria-current", "aria-controls", "aria-label", "hidden", "aria-hidden", "data-testid"],
   });
   window.addEventListener("popstate", schedule);
   pollId = window.setInterval(pollLocation, POLL_MS);
@@ -237,10 +261,20 @@ function start() {
   schedule();
 }
 
-// A tiny test hook: lets the unit test exercise the route helper without a browser.
-function isScheduledPath(pathname) {
-  const kind = classifyPath(pathname);
-  return kind === "scheduled";
+function stop() {
+  observer?.disconnect();
+  observer = null;
+  window.clearInterval(pollId);
+  window.clearTimeout(timer);
+  window.clearTimeout(copyTimer);
+  timer = 0;
+  document.removeEventListener("scroll", onScroll, true);
+  window.removeEventListener("popstate", schedule);
+  accumulated = [];
+  scopeElement = null;
+  hide();
 }
 
+window.addEventListener("pagehide", stop);
+window.addEventListener("pageshow", (event) => { if (event.persisted) start(); });
 if (typeof document !== "undefined" && document.documentElement) start();
