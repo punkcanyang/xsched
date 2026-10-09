@@ -156,3 +156,9 @@ npm run e2e
 - PR：https://github.com/punkcanyang/xsched/pull/5
 - 複審：Codex gpt-6.1-sol high，session `01a12013-6780-77c1-9466-bb1e9f78097f`（resume），log `/workspace/bd-punkcan/logs/codex-xsched-gate0.2-review.log`。通過即 `merge --no-ff` 到 main 並 push。
 - 結論：則數依骨架可讀、時間格式待老闆診斷確認。
+
+## 複審中斷（2026-10-10 00:33 UTC+8）
+
+- 複審 session `01a12013` 跑到一半撞 Codex 用量上限（訊息：2:10 AM 後再試），**沒有 VERDICT**。它在工作樹的部分修正已外部 commit 為 `1f784f7`（點擊需 isTrusted 才導覽、`fmt=` 改獨立一行、洩漏自測 25→32）。
+- `1f784f7` 上：`npm test` 105/105、`npm run verify` OK；`npm run e2e` **FAILED**：selectors-broken 情境的 samples 斷言因 `fmt=` 換行而不符（複審改到一半）。
+- 接回：02:10 後 `codex exec resume 01a12013-6780-77c1-9466-bb1e9f78097f "..." </dev/null`，請它修完 e2e 斷言並給 VERDICT；未 APPROVE 不合併。
