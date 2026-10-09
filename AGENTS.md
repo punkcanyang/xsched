@@ -29,8 +29,9 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 5. **權限最小**：content script 只匹配 `x.com`／`twitter.com`；資料只存本機。要加任何權限或 host 一律停下，老闆批准才做。
 6. 診斷只放命中數，**不含推文內容**、帳號、網址。
 7. **不在共享機器上登入老闆的 X**（不碰 @VibeEyeX，也不碰老闆個人號）。真帳號測試一律由老闆在自己的 Chrome 做；開發用本機模擬頁／fixture。
-8. 花費 $0；任何要花錢的（含 Chrome Web Store US$5）先問。repo 保持 private。
+8. 花費 $0；任何要花錢的（含 Chrome Web Store US$5）先問。
 9. 不推 secret；不改別人的分支和檔案（`notes/` 是产品开发的）。
+10. **公開 repo**（老闆 2026-10-10 拍板維持公開）：絕不提交 secret、token、真實對話內容、帳號 handle 或老闆的任何真實資料；截圖一律用範例資料。
 
 ## 怎麼工作
 
