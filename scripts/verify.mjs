@@ -18,6 +18,13 @@ import { DOMParser } from "linkedom";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROBE = join(ROOT, "probe");
 const DOCS = join(ROOT, "docs");
+
+// Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
+// on a hostile synthetic page, that no page content can reach the skeleton or the samples.
+await import(join(PROBE, "reader.js"));
+await import(join(PROBE, "skeleton.js"));
+const READER = globalThis.XSCHED_READER;
+const SKELETON = globalThis.XSCHED_SKELETON;
 const ICON_SIZES = new Set(["16", "32", "48", "128"]);
 const PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
 
@@ -330,6 +337,91 @@ export function checkProbeDir(dir) {
   return { errors, scanned };
 }
 
+// Structural vocabulary a skeleton legitimately prints (tags, kept attribute names, the
+// header/trailer words). A secret fragment that coincides with one of these is not a leak.
+const LEAK_VOCAB = [
+  "role", "data-testid", "aria-selected", "aria-hidden", "aria-expanded", "aria-checked",
+  "aria-current", "aria-modal", "aria-live", "dir", "type", "tabindex", "data-focusable",
+  "class", "id", "href", "src", "title", "alt", "placeholder", "aria-label", "aria-description",
+  "aria-valuetext", "data-renderkey", "input", "c", "x", "#text", "#shadow",
+  "#iframe", "origin", "xsched-skeleton", "path", "scheduled", "other", "nodes", "TRUNCATED",
+  "depth", "div", "span", "body", "html", "section", "article", "main", "aside", "header",
+  "footer", "ul", "li", "p", "a", "hr", "br", "img", "svg", "path", "use",
+].join(" ");
+const LEAK_ALLOWED = new Set();
+for (let i = 0; i + 4 <= LEAK_VOCAB.length; i += 1) LEAK_ALLOWED.add(LEAK_VOCAB.slice(i, i + 4));
+
+const CJK_RUN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/;
+
+// Every >=4-char printable-ASCII substring plus every >=2-char CJK run of a secret; a leak
+// shows up as any one of these appearing in the output.
+function secretFragments(needle) {
+  const fragments = new Set();
+  for (let i = 0; i < needle.length; i += 1) {
+    const four = needle.slice(i, i + 4);
+    if (four.length === 4 && /^[\x20-\x7e]+$/.test(four)) fragments.add(four);
+    const two = needle.slice(i, i + 2);
+    if (two.length === 2 && CJK_RUN.test(two[0]) && CJK_RUN.test(two[1])) fragments.add(two);
+  }
+  return fragments;
+}
+
+// A hostile synthetic page whose every content-bearing slot carries a secret: URL, uuid,
+// email, @handle, English/CJK prose, prose aria-label/title/alt/placeholder, a long hash
+// class, and a long data-* value. Nothing of it may survive into the skeleton, and the
+// masked samples may not keep a single readable character.
+function attackSelfTest() {
+  const secrets = [
+    "https://example.com/a?b=c",
+    "550e8400-e29b-41d4-a716-446655440000",
+    "punkcan@example.com",
+    "VibeEyeX",
+    "Will send on Oct 10, 2026 at 9:00 AM",
+    "明天下午四點準時發送敬請期待",
+    "2026年7月20日(月)の午後4:24に送信されます",
+    "sentence with words in a label",
+    "private title of the post",
+    "alt text describing the picture",
+    "placeholder asks what is happening",
+    "deadbeefdeadbeefcafe1234",
+  ];
+  const page = `<!DOCTYPE html><html lang="en"><body>`
+    + `<section role="dialog" aria-modal="true">`
+    + `<div role="tablist"><div role="tab" aria-selected="true" data-testid="cellInnerDiv">Scheduled</div></div>`
+    + `<div class="r-9k2f7b1c8d4e6a3f5b0c css-long-hash-abcdef keep-me" data-renderkey="deadbeefdeadbeefcafe1234"`
+    + ` id="550e8400-e29b-41d4-a716-446655440000" aria-label="sentence with words in a label"`
+    + ` title="private title of the post">`
+    + `<a href="https://example.com/a?b=c">https://example.com/a?b=c</a>`
+    + `<img src="https://example.com/a?b=c" alt="alt text describing the picture">`
+    + `<input placeholder="placeholder asks what is happening">`
+    + `<p>Will send on Oct 10, 2026 at 9:00 AM punkcan@example.com @VibeEyeX</p>`
+    + `<p>明天下午四點準時發送敬請期待</p>`
+    + `<p>2026年7月20日(月)の午後4:24に送信されます</p>`
+    + `</div></section></body></html>`;
+  const document = new DOMParser().parseFromString(page, "text/html");
+  const skeleton = SKELETON.buildSkeleton(document, { pathname: "/home/compose/post/unsent/scheduled" });
+  if (skeleton.includes("example")) throw new Error("self-test: skeleton leaked a URL host");
+  if (!/^[\x20-\x7e\n]*$/.test(skeleton)) throw new Error("self-test: skeleton contains non-ASCII page content");
+  for (const secret of secrets) {
+    if (skeleton.includes(secret)) throw new Error(`self-test: skeleton leaked "${secret}"`);
+    for (const fragment of secretFragments(secret)) {
+      if (LEAK_ALLOWED.has(fragment)) continue;
+      if (skeleton.includes(fragment)) throw new Error(`self-test: skeleton leaked fragment "${fragment}" of "${secret}"`);
+    }
+  }
+  // The masked sample path: letters/marks/symbols become "x"; only digits, punctuation,
+  // and spaces may survive, and at most 60 code points.
+  let maskedCount = 0;
+  for (const secret of secrets) {
+    const masked = READER.maskSample(secret);
+    if (!masked.includes("x")) throw new Error(`self-test: maskSample left "${secret}" unmasked`);
+    if (!/^(?:x|[\p{Nd}\p{P}\s])+$/u.test(masked)) throw new Error(`self-test: maskSample kept content from "${secret}": ${masked}`);
+    if (Array.from(masked).length > 60) throw new Error("self-test: maskSample exceeded 60 code points");
+    maskedCount += 1;
+  }
+  return { secrets: secrets.length, fragments: maskedCount };
+}
+
 function selfTest() {
   const violations = [
     "fetch/*comment*/('x')", "globalThis.fetch", 'window["fe"+"tch"]("x")',
@@ -408,7 +500,8 @@ function selfTest() {
     ];
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length };
+    const attack = attackSelfTest();
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -436,7 +529,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak self-tests; no banned APIs, minimal permissions.`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
