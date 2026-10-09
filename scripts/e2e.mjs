@@ -85,7 +85,7 @@ function serveFixture(req, res) {
   }
   let body;
   try {
-    body = readFileSync(join(FIXTURES, `${name}.html`), "utf8");
+    body = readFileSync(join(FIXTURES, ...(["boss-skeleton", "cross-year"].includes(name) ? ["real", `${name}.html`] : [`${name}.html`])), "utf8");
   } catch {
     res.writeHead(404, { "content-type": "text/plain" }).end("no fixture " + name);
     return;
@@ -136,12 +136,12 @@ async function probeState(page) {
 }
 
 const CASES = [
-  { fixture: "en", file: "gate0.2-en.png", count: 2, times: ["Fri, Oct 10, 2026 at 9:00 AM", "Mon, Nov 9, 2026 at 8:05 PM"] },
-  { fixture: "ja", file: "gate0.2-ja.png", count: 2, times: ["2026年7月20日(月)の午後4:24に送信されます", "2026年8月3日(月)の午前9:05に送信されます"] },
-  { fixture: "zh-Hans", file: "gate0.2-zh-Hans.png", count: 2, times: ["将于2026年10月10日 上午9:00发送", "将于2026年11月9日 下午8:05发送"] },
-  { fixture: "zh-Hant", file: "gate0.2-zh-Hant.png", count: 2, times: ["將於2026年10月10日 上午9:00傳送", "將於2026年11月9日 下午8:05傳送"] },
-  { fixture: "ko", file: "gate0.2-ko.png", count: 2, times: ["2026년 10월 10일 오전 9:00에 전송됩니다", "2026년 11월 9일 오후 8:05에 전송됩니다"] },
-  { fixture: "roles", file: "gate0.2-roles-fallback.png", count: 2, layer: "a11y", times: ["Fri, Oct 16, 2026 at 7:30 AM", "Sat, Oct 17, 2026 at 6:00 PM"] },
+  { fixture: "en", file: "gate0.2-en.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "ja", file: "gate0.2-ja.png", count: 2, times: ["2026-07-20 16:24 (Mon)", "2026-08-03 09:05 (Mon)"] },
+  { fixture: "zh-Hans", file: "gate0.2-zh-Hans.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "zh-Hant", file: "gate0.2-zh-Hant.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "ko", file: "gate0.2-ko.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "roles", file: "gate0.2-roles-fallback.png", count: 2, layer: "a11y", times: ["2026-10-16 07:30 (Fri)", "2026-10-17 18:00 (Sat)"] },
   { fixture: "empty", file: "gate0.2-empty.png", count: 0 },
 ];
 
@@ -414,6 +414,55 @@ async function main() {
       console.log(`  ✓ ${testCase.fixture}: ${testCase.count} row(s)`);
     }
 
+    // ── owner skeleton reconstruction: structural count proven, grammar inferred ──
+    await open('boss-skeleton');
+    const boss = await until(async () => {
+      const state = await probeState(page);
+      return state.mode === 'scheduled' && state.times.length === 1 ? state : null;
+    }, 'owner skeleton: one visible Scheduled row');
+    assert(boss.count === 1, 'owner L108 has ONE row; background cells/articles must not be counted');
+    assert(boss.times[0] === '2026-10-10 09:00 (Sat)', 'synthetic inferred owner label parses exact date/clock');
+    assert(/timeOk=1 .*timeFail=0/.test(boss.diag), 'owner fixture: every synthetic time parsed, zero failures');
+    assert(/fmt=(?!none)/.test(boss.diag), 'success still exports masked format sample');
+    await page.screenshot({ path: join(DOCS, 'gate0.2-real-skeleton.png') });
+    await page.evaluate(() => document.querySelector('div[aria-hidden="true"]').removeAttribute('aria-hidden'));
+    await sleep(300);
+    assert((await probeState(page)).count === 1, 'background visibility transition cannot add timeline posts');
+    // Replace the proven standalone label with an unknown format; row count remains.
+    await page.evaluate(() => {
+      const row = [...document.querySelectorAll('button')].find(el => el.querySelector('[data-testid="tweetText"]'));
+      [...row.querySelectorAll('span')].find(el => !el.closest('[data-testid="tweetText"]')).textContent = 'Will send on 2027-01-01 23:59 UTC';
+    });
+    const unknown = await until(async () => {
+      const state = await probeState(page);
+      return state.times.includes('時間未解析') ? state : null;
+    }, 'owner unknown time remains explicitly unparsed');
+    assert(unknown.count === 1 && /timeFail=1/.test(unknown.diag) && /samples=(?!none)/.test(unknown.diag), 'unknown time keeps row, fail count and sample');
+    await page.screenshot({ path: join(DOCS, 'gate0.2-real-time-unparsed.png') });
+
+    await open('cross-year');
+    await until(async () => (await probeState(page)).count === 2, 'cross-year structural rows');
+    const yearContext = await findExtensionContext();
+    assert(yearContext, 'cross-year isolated context exists');
+    // Freeze extension Date only on this fake document so outside execution date
+    // never changes the meaning of the missing-year scenario. No production hook.
+    const frozen = await network.send('Runtime.evaluate', { contextId: yearContext, expression: `
+      globalThis.__RealDate = Date;
+      globalThis.Date = class extends globalThis.__RealDate {
+        constructor(...args) { super(...(args.length ? args : [new globalThis.__RealDate(2026,11,31,12,0).getTime()])); }
+        static now() { return new globalThis.__RealDate(2026,11,31,12,0).getTime(); }
+      };
+    ` });
+    assert(!frozen.exceptionDetails, 'cross-year fixture clock patched in isolated test context');
+    await page.evaluate(() => document.body.append(document.createElement('div')));
+    const year = await until(async () => {
+      const state = await probeState(page);
+      return state.times[0] === '2026-12-31 23:59 (Thu)' && state.times[1] === '2027-01-01 00:05 (Fri)' ? state : null;
+    }, 'missing year Dec31 to next Jan1, in chronological order');
+    assert(year.count === 2 && /timeOk=2 .*timeFail=0/.test(year.diag), 'cross-year both dates/clock parsed, no failures');
+    await page.screenshot({ path: join(DOCS, 'gate0.2-cross-year.png') });
+    console.log('  ✓ owner skeleton: 1 modal row, background excluded, normalized synthetic time/fmt; unknown label stays counted; cross-year 2 ordered rows');
+
     // Instrument only the fixture's extension isolated world to observe clipboard
     // calls. No clipboard permission, page-world injection, or real account is used.
     await open("en");
@@ -486,9 +535,9 @@ async function main() {
     assert(sampleMatch && sampleMatch[1] !== "none", `selectors-broken: expected masked samples: ${broken.diag}`);
     for (const encoded of sampleMatch[1].split("|")) {
       const sample = decodeURIComponent(encoded);
-      assert(!/[A-Za-z\u00c0-\uffff]/.test(sample.replace(/x/g, "")), `selectors-broken: unmasked letters in sample "${sample}"`);
+      assert(/^Will send on 2027-04-0[56] (?:18:30|07:15)$/.test(sample), `selectors-broken: only calendar phrase/date/clock expected "${sample}"`);
       assert(/^[\x20-\x7e]*$/.test(sample), `selectors-broken: non-ASCII in sample "${sample}"`);
-      assert(sample.includes("x"), `selectors-broken: sample carries no mask marker: "${sample}"`);
+      assert(Array.from(sample).length <= 60, `selectors-broken: sample exceeds cap: "${sample}"`);
     }
     for (const leak of ["Arrives", "UTC", "placeholder body"]) {
       assert(!broken.diag.includes(leak), `selectors-broken: diag leaked "${leak}": ${broken.diag}`);
@@ -612,12 +661,12 @@ async function main() {
     }, "virtual: accumulated 6 after scroll");
     assert(after.scrolled === "1", "virtual: probe should mark the session as scrolled");
     for (const want of [
-      "Tue, Dec 1, 2026 at 7:00 AM",
-      "Tue, Dec 1, 2026 at 12:30 PM",
-      "Wed, Dec 2, 2026 at 8:00 PM",
-      "Thu, Dec 3, 2026 at 9:15 AM",
-      "Fri, Dec 4, 2026 at 6:45 PM",
-      "Sat, Dec 5, 2026 at 11:30 AM",
+      "2026-12-01 07:00 (Tue)",
+      "2026-12-01 12:30 (Tue)",
+      "2026-12-02 20:00 (Wed)",
+      "2026-12-03 09:15 (Thu)",
+      "2026-12-04 18:45 (Fri)",
+      "2026-12-05 11:30 (Sat)",
     ]) {
       assert(after.times.includes(want), `virtual: missing accumulated time "${want}"`);
     }

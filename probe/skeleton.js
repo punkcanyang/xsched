@@ -1,9 +1,10 @@
-// xsched gate 0.1 — page-skeleton builder (pure, read-only).
+// xsched gate 0.2 — page-skeleton builder (pure, read-only).
 //
 // Turns the live DOM into a compact, content-free structural map so the owner can paste
-// it back and we can repair the readers. It NEVER keeps text, attribute prose, URLs,
-// account handles, or hashes: text becomes a length, prose values become "x", and
-// only known UI enum values (role, data-testid, aria-*, dir, type, tabindex…) survive.
+// it back and we can repair the readers. It never keeps body text, attribute prose,
+// URLs, account handles, or hashes. Text becomes a length, except an isolated short
+// time span may add the reader's calendar-only masked sample. Prose values become
+// "x"; known UI enums (role, data-testid, aria-*, dir, type, tabindex…) survive.
 //
 // Classic script, shared two ways (same trick as reader.js):
 //   - Chrome: loaded as a content script in the isolated world before content.js.

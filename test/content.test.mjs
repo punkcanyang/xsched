@@ -8,8 +8,8 @@ await import('../probe/reader.js');
 await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
-function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en') {
-  const { document } = parseHTML(readFileSync(new URL('../fixtures/en.html', import.meta.url), 'utf8'));
+function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null) {
+  const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
   document.documentElement.lang = lang;
   const timers = new Map();
   const polls = new Map();
@@ -32,7 +32,8 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en') {
   const create = document.createElement.bind(document);
   document.createElement = (...args) => { const el = create(...args); el.getBoundingClientRect = rect; return el; };
   const context = vm.createContext({
-    XSCHED_READER: globalThis.XSCHED_READER, XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: globalThis.XSCHED_UI,
+    XSCHED_READER: clock ? { ...globalThis.XSCHED_READER, readSnapshot(doc, options) { return globalThis.XSCHED_READER.readSnapshot(doc, { ...options, now: clock() }); } } : globalThis.XSCHED_READER,
+    XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: globalThis.XSCHED_UI,
     document, window, navigator: { language: 'en-US' }, location, innerWidth: 1100, innerHeight: 820,
     chrome: { runtime: { id: 'local-test', getManifest() { if (invalidated) throw new Error('private exception'); return { version: manifest }; } } },
     getComputedStyle() { return { position: 'static' }; },
@@ -93,4 +94,29 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.0\.3/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
+});
+
+test('real content displays normalized time, shows unknown row explicitly and copies safe fmt', () => {
+  const f = fixture('/compose/post/unsent/scheduled','zh-Hant','../fixtures/real/boss-skeleton.html');
+  assert.equal(f.host().dataset.xschedCount,'1');
+  assert.equal(f.shadow().querySelector('.time').textContent,'2026-10-10 09:00 (Sat)');
+  assert.match(f.host().dataset.xschedDiag,/fmt=(?!none)/);
+  const row=[...f.document.querySelectorAll('button')].find(el=>el.querySelector('[data-testid=tweetText]'));
+  const label=[...row.querySelectorAll('span')].find(el=>!el.closest('[data-testid=tweetText]'));
+  label.textContent='Will send on 2027-01-01 23:59 UTC';
+  f.location.search='?changed'; f.poll();
+  assert.equal(f.host().dataset.xschedCount,'1');
+  assert.equal(f.shadow().querySelector('.time').textContent,'時間未解析');
+  assert.match(f.host().dataset.xschedDiag,/timeFail=1/);
+});
+
+test('unchanged yearless labels repaint when the inferred calendar year changes', () => {
+  let now = new Date(2025,11,31,12);
+  const f = fixture('/compose/post/unsent/scheduled','zh-Hant','../fixtures/real/cross-year.html', () => now);
+  assert.deepEqual([...f.shadow().querySelectorAll('.time')].map(el => el.textContent), ['2025-12-31 23:59 (Wed)','2026-01-01 00:05 (Thu)']);
+  const before = f.host().dataset.xschedDiag;
+  now = new Date(2026,11,31,12);
+  f.location.search = '?calendar-changed'; f.poll();
+  assert.equal(f.host().dataset.xschedDiag, before); // count, raw labels and fmt stay the same
+  assert.deepEqual([...f.shadow().querySelectorAll('.time')].map(el => el.textContent), ['2026-12-31 23:59 (Thu)','2027-01-01 00:05 (Fri)']);
 });

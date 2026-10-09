@@ -448,9 +448,15 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   for (const secret of ['May@January.example', '@May2026', 'https://May.example/2026']) {
     if (!/^x+$/.test(reader.maskSample(secret))) throw new Error('self-test: calendar address unmasked');
   }
+  const prose = 'Will send on private purchase 987654321 at 23:59';
+  if (reader.timeSample(prose)) throw new Error('self-test: unknown date sample included prose/private numbers');
+  calendarPage.querySelector('button span').textContent = prose;
+  const proseSkeleton = mapper.buildSkeleton(calendarPage, { pathname:'/compose/post/unsent/scheduled' });
+  const proseDiag = reader.buildDiagnostic(reader.readSnapshot(calendarPage, { pathname:'/compose/post/unsent/scheduled' }));
+  if (proseSkeleton.includes('calendar=') || proseDiag.includes('987654321')) throw new Error('self-test: unknown date export leaked private numbers');
   const origin = mapper.hostnameOf('https://privateuser:secret@frame.example:8080/path?q=token');
   if (origin !== 'frame.example') throw new Error('self-test: iframe origin includes credentials/path/port');
-  return { secrets: secrets.length + 3 + extraSecrets.length + 3, fragments: maskedCount };
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4, fragments: maskedCount };
 }
 
 function selfTest() {

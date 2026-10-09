@@ -152,12 +152,12 @@ const CJK_CALENDAR_RE = new RegExp("^(?:" + CJK_CALENDAR.join("|") + ")+$", "u")
 const LABEL_PATTERNS = [
   { lang: "en", re: new RegExp(`^(?:will send on\\s+)?(${WEEKDAY_PREFIX}${MONTH}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?\\s*(?:,|at)?\\s*(\\d{1,2}):(\\d{2})\\s*(a\\.?m\\.?|p\\.?m\\.?)?)`, "i"), parts: m => ({year:m[4], month:MONTH_INDEX[monthKey(m[2])], day:m[3], hour:m[5], minute:m[6], meridiem:m[7], meridiemStyle:"en"}) },
   { lang: "en", re: new RegExp(`^(?:will send on\\s+)?(${WEEKDAY_PREFIX}(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH}(?:\\s+(\\d{4}))?\\s*(?:,|at)?\\s*(\\d{1,2}):(\\d{2})\\s*(a\\.?m\\.?|p\\.?m\\.?)?)`, "i"), parts: m => ({year:m[4], month:MONTH_INDEX[monthKey(m[3])], day:m[2], hour:m[5], minute:m[6], meridiem:m[7], meridiemStyle:"en"}) },
-  { lang: "zh", re: /^((?:將於|将于|於|于)?\s*(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*[(（][^)）]{1,12}[)）])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2})(?::|點|点|時|时)(\d{1,2})\s*分?\s*(?:傳送|發送|发送|传送|发出)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7],meridiem:m[5],meridiemStyle:"cjk"}) },
+  { lang: "zh", re: /^((?:將於|将于|於|于)?\s*(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*[(（][^)）]{1,12}[)）])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2})(?::(\d{2})|(?:點|点|時|时)\s*(\d{1,2})?\s*分?)\s*(?:傳送|發送|发送|传送|发出)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7] || m[8] || "0",meridiem:m[5],meridiemStyle:"cjk"}) },
   { lang: "ja", re: /^((?:(\d{4})年\s*)?(\d{1,2})月\s*(\d{1,2})日(?:\s*[(（][^)）]{1,12}[)）])?(?:\s*の)?\s*(午前|午後)?\s*(\d{1,2})(?::|時)(\d{1,2})\s*分?\s*(?:に送信されます)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7],meridiem:m[5],meridiemStyle:"cjk"}) },
   { lang: "ko", re: /^((?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(오전|오후)?\s*(\d{1,2})(?::|시\s*)(\d{1,2})\s*분?\s*(?:에\s*)?(?:전송됩니다|게시됩니다|예약됩니다|예약됨)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7],meridiem:m[5],meridiemStyle:"cjk"}) },
 ];
 // Gate 0.2: legacy values plus owner skeleton evidence (line numbers in GATE0.md).
-// Sources and inference status: notes/GATE0.md gate 0 §1–2. Real DOM still pending.
+// Sources: notes/GATE0.md gate 0 §1–2 and gate 0.2 skeleton analysis. Real time text is pending.
 const READ_CONFIG = Object.freeze({
   selectors: Object.freeze({
     // cell: public generic X cell (§1 #5); namedRow/roles: Japanese a11y clue (#3).
@@ -219,7 +219,7 @@ function parseTimeLabel(raw, { now = new Date(), reference = null, lang = "" } =
     }
     const suffix = text.slice(m[0].length);
     const at = /^[\d:]/.test(suffix) ? null : toDate(parts);
-    return { lang: pattern.lang, tier: "loose", time: normalize(m[1]), body: normalize(suffix), at, unparsed: at === null, inferredYear };
+    return { lang: pattern.lang, tier: READ_CONFIG.time.sendVerb.test(m[0]) ? "strict" : "loose", time: normalize(m[1]), body: normalize(suffix), at, unparsed: at === null, inferredYear };
   }
   return null;
 }
@@ -281,8 +281,9 @@ function timeSample(raw) {
   if (!text || Array.from(text).length > 160 || !/\d/.test(text)) return "";
   const parsed = parseSchedule(text);
   if (parsed) return maskSample(parsed.time);
-  if (!/^(?:will send on|將於|将于|於|于|\d{4}\s*[年년-]|\d{1,2}\s*[月월])/i.test(text)) return "";
-  const match = /^(.{0,100}?\d{1,2}[:時时點点시]\s*\d{1,2}(?:\s*(?:AM|PM|分|분))?)/i.exec(text);
+  // Unknown numeric date formats can be sampled, but arbitrary prose between a
+  // send phrase and clock cannot: its numbers might be private post content.
+  const match = /^((?:will send on\s+|(?:將於|将于|於|于)\s*)?(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|(?:\d{4}\s*[年년]\s*)?\d{1,2}\s*[月월]\s*\d{1,2}\s*[日일])(?:\s*[(（][\p{L}\p{M} ]{1,12}[)）])?\s*(?:,|at|の)?\s*(?:上午|下午|午前|午後|오전|오후)?\s*\d{1,2}[:時时點点시]\s*\d{1,2}(?:\s*(?:AM|PM|分|분))?)/iu.exec(text);
   if (!match) return "";
   const masked = maskSample(match[1]);
   // At least one surviving calendar word, not just a number in arbitrary prose.
@@ -442,6 +443,9 @@ function deepest(elements) {
 // Composer chips and editor bodies are never list rows, even inside the unsent dialog.
 const COMPOSER = READ_CONFIG.selectors.composer;
 function readable(el, scope) {
+  // A cell/aggregate containing an article must not launder background tweet text
+  // into L1 or text fallback, even during a route/dialog transition.
+  if (el.querySelector && el.querySelector(READ_CONFIG.selectors.timeline)) return false;
   for (let node = el; node; node = node.parentElement) {
     if (node.id === "xsched-probe-root" || node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true" || node.matches(COMPOSER) || node.matches(READ_CONFIG.selectors.timeline)) return false;
     if (node !== scope && node.getAttribute("role") === "dialog") return false;

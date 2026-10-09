@@ -20,11 +20,15 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 
 閘 0 做完回報商務拓展，老闆實測通過才往下做 1.0。
 
-## 閘 0.2：Dagaz 快捷鈕＋讀法結構整理（probe 0.0.3，實作完成、待外部驗證）
+## 閘 0.2：Dagaz 快捷鈕＋真結構讀法／時間（probe 0.0.3，待真時間驗收）
 
-2026-10-09 23:05（UTC+8）老闆改優先序：xsched 第一。分支 `gate0.2/shortcut-button`。右下圓形 Dagaz 快捷鈕（開關浮層、一鍵前往 Scheduled、整合小膠囊、自動重掛、九語）、版本 0.0.3、診斷第一行印版本（舊快取明顯可見）、選擇器集中但**不猜新選擇器**（等老闆貼 0.0.2「複製頁面結構」）。寫：Codex gpt-6.1-sol high；審：另一 Codex session。不再打包 zip。交接見 `notes/HANDOFF-gate0.2.md`。
+首輪快捷鈕／版本／九語已由外部提交 `722c83f`、`e607b5d`，使用者回報 Chrome e2e 305 斷言通過與假資料截圖已提交。老闆追加硬標準：真 Scheduled 則數與每則日期＋時分都要正確，未達到不算過。
 
-本寫碼 session 已實作快捷鈕／九語／控制項矩形避讓／SPA 開關／版本與 invalidated 提示／舊版接手，reader 的 60 組基準快照一致。實跑單程序測試 72 過、0 敗、1 跳過（真骨架尚無），verify 30／14／9／15 自測全過；npm test 沙箱只顯示 7 個檔案過，詳細測試另用不隔離程序重跑。**未達 READY**：沙箱 listen EPERM 擋住 e2e 本機 server，0 個浏览器斷言／0 張新截圖；.git 唯讀擋 commit。需老闆在外面跑 e2e、產生 gate0.2 截圖、提交並交另一 Codex session 複審；本 session 未 push／PR／改 main。
+2026-10-10 收到 0.0.2 遮罩骨架：外層 dialog 36 行／內層 modal 42 行；108 行僅一顆含 tweetText 的 row button，117–118 行為獨立時間 span/#text(28)。背景 126 行起包含全部 cell/article/time，不能算排程。**則數依骨架可讀、時間格式待老闆診斷確認**；真文字、語系與日期無法由長度恢復。
+
+本輪已加據骨架的最近 modal／button＋tweetText＋span 讀法、背景 article 排除、未知時間列保留、五語有／無年份／12–24小時／跨年解析、標準時間顯示、日曆詞白名單 fmt／samples／骨架樣本、兩個 real 合成 fixtures。舊 fixture 60 組讀法結果不退；本機 102 過／0 敗，verify 30／14／9／25 自測過。本轮外部 WIP `5da24dd`，仍有最後修改未提交。
+
+**未達 READY**：需老闆 0.0.3 fmt／samples 診斷與新版骨架逐則確認實際时间；本輪 Chrome e2e 沙箱 listen EPERM，新增 real／跨年情境與截图請外部跑，另由另一 Codex session 複審。無新增權限／網路資源，$0，不打包 zip。本 session 不 push／PR／改 main。依據、5 步實測與可轉給老闆的請求見 `notes/GATE0.md`「閘 0.2 真頁骨架分析」；交接見 `notes/HANDOFF-gate0.2.md`。
 
 ## 1.0（閘 0 過才做）
 

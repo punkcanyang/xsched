@@ -41,6 +41,13 @@ test('explicit years, 24-hour clocks, punctuated AM/PM and full-width colon are 
     assert.equal(result.inferredYear,false,label);
   }
 });
+test('Chinese hour words handle midnight/noon without silently accepting a bare colon', () => {
+  for (const [label,hour,minute] of [['1月1日 上午12點',0,0],['1月1日 下午12點',12,0],['1月1日 下午12點05分',12,5],['1月1日 上午12时05分',0,5]]) {
+    const at=R.parseTimeLabel(label,{now}).at;
+    assert.equal(at.getHours(),hour,label); assert.equal(at.getMinutes(),minute,label);
+  }
+  assert.equal(R.parseTimeLabel('1月1日 上午12:',{now}),null);
+});
 test('invalid dates, meridiem ranges, seconds and overflowing minutes never become guessed time', () => {
   for (const label of ['Jan 1 at 0:05 AM','Jan 1 at 13:05 PM','Jan 1 at 24:00','Jan 1 at 23:60','Feb 30 at 09:00','1月1日 上午13:05','1月1日 下午0:05','1月1日 23:60','1月1日 9:00:30','1월 1일 오전 13:05']) assert.equal(R.parseTimeLabel(label,{now})?.at,null,label);
 });
@@ -62,6 +69,11 @@ test('owner structure resolves nearest modal and ignores hidden or visible backg
   assert.equal(result.scopeElement.getAttribute('aria-modal'),'true');
   assert.equal(result.timeFail,0);
   assert.equal(result.items[0].preview,'甲乙');
+});
+test('body/column fallback cannot read article text through its enclosing cell/aggregate', () => {
+  const {document}=parseHTML('<html><body><div data-testid="primaryColumn"><div data-testid="cellInnerDiv"><article role="article"><time datetime="2027-01-01T09:00:00">Jan 1</time><div data-testid="tweetText">Will send on Jan 1, 2027 at 9:00 AM quoted background post</div></article></div></div></body></html>');
+  const result=snap(document);
+  assert.equal(result.items.length,0); assert.equal(result.l1,0); assert.equal(result.l2,0); assert.equal(result.l3,0);
 });
 test('unknown owner row time stays counted and visibly unparsed, with masked sample and no body', () => {
   const doc=getDoc();
@@ -86,6 +98,7 @@ test('privacy mask preserves calendar words only as whole tokens and erases iden
   assert.equal(Array.from(R.maskSample('January '.repeat(30))).length,60);
   assert.equal(R.maskSample('星期四 上午12:05'),'星期四 上午12:05');
   assert.equal(R.timeSample('private 987654321 on 2026-01-01 9:00'),'');
+  assert.equal(R.timeSample('Will send on private purchase 987654321 at 23:59'),'');
 });
 test('skeleton exports only isolated short time span; calendar-looking body and arbitrary prose remain lengths', () => {
   const doc=getDoc();
