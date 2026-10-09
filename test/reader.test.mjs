@@ -242,3 +242,59 @@ test("buildDiagnostic never leaks any localized fixture text", () => {
     }
   }
 });
+
+// ── gate 0.1 additions ─────────────────────────────────────────────────────────
+test("maskSample keeps digits/punctuation but masks every letter, mark, and symbol", () => {
+  assert.equal(R.maskSample("Will send on Oct 10, 2026 at 9:00 AM"), "xxxx xxxx xx xxx 10, 2026 xx 9:00 xx");
+  assert.equal(R.maskSample("將於2026年7月20日"), "xx2026x7x20x");
+  assert.equal(R.maskSample("2026년 10월 10일"), "2026x 10x 10x");
+  assert.equal(R.maskSample("a😀b"), "xxx");
+  assert.equal(R.maskSample(""), "");
+  assert.equal(R.maskSample(null), "");
+  assert.equal(Array.from(R.maskSample("x".repeat(200))).length, 60);
+});
+
+test("sanitizeLang keeps only short ASCII language tags", () => {
+  assert.equal(R.sanitizeLang("en-US"), "en-US");
+  assert.equal(R.sanitizeLang("zh-Hant"), "zh-Hant");
+  assert.equal(R.sanitizeLang(""), "x");
+  assert.equal(R.sanitizeLang(null), "x");
+  assert.equal(R.sanitizeLang("en_US"), "x");
+  assert.equal(R.sanitizeLang("a".repeat(30)), "x");
+  assert.equal(R.sanitizeLang("en<x>"), "x");
+});
+
+test("hostMounted is true only for a connected, laid-out host", () => {
+  assert.equal(R.hostMounted(null), false);
+  const document = doc("<html><body></body></html>");
+  const el = document.createElement("div");
+  assert.equal(R.hostMounted(el), false, "detached host is not mounted");
+  document.body.append(el);
+  assert.equal(R.hostMounted(el), false, "zero-size host is not mounted");
+  Object.defineProperty(el, "getBoundingClientRect", { value: () => ({ width: 10, height: 5 }), configurable: true });
+  assert.equal(R.hostMounted(el), true, "connected + sized host is mounted");
+});
+
+test("buildDiagnostic emits masked samples only when a phrase failed to parse", () => {
+  const good = R.buildDiagnostic({ ...snap(fixture("en.html")), mounted: 1 });
+  assert.match(good, /samples=none/);
+  assert.match(good, /lang=x doclang=/);
+
+  const broken = snap(fixture("selectors-broken.html"));
+  assert.equal(broken.items.length, 0);
+  assert.ok(broken.timeFail > 0, "unknown markup must register parse failures");
+  const diag = R.buildDiagnostic({ ...broken, mounted: 1 });
+  assert.match(diag, /samples=(?!none)\S+/);
+  for (const leak of ["Arrives", "UTC", "placeholder", "alpha", "beta"]) {
+    assert.ok(!diag.includes(leak), `diagnostic leaked "${leak}": ${diag}`);
+  }
+});
+
+test("buildDiagnostic sanitizes adversarial lang/doclang values", () => {
+  const diag = R.buildDiagnostic({ lang: "en-US<script>alert(1)</script>", doclang: "https://evil.example/" });
+  assert.match(diag, / lang=x /);
+  assert.match(diag, / doclang=x samples=none$/);
+  for (const leak of ["script", "alert", "evil", "example", "https"]) {
+    assert.ok(!diag.includes(leak), `diagnostic leaked "${leak}": ${diag}`);
+  }
+});
