@@ -1,0 +1,16 @@
+{
+  "name": "xsched",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Chrome extension that helps operate X's native scheduled-post window. Gate 0 probe: read the Scheduled list from the page DOM only.",
+  "scripts": {
+    "test": "node --test test/",
+    "verify": "node scripts/verify.mjs",
+    "e2e": "node scripts/e2e.mjs"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.11",
+    "puppeteer-core": "^24.10.2"
+  }
+}
