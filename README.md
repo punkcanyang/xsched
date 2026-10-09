@@ -93,4 +93,4 @@ npm run e2e       # Chrome for Testing 载入真 probe/，本机测试页模拟 
 
 ## 授权
 
-这是公开仓库，但目前还没有授权文件。在加上授权之前，保留所有权利（all rights reserved）。
+[MIT](LICENSE)。
