@@ -44,7 +44,12 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   vm.runInContext(source, context); flush();
   const host = () => document.getElementById('xsched-probe-root');
   const shadow = () => host().shadowRoot;
-  const click = (selector) => shadow().querySelector(selector).dispatchEvent(new document.defaultView.Event('click'));
+  const click = (selector, trusted = true) => {
+    const event = new document.defaultView.Event('click');
+    // linkedom has no browser input pipeline; explicitly model the trust flag.
+    Object.defineProperty(event, 'isTrusted', { value: trusted });
+    shadow().querySelector(selector).dispatchEvent(event);
+  };
   return { document, host, shadow, click, location, navigated, poll, flush, context,
     setManifest(value) { manifest = value; }, invalidate() { invalidated = true; } };
 }
@@ -74,6 +79,8 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
   assert.equal(go.textContent, '前往 Scheduled');
   assert.equal(go.dataset.xschedTarget, 'https://x.com/compose/post/unsent/scheduled');
   go.dataset.xschedTarget = 'https://invalid.example/';
+  f.click('[data-xsched-goto]', false);
+  assert.deepEqual(f.navigated, [], 'synthetic page clicks cannot navigate');
   f.click('[data-xsched-goto]');
   assert.deepEqual(f.navigated, ['https://x.com/compose/post/unsent/scheduled']);
 });

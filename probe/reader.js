@@ -262,12 +262,15 @@ function sanitizeLang(value) {
   return [match[1].toLowerCase(), script, match[3] && match[3].toUpperCase()].filter(Boolean).join("-");
 }
 
-// Whitelist tokens survive only as whole words. Sensitive spans are fully masked
-// first (including their digits): calendar-looking handles/email/URLs are not dates.
-function maskSample(value) {
-  let text = typeof value === "string" ? value : "";
-  text = text.replace(/(?:https?:\/\/|www\.)[^\s]+|[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+(?:\.[\p{L}]{2,})?|@[\p{L}\p{N}_]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu,
+// Redact identities before either date extraction or calendar token masking:
+// cutting a date out of a URL/email first would lose its sensitive provenance.
+function redactIdentities(value) {
+  return (typeof value === "string" ? value : "").replace(/(?:[a-z][a-z0-9+.-]*:\/\/|\/\/|www\.|mailto:|tel:|data:)[^\s]+|\u0022(?:[^\u0022\\]|\\.)*\u0022@[^\s]+|\S*@\S+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu,
     sensitive => Array.from(sensitive, () => "x").join(""));
+}
+// Whitelist tokens survive only as whole words, after full identity redaction.
+function maskSample(value) {
+  const text = redactIdentities(value);
   const masked = text.replace(/[\p{L}\p{M}]+(?:\.[\p{L}\p{M}]+)*\.?|[^\p{L}\p{M}\p{Nd}\p{P}\s]/gu, token => {
     const lower = token.toLowerCase();
     return CALENDAR_WORDS.has(lower) || CALENDAR_WORDS.has(lower.replace(/\.$/, "")) || CJK_CALENDAR_RE.test(token) ? token : Array.from(token, () => "x").join("");
@@ -277,7 +280,7 @@ function maskSample(value) {
 // Extract the date/clock portion before masking, never a trailing post body. Even
 // unknown formats must have date+clock+calendar vocabulary and a bounded label.
 function timeSample(raw) {
-  const text = normalize(typeof raw === "string" ? raw : "");
+  const text = normalize(redactIdentities(raw));
   if (!text || Array.from(text).length > 160 || !/\d/.test(text)) return "";
   const parsed = parseSchedule(text);
   if (parsed) return maskSample(parsed.time);
@@ -459,10 +462,10 @@ function parseElement(el, allowLoose, options = {}) {
   // Count the structurally proven row even if its time grammar is unknown.
   if (el.matches(READ_CONFIG.selectors.structuralRow) && el.closest(READ_CONFIG.selectors.dialog) && el.querySelector(READ_CONFIG.selectors.tweet)) {
     const leaves = [...el.querySelectorAll(READ_CONFIG.selectors.timeLeaf)].filter(node => !node.children.length && !node.closest(READ_CONFIG.selectors.tweet) && readable(node, el) && normalize(node.textContent));
-    const parsedLeaves = leaves.filter(node => parseSchedule(node.textContent, options));
+    const parsedLeaves = leaves.filter(node => parseSchedule(redactIdentities(node.textContent), options));
     const label = parsedLeaves.length === 1 ? parsedLeaves[0] : leaves.length === 1 ? leaves[0] : null;
     const raw = label ? normalize(label.textContent) : "";
-    const parsed = label && parseSchedule(raw, options);
+    const parsed = label && parseSchedule(redactIdentities(raw), options);
     const body = normalize(el.querySelector(READ_CONFIG.selectors.tweet).textContent);
     return { ...toItem(parsed ? { ...parsed, body } : { time: raw, body, lang: "x", tier: "loose", at: null, unparsed: true }), sample: label ? timeSample(raw) : "" };
   }
@@ -672,19 +675,16 @@ function readSnapshot(doc, { pathname = "", now = new Date() } = {}) {
   // row or tweetText subtree. A year alone is not evidence of a time label.
   const sampleRows = new Set(pool);
   const failNodes = [...scope.querySelectorAll(READ_CONFIG.selectors.all)].filter((el) => {
-    if (!readable(el, scope) || el.children.length || sampleRows.has(el) || el.tagName === "BUTTON" || el.closest(READ_CONFIG.selectors.tweet)) return false;
+    if (!readable(el, scope) || sampleRows.has(el) || !isIsolatedTimeElement(el)) return false;
     const text = el.textContent;
     if (!READ_CONFIG.time.year.test(normalize(text || "")) || !READ_CONFIG.time.sendVerb.test(text || "")) return false;
     const parsed = parseSchedule(text, { allowLoose: true });
     return !parsed || parsed.unparsed === true;
   });
-  const legacySamples = dedupStrings(failNodes.map((el) => {
-    const parsed = parseSchedule(el.textContent, { allowLoose: true });
-    return timeSample(parsed ? parsed.time : el.textContent);
-  })).filter(Boolean);
+  const legacySamples = dedupStrings(failNodes.map((el) => timeSample(el.textContent))).filter(Boolean);
   const failedRows = items.filter(item => item.unparsed);
   timeFail = Math.max(timeFail, failedRows.length);
-  const samples = dedupStrings([...failedRows.map(item => item.sample || timeSample(item.time)), ...legacySamples]).filter(Boolean).slice(0,3);
+  const samples = dedupStrings([...failedRows.map(item => item.sample), ...legacySamples]).filter(Boolean).slice(0,3);
 
   const layout = detectLayout(scope, doc);
   return {
@@ -705,7 +705,9 @@ function readSnapshot(doc, { pathname = "", now = new Date() } = {}) {
     // Real mount state is computed by the content glue; the reader cannot know it.
     mounted: 0,
     samples,
-    fmt: items.length ? items[0].sample || timeSample(items[0].time) : "",
+    // Only the structural reader certifies a separate time label. Legacy parsed
+    // item.time may have originated inside tweetText; never export it as a sample.
+    fmt: items.length ? items[0].sample || "" : "",
     timeOk: items.filter((item) => item.at !== null).length,
     timeFail,
     unparsed: items.filter((item) => item.unparsed).length,
@@ -766,7 +768,8 @@ function buildDiagnostic(report) {
     const value = report[key];
     return `${key}=${typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0}`;
   });
-  return `${versionLine(report.manifestVersion, report.runtimeInvalidated === true)}\n${parts.join(" ")} lang=${sanitizeLang(report.lang)} doclang=${sanitizeLang(report.doclang)} samples=${sampleField(report.samples)} fmt=${sampleField([report.fmt])}`;
+  const fmt = normalize(maskSample(report.fmt)) || "none";
+  return `${versionLine(report.manifestVersion, report.runtimeInvalidated === true)}\n${parts.join(" ")} lang=${sanitizeLang(report.lang)} doclang=${sanitizeLang(report.doclang)} samples=${sampleField(report.samples)}\nfmt=${fmt}`;
 }
 
 // Shared API. `globalThis` so a classic content script loaded right after this file (same

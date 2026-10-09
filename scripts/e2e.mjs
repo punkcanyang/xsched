@@ -322,6 +322,10 @@ async function main() {
     const homeOpen = await toggle(true);
     const target = 'https://x.com/compose/post/unsent/scheduled';
     assert(homeOpen.target === target, 'goto button fixed target is exact (location.assign, no href sink)');
+    const homeBeforeSynthetic = page.url();
+    await page.evaluate(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-goto]').click());
+    await sleep(300);
+    assert(page.url() === homeBeforeSynthetic, 'synthetic page click cannot trigger Scheduled navigation');
     await checkNative('desktop home open');
     await page.screenshot({ path: join(DOCS, 'gate0.2-home-open-goto-link.png') });
     for (const width of [390, 600]) {
@@ -423,7 +427,7 @@ async function main() {
     assert(boss.count === 1, 'owner L108 has ONE row; background cells/articles must not be counted');
     assert(boss.times[0] === '2026-10-10 09:00 (Sat)', 'synthetic inferred owner label parses exact date/clock');
     assert(/timeOk=1 .*timeFail=0/.test(boss.diag), 'owner fixture: every synthetic time parsed, zero failures');
-    assert(/fmt=(?!none)/.test(boss.diag), 'success still exports masked format sample');
+    assert(boss.diag.endsWith('\nfmt=將於2026年10月10日 上午9:00傳送'), 'success exports directly readable isolated masked format on its own line');
     await page.screenshot({ path: join(DOCS, 'gate0.2-real-skeleton.png') });
     await page.evaluate(() => document.querySelector('div[aria-hidden="true"]').removeAttribute('aria-hidden'));
     await sleep(300);
@@ -518,7 +522,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched probe v0\.0\.3 \(manifest 0\.0\.3\)\n(?:\w+=[\w%|.:-]* ?)+$/.test(copied.result.value[0]), "copied diagnostic contains counters/langs/masked samples only even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.0\.3 \(manifest 0\.0\.3\)\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────

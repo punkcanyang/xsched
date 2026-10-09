@@ -116,3 +116,51 @@ test('reconstructed owner fixture contains no address, account, real id or copie
   assert.equal(doc.querySelectorAll('[role=dialog]').length,2);
   assert.equal(doc.querySelectorAll('[aria-modal=true] button').length,5);
 });
+
+test('date extraction cannot launder calendar-shaped URL, email or handle identities', () => {
+  for (const label of [
+    'https://evil.example/將於2026年10月10日上午9:00傳送',
+    '//evil.example/2026年7月20日の午後4:24に送信されます',
+    'ftp://evil.example/2026년7월20일오후4:24전송됩니다',
+    '將於2026年10月10日上午9:00傳送@January.example',
+    '@將於2026年10月10日上午9:00傳送',
+    '"May 10, 2026 at 9:00 AM"@January.example',
+  ]) {
+    assert.equal(R.timeSample(label), '', label);
+    assert.match(R.maskSample(label), /^x+$/, label);
+    const doc = getDoc();
+    const row = [...doc.querySelectorAll('button')].find(el => el.querySelector('[data-testid=tweetText]'));
+    const time = [...row.querySelectorAll('span')].find(el => !el.closest('[data-testid=tweetText]'));
+    time.textContent = label;
+    const report = snap(doc);
+    assert.equal(report.items.length, 1);
+    assert.equal(report.timeFail, 1);
+    assert.equal(report.fmt, '');
+    assert.deepEqual(report.samples, []);
+    assert.ok(!S.buildSkeleton(doc, { pathname: scheduled }).includes('calendar='));
+    const diagnostic = decodeURIComponent(R.buildDiagnostic(report));
+    for (const leak of ['2026', '7月', '9:00', 'January', 'evil.example']) assert.ok(!diagnostic.includes(leak), diagnostic);
+  }
+});
+
+test('legacy cell and text fallback never export calendar-looking tweetText as fmt or samples', () => {
+  for (const wrap of ['', '<div data-testid="cellInnerDiv">']) {
+    const {document} = parseHTML('<html><body><section role="dialog">' + wrap + '<div data-testid="tweetText"><span>Will send on Oct 10, 2026 at 9:00 AM private 987654321</span></div>' + (wrap ? '</div>' : '') + '</section></body></html>');
+    const report = snap(document);
+    assert.equal(report.fmt, '');
+    assert.deepEqual(report.samples, []);
+    const diag = R.buildDiagnostic(report);
+    for (const leak of ['Oct', '2026', '9:00', '987654321', 'private']) assert.ok(!diag.includes(leak), diag);
+    assert.ok(!S.buildSkeleton(document, { pathname: scheduled }).includes('calendar='));
+  }
+});
+
+test('fmt is directly readable on its own line, bounded and without content/control characters', () => {
+  const report = snap(getDoc());
+  assert.match(R.buildDiagnostic(report), /\nfmt=將於2026年10月10日 上午9:00傳送$/);
+  const diag = R.buildDiagnostic({fmt: 'Oct 10, 2026 at 9:00 AM\nprivate @May2026 https://May.example/2026'});
+  assert.equal(diag.split('\n').length, 3);
+  const fmt = diag.split('\n')[2];
+  assert.ok(Array.from(fmt.slice(4)).length <= 60);
+  for (const leak of ['private', '@May2026', 'https', 'example']) assert.ok(!fmt.includes(leak), fmt);
+});

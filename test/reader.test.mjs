@@ -319,7 +319,7 @@ test("buildDiagnostic emits masked samples only when a phrase failed to parse", 
 test("buildDiagnostic sanitizes adversarial lang/doclang values", () => {
   const diag = R.buildDiagnostic({ lang: "en-US<script>alert(1)</script>", doclang: "https://evil.example/" });
   assert.match(diag, / lang=x /);
-  assert.match(diag, / doclang=x samples=none fmt=none$/);
+  assert.match(diag, / doclang=x samples=none\nfmt=none$/);
   for (const leak of ["script", "alert", "evil", "example", "https"]) {
     assert.ok(!diag.includes(leak), `diagnostic leaked "${leak}": ${diag}`);
   }

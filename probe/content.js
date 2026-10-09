@@ -368,7 +368,11 @@ function render(report, items) {
       go.title = strings.goto;
       go.setAttribute("aria-label", strings.goto);
       go.dataset.xschedTarget = "https://x.com/compose/post/unsent/scheduled";
-      go.addEventListener("click", () => location.assign("https://x.com/compose/post/unsent/scheduled"));
+      go.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.isTrusted) location.assign("https://x.com/compose/post/unsent/scheduled");
+      });
       panel.append(go);
       panel.append(textNode("p", "非 Scheduled 頁面：此頁不讀取列表，僅保留診斷與頁面結構工具。", { color: "#8b98a5", "font-size": "12px", margin: "0 0 8px" }));
     }

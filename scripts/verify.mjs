@@ -424,7 +424,7 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
     if (Array.from(masked).length > 60) throw new Error("self-test: maskSample exceeded 60 code points");
     maskedCount += 1;
   }
-  const hostile = new DOMParser().parseFromString('<html><body><section role="dialog"><button><span>Will send on 2027-04-05 18:30 UTC</span><div data-testid="tweetText"><span>Will send on 2027-04-05 18:30 UTC private 987654321</span></div><p>private purchase 2027 1122334455</p></button></section></body></html>', 'text/html');
+  const hostile = new DOMParser().parseFromString('<html><body><section role="dialog"><button role="button"><span>Will send on 2027-04-05 18:30 UTC</span><div data-testid="tweetText"><span>Will send on 2027-04-05 18:30 UTC private 987654321</span></div><p>private purchase 2027 1122334455</p></button></section></body></html>', 'text/html');
   const report = reader.readSnapshot(hostile, { pathname: '/compose/post/unsent/scheduled' });
   const diag = reader.buildDiagnostic({ ...report, lang: 'VibeEyeX', doclang: 'en-x-VibeEyeX' });
   if (!/lang=x doclang=x/.test(diag)) throw new Error('self-test: diagnostic leaked unregistered language tags');
@@ -456,7 +456,25 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   if (proseSkeleton.includes('calendar=') || proseDiag.includes('987654321')) throw new Error('self-test: unknown date export leaked private numbers');
   const origin = mapper.hostnameOf('https://privateuser:secret@frame.example:8080/path?q=token');
   if (origin !== 'frame.example') throw new Error('self-test: iframe origin includes credentials/path/port');
-  return { secrets: secrets.length + 3 + extraSecrets.length + 4, fragments: maskedCount };
+  const embeddedDates = [
+    'https://evil.example/將於2026年10月10日上午9:00傳送',
+    '//evil.example/2026年7月20日の午後4:24に送信されます',
+    '將於2026年10月10日上午9:00傳送@January.example',
+    '@將於2026年10月10日上午9:00傳送',
+    '"May 10, 2026 at 9:00 AM"@January.example',
+  ];
+  for (const secret of embeddedDates) {
+    if (reader.timeSample(secret) || !/^x+$/.test(reader.maskSample(secret))) throw new Error('self-test: date extraction laundered an identity');
+    calendarPage.querySelector('button span').textContent = secret;
+    const identityReport = reader.readSnapshot(calendarPage, { pathname:'/compose/post/unsent/scheduled' });
+    if (identityReport.fmt || identityReport.samples.length || identityReport.timeFail !== 1 || mapper.buildSkeleton(calendarPage, { pathname:'/compose/post/unsent/scheduled' }).includes('calendar=')) throw new Error('self-test: calendar identity reached diagnostic or skeleton');
+  }
+  const legacyBody = new DOMParser().parseFromString('<html><body><section role="dialog"><div data-testid="cellInnerDiv"><div data-testid="tweetText">Will send on Oct 10, 2026 at 9:00 AM private 987654321</div></div></section></body></html>', 'text/html');
+  const legacyReport = reader.readSnapshot(legacyBody, { pathname:'/compose/post/unsent/scheduled' });
+  if (legacyReport.fmt || legacyReport.samples.length || /Oct|987654321/.test(reader.buildDiagnostic(legacyReport))) throw new Error('self-test: legacy body exported as a time sample');
+  const readableFmt = reader.buildDiagnostic({ fmt: '將於2026年10月10日 上午9:00傳送' });
+  if (!readableFmt.endsWith('\nfmt=將於2026年10月10日 上午9:00傳送')) throw new Error('self-test: fmt must be directly readable on its own line');
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 2, fragments: maskedCount };
 }
 
 function selfTest() {
