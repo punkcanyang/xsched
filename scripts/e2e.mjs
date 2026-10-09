@@ -371,9 +371,35 @@ async function main() {
       return s.present && s.remounts >= 2 ? s : null;
     }, "remount: overlay re-attached after body replacement");
     assert(remounted2.mounted === "1", `remount: relayed-out host after body swap, mounted=${remounted2.mounted}`);
+    await sleep(3100); // start the fight with a fresh creation window
+    // A hostile redraw must stay bounded and resume through polling after it stops.
+    await page.evaluate(() => {
+      window.fixtureRemoves = 0;
+      window.fixtureHostFight = new MutationObserver(() => {
+        const host = document.getElementById('xsched-probe-root');
+        if (host) { window.fixtureRemoves += 1; host.remove(); }
+      });
+      window.fixtureHostFight.observe(document.body, { childList: true });
+      document.getElementById('xsched-probe-root').remove();
+    });
+    await sleep(1000);
+    const fighting = await page.evaluate(() => {
+      window.fixtureHostFight.disconnect();
+      return window.fixtureRemoves;
+    });
+    assert(fighting <= 3, `remount: at most 3 creations per window, got ${fighting}`);
+    assert(fighting > 0, 'remount: adversarial redraw must actually exercise retry creation');
+    await until(async () => {
+      const s = await probeState(page);
+      return s.present && s.mounted === '1';
+    }, 'remount: polling recovers after repeated redraws stop', 6000);
+    await page.evaluate(() => document.getElementById('xsched-probe-root').style.setProperty('display', 'none', 'important'));
+    await until(async () => (await probeState(page)).mounted === '0', 'mounted: hidden host reports zero');
+    await page.evaluate(() => document.getElementById('xsched-probe-root').style.setProperty('display', 'block', 'important'));
+    await until(async () => (await probeState(page)).mounted === '1', 'mounted: visible host reports one');
     await open("en");
     await until(async () => (await probeState(page)).count === 2, "remount: fixture restored");
-    console.log("  ✓ remount: host removal and body replacement both re-attach the overlay");
+    console.log("  ✓ remount: host/body removal; bounded retries recover through polling; mounted tracks layout");
 
     // ── 0.1: "copy page structure" yields a content-free skeleton ──────────────
     const skeletonContext = await findExtensionContext();
@@ -409,6 +435,14 @@ async function main() {
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
     assert(/^xsched-skeleton v0\.0\.2 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
+    await select.asElement().click();
+    await select.dispose();
+    const selected = await page.evaluate(() => {
+      const area = document.getElementById('xsched-probe-root').shadowRoot.querySelector('textarea.fallback');
+      return area.selectionStart === 0 && area.selectionEnd === area.value.length;
+    });
+    assert(selected, 'fallback: user can select the entire skeleton');
     await page.screenshot({ path: join(DOCS, "gate0.1-skeleton-fallback.png") });
     console.log("  ✓ skeleton: content-free map copied; textarea fallback when clipboard is denied");
 
@@ -421,7 +455,7 @@ async function main() {
     assert(before.scrolled === "0", "virtual: probe must not have scrolled on its own");
     assert(before.diag.includes("virtualized=1"), `virtual: expected virtualized=1: ${before.diag}`);
     assert(before.hint.includes("請自己往下捲"), `virtual: expected the do-not-auto-scroll hint: ${before.hint}`);
-    await page.screenshot({ path: join(DOCS, "gate0-virtual-before.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.1-virtual-before.png") });
 
     await page.evaluate(() => {
       const list = document.getElementById("sched-list");
@@ -442,7 +476,7 @@ async function main() {
     ]) {
       assert(after.times.includes(want), `virtual: missing accumulated time "${want}"`);
     }
-    await page.screenshot({ path: join(DOCS, "gate0-virtual-after.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.1-virtual-after.png") });
     console.log("  ✓ virtual: 3 → 6 rows after a test-driven scroll");
 
     await page.evaluate(() => {

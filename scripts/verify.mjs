@@ -21,10 +21,8 @@ const DOCS = join(ROOT, "docs");
 
 // Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
 // on a hostile synthetic page, that no page content can reach the skeleton or the samples.
-await import(join(PROBE, "reader.js"));
-await import(join(PROBE, "skeleton.js"));
-const READER = globalThis.XSCHED_READER;
-const SKELETON = globalThis.XSCHED_SKELETON;
+let READER;
+let SKELETON;
 const ICON_SIZES = new Set(["16", "32", "48", "128"]);
 const PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
 
@@ -370,7 +368,7 @@ function secretFragments(needle) {
 // email, @handle, English/CJK prose, prose aria-label/title/alt/placeholder, a long hash
 // class, and a long data-* value. Nothing of it may survive into the skeleton, and the
 // masked samples may not keep a single readable character.
-function attackSelfTest() {
+export function attackSelfTest(reader = READER, mapper = SKELETON) {
   const secrets = [
     "https://example.com/a?b=c",
     "550e8400-e29b-41d4-a716-446655440000",
@@ -394,12 +392,13 @@ function attackSelfTest() {
     + `<a href="https://example.com/a?b=c">https://example.com/a?b=c</a>`
     + `<img src="https://example.com/a?b=c" alt="alt text describing the picture">`
     + `<input placeholder="placeholder asks what is happening">`
+    + `<aside class="VibeEyeX-profile" role="VibeEyeX" data-testid="VibeEyeX" aria-hidden="VibeEyeX"></aside>`
     + `<p>Will send on Oct 10, 2026 at 9:00 AM punkcan@example.com @VibeEyeX</p>`
     + `<p>明天下午四點準時發送敬請期待</p>`
     + `<p>2026年7月20日(月)の午後4:24に送信されます</p>`
     + `</div></section></body></html>`;
   const document = new DOMParser().parseFromString(page, "text/html");
-  const skeleton = SKELETON.buildSkeleton(document, { pathname: "/home/compose/post/unsent/scheduled" });
+  const skeleton = mapper.buildSkeleton(document, { pathname: "/home/compose/post/unsent/scheduled" });
   if (skeleton.includes("example")) throw new Error("self-test: skeleton leaked a URL host");
   if (!/^[\x20-\x7e\n]*$/.test(skeleton)) throw new Error("self-test: skeleton contains non-ASCII page content");
   for (const secret of secrets) {
@@ -413,13 +412,23 @@ function attackSelfTest() {
   // and spaces may survive, and at most 60 code points.
   let maskedCount = 0;
   for (const secret of secrets) {
-    const masked = READER.maskSample(secret);
+    const masked = reader.maskSample(secret);
     if (!masked.includes("x")) throw new Error(`self-test: maskSample left "${secret}" unmasked`);
     if (!/^(?:x|[\p{Nd}\p{P}\s])+$/u.test(masked)) throw new Error(`self-test: maskSample kept content from "${secret}": ${masked}`);
     if (Array.from(masked).length > 60) throw new Error("self-test: maskSample exceeded 60 code points");
     maskedCount += 1;
   }
-  return { secrets: secrets.length, fragments: maskedCount };
+  const hostile = new DOMParser().parseFromString('<html><body><section role="dialog"><button><span>Will send on 2027-04-05 18:30 UTC</span><div data-testid="tweetText"><span>Will send on 2027-04-05 18:30 UTC private 987654321</span></div><p>private purchase 2027 1122334455</p></button></section></body></html>', 'text/html');
+  const report = reader.readSnapshot(hostile, { pathname: '/compose/post/unsent/scheduled' });
+  const diag = reader.buildDiagnostic({ ...report, lang: 'VibeEyeX', doclang: 'en-x-VibeEyeX' });
+  if (!/lang=x doclang=x/.test(diag)) throw new Error('self-test: diagnostic leaked unregistered language tags');
+  for (const leak of ['VibeEyeX', '987654321', '1122334455', 'Will send', 'private']) {
+    if (diag.includes(leak)) throw new Error('self-test: diagnostic leaked content or sampled tweet body');
+  }
+  if (report.samples.length !== 1) throw new Error('self-test: time samples must come only from the isolated time label');
+  const origin = mapper.hostnameOf('https://privateuser:secret@frame.example:8080/path?q=token');
+  if (origin !== 'frame.example') throw new Error('self-test: iframe origin includes credentials/path/port');
+  return { secrets: secrets.length + 3, fragments: maskedCount };
 }
 
 function selfTest() {
@@ -532,4 +541,12 @@ function main() {
   console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak self-tests; no banned APIs, minimal permissions.`);
 }
 
+// Run static checks before executing even the two pure modules. A prohibited call
+// introduced at module scope must be rejected without ever running it.
+if (checkProbeDir(PROBE).errors.length === 0) {
+  await import(join(PROBE, "reader.js"));
+  await import(join(PROBE, "skeleton.js"));
+  READER = globalThis.XSCHED_READER;
+  SKELETON = globalThis.XSCHED_SKELETON;
+}
 if (import.meta.url === `file://${process.argv[1]}`) main();

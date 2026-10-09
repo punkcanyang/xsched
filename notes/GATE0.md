@@ -144,79 +144,68 @@
 
 # 閘 0.1：真機浮層修正（probe v0.0.2）
 
-更新：2026-10-09（UTC+8），產品開發（CodeWhale，deepseek-flash）。分支：`gate0.1/probe-fixes`。
-**本階段只修探針本身，不改讀法選擇器、不猜新選擇器**（真正讀法修正等老闆貼回骨架再做）。
+更新：2026-10-09（UTC+8）；產品開發 CodeWhale 首版，Codex 獨立 session 接續複審。分支 `gate0.1/probe-fixes`；[PR #3](https://github.com/punkcanyang/xsched/pull/3)（使用者提供）。
+**只修探針、診斷及隱私，不改讀法選擇器或時間解析規則，不猜新選擇器。**
 
-## 1. 真機回報
+## 1. 真機回報與證據
 
-老闆在他的 Chrome 載入 0.0.1 後**看不到任何浮層**，貼回「複製診斷」：
-
+使用者轉述：老闆在自己的 Chrome 載入 0.0.1 後看不到浮層，提供：
 ```
 xsched-gate0 v0.0.1 onScheduled=1 tab=1 scope=2 cell=0 button=5 listitem=0 link=0 tweetText=1 phrase=1 l1=0 l2=0 l3=0 layer=0 mounted=0 timeOk=0 timeFail=1 unparsed=0 loose=0 needsScroll=0 virtualized=0 empty=0 scrolled=0
 ```
 
-可讀出的訊息：`onScheduled=1`（頁面判斷正確）、`scope=2`（找到 2 個 scope 候選）、`cell=0`（沒有 `cellInnerDiv`）、`button=5`、`phrase=1`（有 1 個節點含時間字樣）、`l1=l2=l3=0`（三層都 0 命中）、`timeFail=1`（唯一命中的時間短語解析失敗）。
+依據：本機 `git diff main...HEAD`、main 的 `probe/content.js`／`probe/reader.js`（**已親讀程式**），以及上面診斷（**收到轉述，未親看真頁**）。DOM 依據仍是本文閘 0 的來源表及 `/workspace/xsched-clues/sources-verified-by-pd.md`（**已親讀清單，未另讀原網頁**）；真頁一律**未驗證**。
 
-**他貼得回診斷＝浮層其實有掛載過**（否則沒有「複製診斷」可按）。所以這是「浮層看不見」而非「完全沒執行」。同時 `mounted=0` 是 **bug**：舊 `reader.js` 把 `mounted` 寫成 `items.length`（等於「讀到幾則」而非「浮層是否掛上」），因此 `mounted=0` 不代表浮層沒掛。
+- `onScheduled=1` 是當次判定為 Scheduled，不能证明其他時刻的判定；`scope=2` 是 **dialog 的列舉代碼**，不是候選數量。
+- 三層都是 0 命中；`timeFail=1` 表示一個含年份候選解析失敗，不能確認它與 `phrase=1` 是同一個節點。
+- 診斷證明 reader 曾執行；取得方式未知，**不能推定浮層曾掛上或可見**。
+- **確證的程式問題**：舊 `mounted` 使用 `items.length`，不是 DOM 狀態；因此原診斷的 0 無法證明浮層沒掛上。
 
-## 2. 根因分析
+## 2. 根因分析：事實與推測分開
 
-真機只回傳一則診斷，**無法 100% 斷定**「看不到」的單一原因；且我們**不能登入 X**（規矩 7），真頁未驗證。以下分兩類誠實寫：**最可能原因**與**已全部防護的可能**。
+- **已親讀程式事實**：舊 host 掛 `document.documentElement`，不是列表／modal 內部；不能宣稱它會隨列表替換而移除。舊 signature 的條件也檢查 `host.isConnected`，所以「快取阻止重掛」不是程式支持的根因。
+- **已親讀程式事實**：舊觀察器忽略自家 host 移除紀錄；location 輪詢只在路由改變時 schedule。host 單獨移除、其他 DOM／路由都不變時缺少觸發，這是合理程式缺口；**真機是否發生是推測、未驗證**。
+- 舊非 Scheduled 會 hide；SPA 路由／tab 暫態可能翻轉判定（**推測、未驗證**）。
+- CSP、頁面样式覆蓋、堆疊脈絡／遮擋都是**推測、未驗證**；本轮降低風險，不能宣稱已排除所有可能。
 
-### 最可能原因（依診斷與程式碼推斷，非確證）
+單一真機根因**仍未確定**；0.0.2 是否修好真機必須由老闆實測。
 
-1. **`hide()`／`onScheduled` 抖動把浮層藏起來**：舊 `content.js` 只在 `onScheduled` 判定為排程頁時才顯示浮層，非排程頁走 `hide()`。X 是 SPA，`onScheduled` 在路由／tab 抖動時可能來回翻轉，浮層被反覆 `hide()`；老闆若停在一個被判為「非排程頁」的瞬間，就完全看不到。
-2. **host 被 X SPA 重繪移除後沒重掛**：舊版把 host 掛在某個會被 X 換掉的容器，X 重繪（虛擬列表、modal 開合）把 host 連根拔除；舊版**沒有**「host 被移除就重掛」的觀察器，於是浮層消失且不再出現。
-3. **signature 快取跳過重繪**：舊版用「簽名」避免重複渲染，一旦 host 被移除而快取簽名沒變，就不會重建 host → 永久消失。
+## 3. 修正與隐私規則
 
-### 已全部防護的可能（本階段逐一處理）
-
-- **掛載點錯（掛 documentElement 而非 body）**：現在一律掛 `document.body`，沒有 body 才退回 `documentElement`。
-- **X `#layers`／modal 疊層蓋住浮層**：host 用 inline `z-index:2147483647`，且不依賴 X 的堆疊脈絡。
-- **CSP 擋 `<style>`**：浮層樣式**全部**用 inline `style.setProperty(..., "!important")`，不插 `<style>` 標籤。
-- **shadow host 樣式被 X 覆蓋（`display`／`all`／z-index）**：host 設 `all:initial` + `position:fixed` + `display:block` + z-index，全部 `!important`；panel 內容仍在 shadow root 內隔離。
-- **非排程頁整個不顯示**：現在**無條件掛載**——任何 x.com 頁面都有浮層；非 Scheduled 頁收成小膠囊「xsched 探針：非 Scheduled 頁」，仍可展開看診斷與按鈕；Scheduled 頁讀到 0 則也顯示「讀到 0 則」＋診斷。
-- **host 被移除沒重掛**：`MutationObserver` 監看，偵測 host 被移走就立刻重掛（3s／40 次節流，避免與 X 互搶無限迴圈），並計 `remounts=`。
-- **`mounted=` 名不符實**：改成真實狀態——`host.isConnected` 且有尺寸（>0）才 =1；另加 `remounts=`（重掛次數）與 `items=`（則數）。
-
-## 3. 改動（probe v0.0.2）
-
-- **版本** 0.0.2：`manifest.json`、`probe/reader.js` 的 `PROBE_VERSION`、`probe/skeleton.js` 的 `SKELETON_VERSION`、診斷字首 `xsched-gate0 v0.0.2`、`package.json`。
-- **無條件掛載**：`content.js` 啟動即掛；host id `xsched-probe-root`、`data-xsched-host=1`；非 Scheduled 膠囊、Scheduled 顯示「讀到 N 則」。
-- **真實掛載狀態**：`hostMounted()`（`isConnected` ＋尺寸 >0）；`remounts`（第 2 次起建立才計）；`items`。
-- **時間解析失敗遮罩樣本**：`timeFail>0` 時診斷加 `samples=`，最多 3 個、每個 ≤60 code point。只取「被認出有時間字樣（phrase 命中）但解析失敗」的**最小節點**文字（不取推文內文）。遮罩規則 `maskSample`：數字 `\p{Nd}`、標點 `\p{P}`、空白保留；**其他一律換成 `x`**（含所有 `\p{L}\p{M}` 字母文字與 `\p{S}` 符號／emoji）。多個連續 `x` 不合併（保留長度資訊）。格式：多筆以 `|` 分隔、值經 `encodeURIComponent`，空為 `none`。
-- **`lang=`／`doclang=`**：值經 `sanitizeLang`，只允許 `[A-Za-z0-9-]{1,20}`，其他寫 `x`。
-- **新按鈕「複製頁面結構」**（純模組 `probe/skeleton.js`，node 可測）：從 `document.body`（Scheduled scope 取不到時整頁）走訪、**排除自家浮層 host**。每節點一行：縮排＋小寫標籤名＋子節點數＋屬性名。短列舉值（role／data-testid／aria-selected／aria-hidden／aria-expanded／aria-checked／aria-current／aria-modal／aria-live／dir／type／tabindex／data-focusable 等：≤32 字、只含 `[A-Za-z0-9_:-]`、不像 uuid／長雜湊）才保留，其餘 `=x`。aria-label／aria-description／aria-valuetext／title／alt／placeholder／href／src／srcset／id／value／name／content／action／style 及非白名單 data-* 值一律 `x`。`class` 只留前綴（最多 3 個 token，各取到首個 `-`/`_` 前或 ≤20 字；像雜湊如 `r-1abcde`、`css-175oi2r` 後段、純 hex 寫 `h`）。文字節點只記 `#text(N)`；註解略過；script／style 只記標籤。涵蓋 open shadow root（`#shadow`）、同源 iframe（`#iframe-doc`，try/catch）、跨源 iframe（`#iframe origin=hostname`，只記 hostname，不記路徑／query）。連續同構兄弟收成 `×N`。上限 6000 節點／深度 60，超過結尾寫 `TRUNCATED nodes=… depth=…`。開頭 header：`xsched-skeleton v0.0.2 path=scheduled|other nodes=N`（不記 URL）。寫入剪貼簿用使用者點擊時的 `navigator.clipboard.writeText`；失敗則浮層內顯示 readonly textarea＋「全選」按鈕（不用 execCommand）。
-- **腳本**：`scripts/verify.mjs` 加「攻擊樣本 self-test」（見下）；`scripts/e2e.mjs` 加 selectors-broken／remount／skeleton 三情境。
+- **無條件 UI**：啟動掛 body（沒有 body 才 documentElement）；Scheduled 0 則也顯示「讀到 0 則」＋診斷；其他頁是可展開膠囊，讀取仍 0 命中。
+- host／panel 都用 CSSOM `style.setProperty(key, value, "important")`、shadow 與 textContent。固定定位／高 z-index 不保證越過所有祖先堆疊脈絡。
+- **重掛**：忽略自家 mutation，讀取節流 60ms；觀察器與 400ms 輪詢都檢查斷線。每 3 秒最多建立 3 次，達上限等待窗口過後再試，避免互搶且不永久停用。pagehide 清理觀察器／計時器，bfcache 恢復不重複註冊。
+- **mounted**：`isConnected` 且布局寬、高均 >0 才 =1；輪詢更新尺寸變化。這是布局狀態，不能证明未被其他元素遮擋。另加 `items`／`remounts`。
+- **時間樣本**：只取既有時間字樣與年份命中且解析失敗的隔離葉節點，排除 tweetText 及其後代、composer、聚合列；非法日期已解析時只取 `parsed.time`。先遮罩再回傳，不保留原樣本。不安全／無法分離的標籤保守輸出 none。最多 3 筆、各 ≤60 code point，數字／標點／空白保留，其餘包括字母、CJK、emoji 一律 x，encodeURIComponent 後用 | 分隔。
+- **lang／doclang**：只保留已知兩字母語言碼與常見 script／region；帳號形式字詞、私用／任意 variant 遮成 x；罕見三字母語言碼也保守遮罩。
+- **頁面結構**：記標籤、深度、子節點數、所有屬性名，無原文字；文字只記字數。role／data-testid／aria flags 等值須符合短 token 規則（≤32、ASCII enum、不像 uuid／hash）且在各屬性固定 UI 值白名單，其他值 x。敏感屬性（aria-label、title、alt、placeholder、href、src、id、value 等）一律 x。
+- **class**：最多 3 個，雜湊 h；只保留已知 X 命名空間 r／css，其他可讀前綴 x，避免帳號字詞混入。
+- open shadow 包含文字及元素；同源 iframe 讀子樹；跨源只記 **hostname**（URL 解析排除帳密、埠、路徑、query，這是規格允許的網域例外）。
+- 連續同構兄弟 ×N：遮罩後屬性值、子樹與文字長度都相同才折疊；長度不同保留，避免丟掉長度資訊。預處理簽名也限 **6000 走訪節點／深度 60**，超限明示 TRUNCATED；header 的 nodes 是輸出行數。
+- 使用者點擊才寫 clipboard；拒絕／同步拋錯有 readonly textarea＋全選，重複失敗只保留一組備援。不加任何權限／網路／儲存。
 
 ## 4. 結論
 
-**有條件可行（維持）**。浮層「看不見」的問題已從程式中去除最可能的三個原因（抖動隱藏、移除不重掛、簽名快取），並防護其餘已知可能（掛載點、疊層、CSP、樣式覆蓋、非排程頁隱藏、mounted 名實不符)。**但真頁仍未驗證**（我們不能登入 X），能不能在老闆的真帳號上看到浮層與讀出結果，仍需老闆實測；讀法選擇器本身的修正**不在本階段**。
+**有條件可行（維持）**。本輪修了已確證的 mounted 語意問題及重掛觸發缺口，補有限重試與隱私防護；本機 fixture 只能支持被測情境。**真機看不到浮層的根因仍未知、真頁未驗證**；需回報新版骨架及診斷。讀法修正等真結構，未猜新選擇器。
 
-## 5. 測試
+## 5. 測試（Codex 複審實跑，結果更新於提交前）
 
-- `npm test`：**57 過 / 0 敗**（`node --test` ＋ linkedom）。含 reader 五語系與備援、skeleton 規則逐條（屬性遮罩／class 前綴與雜湊／×N 收合／shadow／同源與跨源 iframe／截斷）、時間樣本遮罩、`lang`/`doclang` 過濾、`mounted` 真實狀態、診斷不含 fixture 文字。
-- `npm run verify`：**OK** — 掃 8 檔 probe ＋ 4 個 Logo SVG；24 API bypass、14 icon、9 SVG、**12 leak self-test**；無禁用 API、權限最小。攻擊樣本 self-test 構造含網址（`https://example.com/a?b=c`）、uuid、email、`@handle`、英中日文內文、帶句子的 aria-label／title／alt／placeholder、長雜湊 class、長 data-* 的一頁，跑 skeleton 與時間遮罩，斷言輸出**不出現**任何上述字串或其片段（≥4 字 ASCII 子字串、CJK ≥2 字）。已驗證有牙：故意讓屬性不遮罩 → FAIL（`skeleton leaked a URL host`），還原後 OK。
-- `npm run e2e`：**OK — 211 個斷言**（真 Chrome for Testing 載入真 `probe/`，本機 HTTPS fixture server ＋ `--host-resolver-rules`）。新增：
-  - **selectors-broken**：Scheduled 頁但列表結構完全不同、時間格式陌生 → 浮層仍掛 `mounted=1`、顯示「讀到 0 則」、`timeFail>0`、`samples` 有遮罩樣本且**不含原文字母**；
-  - **remount**：測試程式移除 host、再 `document.body.replaceChildren()` → 自動重掛、`remounts≥1` 且 `mounted=1`；
-  - **skeleton**：點「複製頁面結構」→ 讀剪貼簿，header 格式正確、不含 fixture 任何文字；剪貼簿被拒 → 顯示 textarea fallback 且持有骨架。
-  - 維持各語系 2 則、virtual 3→6（測試程式自己捲）、home 0、**擴充 0 網路請求**（38 個請求全是本機 fixture document／瀏覽器 favicon）。
-- 截圖（假資料，**依公開來源重建，非真頁快照**）：`docs/gate0.1-{en,ja,zh-Hans,zh-Hant,ko,roles-fallback,empty,not-scheduled,selectors-broken,skeleton-copied,skeleton-fallback}.png`、範例骨架 `docs/gate0.1-skeleton-sample.txt`。（舊 `docs/gate0-*.png` 保留不覆蓋。）
+- `npm test`：**64 過／0 敗**。包含原五語系／時間／scope／累加，新增帳號形式 lang／class／enum 遮罩、排除內文數字、iframe 帳密剝除、所有屬性名、不同長度／iframe 子樹不誤折疊、12000 層及 6100 寬 DOM 截斷。
+- `npm run verify`：**OK**；8 probe 檔、4 Logo B SVG；24 API bypass、14 icon、9 SVG、15 leak self-test。原規則完全保留；先靜態守門才執行純模組；攻擊頁涵蓋網址、uuid、email、handle、中英日文、帶句子的屬性、短帳號 enum／class、lang、內文數字與 iframe 帳密。新增單元測試故意讓骨架／遮罩／語系／網域洩漏，逐個證明 self-test 會失敗。
+- `npm run e2e`：**OK — 214 個斷言；38 個本機 fixture／favicon 請求，擴充 0 請求**。真 Chrome for Testing、本機 HTTPS fixture＋host-resolver，所有選擇器失效仍 mounted=1、0 則＋遮罩樣本；host／body 移除重掛、反覆移除限速後由輪詢恢復、display:none mounted=0 再恢復；骨架 clipboard／textarea 全選；原語系、虛擬化、SPA、lifecycle 皆保留，維持擴充 0 請求。
+- 假資料截圖 **「依公開來源重建，非真頁快照」**：`docs/gate0.1-{en,ja,zh-Hans,zh-Hant,ko,roles-fallback,empty,not-scheduled,selectors-broken,skeleton-copied,skeleton-fallback,virtual-before,virtual-after}.png`；範例骨架 `docs/gate0.1-skeleton-sample.txt`。**所有舊 docs/gate0-*.png 保留不覆蓋。**
 
 ## 6. 老闆實測（≤5 步）
 
-1. Chrome 開 `chrome://extensions` → 開「開發者模式」→「載入未封裝項目」→ 選 `probe/`（**確認版本 0.0.2**；若已載 0.0.1 先「重新載入」該擴充）。
-2. 開 `https://x.com/compose/post/unsent/scheduled`。
-3. 確認右下角**一定有浮層**：Scheduled 頁應顯示「讀到 N 則」；非排程頁會收成小膠囊「xsched 探針：非 Scheduled 頁」。
-4. 在 Scheduled 頁按一下「**複製頁面結構**」（會複製骨架到剪貼簿），再按「**複製診斷**」。
-5. 把這**兩份**一起貼回給我們。**若仍看不到浮層**：回報 `chrome://extensions` 上這個擴充有沒有紅色錯誤（「錯誤」按鈕），把那串錯誤貼回。
+1. Chrome 開 chrome://extensions，開開發者模式，載入 probe/ 或重新載入既有擴充，確認版本 **0.0.2**。
+2. 在自己的登入 Chrome 開 https://x.com/compose/post/unsent/scheduled。
+3. 右下應有「讀到 N 則」浮層；0 則也應有診斷。
+4. 在 Scheduled 頁按一下「**複製頁面結構**」，**立即貼到回覆草稿**；再按「**複製診斷**」，把新的診斷貼在同一份草稿後面（避免剪貼簿覆蓋骨架）。被拒時用 textarea 全選後手動複製。
+5. 把骨架和新的診斷**一起貼回來**；若仍無浮層，貼 chrome://extensions 的擴充錯誤（有無紅色錯誤按鈕）。
 
-> 「複製診斷」只含計數／布林／版本／語系（`lang`/`doclang`）與**遮罩後**的時間樣本；「複製頁面結構」是屬性骨架，**不含**推文內容、帳號、網址。
+## 7. 仍未解決
 
-## 7. 未解決問題
-
-- **真頁未驗證**：我們不能登入 X，浮層與讀法在真帳號上都還沒確認。
-- **讀法未修**：`cell=0`／`l1=l2=l3=0`（三層都 0 命中）代表 0.0.1 的選擇器在真頁很可能不合用；本階段**刻意不動選擇器**，等老闆貼回「複製頁面結構」再依真結構修。
-- **時間格式未解**：真機 `timeFail=1`（唯一命中的短語解析失敗）；`samples` 遮罩後只剩數字骨架，能否還原格式要看老闆貼回的樣本與語系。
-- **浮層「看不到」的單一確因未證實**：本文只寫「最可能原因＋已防護的所有可能」，未捏造確證。
+- **真頁未驗證**，選擇器及陌生時間格式維持原規則，等老闆回報骨架。
+- 短 enum／class／語系採保守白名單，未知項會遮罩，可能減少診斷細節；無安全獨立時間標籤時 samples=none。
+- mounted 是連線＋布局，不是「確實看得見」；持續移除時會等重試窗口，不能保證浮層永遠留住。
+- 骨架保留標籤及屬性**名稱**（規格要求），不保留內容值；跨源 hostname 是明確允許例外。closed shadow／跨源內容無法走訪；大頁會截斷。

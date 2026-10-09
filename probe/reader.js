@@ -156,10 +156,17 @@ function previewText(value, limit = 20) {
   return Array.from(String(value == null ? "" : value)).slice(0, limit).join("");
 }
 
-// Language tags may only be a short ASCII tag; anything else collapses to "x".
+// A language-shaped username is still private. Keep registered two-letter languages
+// and common script/region subtags only; private-use/variants and arbitrary words mask.
+const LANG_CODES = new Set("aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu".split(" "));
+const LANG_SCRIPTS = new Set("Arab Armn Beng Cyrl Deva Ethi Geor Grek Gujr Guru Hans Hant Hebr Jpan Kana Khmr Knda Kore Latn Mlym Mong Mymr Orya Sinh Taml Telu Thai Tibt".split(" "));
 function sanitizeLang(value) {
   const text = String(value == null ? "" : value);
-  return /^[A-Za-z0-9-]{1,20}$/.test(text) ? text : "x";
+  const match = /^([a-z]{2})(?:-([A-Z][a-z]{3}))?(?:-([A-Z]{2}|[0-9]{3}))?$/i.exec(text);
+  if (!match || !LANG_CODES.has(match[1].toLowerCase())) return "x";
+  const script = match[2] && match[2][0].toUpperCase() + match[2].slice(1).toLowerCase();
+  if (script && !LANG_SCRIPTS.has(script)) return "x";
+  return [match[1].toLowerCase(), script, match[3] && match[3].toUpperCase()].filter(Boolean).join("-");
 }
 
 // Mask a diagnostic sample so it can never carry tweet text or an account.
@@ -188,7 +195,7 @@ function hostMounted(el) {
     width = Number(el.offsetWidth) || 0;
     height = Number(el.offsetHeight) || 0;
   }
-  return width > 0 || height > 0;
+  return width > 0 && height > 0;
 }
 
 function dedupStrings(values) {
@@ -506,16 +513,20 @@ function readSnapshot(doc, { pathname = "" } = {}) {
     if (!parseSchedule(text, { allowLoose: true })) timeFail += 1;
   }
 
-  // For failures, keep the *smallest* node whose text looks like a time phrase but
-  // refused to parse. Only its own text is sampled, and buildDiagnostic masks it.
+  // Sample only a recognized time phrase in an isolated leaf, never an aggregate
+  // row or tweetText subtree. A year alone is not evidence of a time label.
+  const sampleRows = new Set(pool);
   const failNodes = [...scope.querySelectorAll("*")].filter((el) => {
-    if (!readable(el, scope) || el.querySelector(COMPOSER)) return false;
+    if (!readable(el, scope) || el.children.length || sampleRows.has(el) || el.tagName === "BUTTON" || el.closest('[data-testid="tweetText"]')) return false;
     const text = el.textContent;
-    if (!YEAR_RE.test(normalize(text || ""))) return false;
+    if (!YEAR_RE.test(normalize(text || "")) || !SEND_VERB_RE.test(text || "")) return false;
     const parsed = parseSchedule(text, { allowLoose: true });
     return !parsed || parsed.unparsed === true;
   });
-  const samples = dedupStrings(deepest(failNodes).map((el) => normalize(el.textContent || ""))).slice(0, 3);
+  const samples = dedupStrings(failNodes.map((el) => {
+    const parsed = parseSchedule(el.textContent, { allowLoose: true });
+    return maskSample(parsed ? parsed.time : normalize(el.textContent || ""));
+  })).slice(0, 3);
 
   const layout = detectLayout(scope, doc);
   return {

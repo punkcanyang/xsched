@@ -62,22 +62,25 @@ test("attribute values: allow-listed short enums kept, everything else x", () =>
   assert.ok(out.includes("href=x"), out);
   assert.ok(out.includes("id=x"), out);
   assert.ok(out.includes("data-renderkey=x"), out);
-  assert.ok(out.includes("class=[h,h,keep]"), out);
+  assert.ok(out.includes("class=[h,h,x]"), out);
   assert.ok(out.includes("#text(11)"), out);
   for (const leak of ["evil.example", "a?b=c", "550e8400", "deadbeef", "Hello", "Will send", "secret body", "private title", "keep-me"]) {
     assert.ok(!out.includes(leak), `skeleton leaked "${leak}":\n${out}`);
   }
 });
 
-test("class tokens: hash prefixes collapse to h, long tokens clip to 20 chars", () => {
+test("class tokens keep only known X namespaces; readable usernames are masked", () => {
   assert.equal(S.classToken("r-1abcde"), "h");
   assert.equal(S.classToken("css-175oi2r"), "h");
-  assert.equal(S.classToken("feed-item"), "feed");
+  assert.equal(S.classToken("feed-item"), "x");
   // A long non-hash token clips to its 20-char prefix...
-  assert.equal(S.classToken("z".repeat(40)), "z".repeat(20));
+  assert.equal(S.classToken("z".repeat(40)), "x");
   // ...but a long pure-hex run is hash-like and collapses to "h".
   assert.equal(S.classToken("a".repeat(40)), "h");
-  assert.equal(S.classToken("plain"), "plain");
+  assert.equal(S.classToken("plain"), "x");
+  assert.equal(S.classToken("VibeEyeX-profile"), "x");
+  assert.equal(S.classToken("使用者名稱"), "x");
+  assert.equal(S.classToken("r"), "r");
 });
 
 test("consecutive identical siblings collapse to a single ×N line", () => {
@@ -95,11 +98,15 @@ test("open shadow roots are walked and marked #shadow", () => {
   const span = document.createElement("span");
   span.textContent = "hi";
   shadow.append(span);
+  shadow.append(document.createTextNode('shadow secret'));
+  el.append(document.createTextNode('light secret'));
   document.body.append(el);
   const out = build(document);
   assert.ok(out.includes("#shadow"), out);
   assert.ok(out.includes("span c=1"), out);
   assert.ok(out.includes("#text(2)"), out);
+  assert.ok(out.includes("#text(13)") && out.includes("#text(12)"), out);
+  assert.ok(!out.includes('shadow secret') && !out.includes('light secret'), out);
   assert.ok(!out.includes("hi"), out);
 });
 
@@ -121,6 +128,48 @@ test("cross-origin iframe records only the hostname, never path or query", () =>
   for (const leak of ["secret", "token", "abc123", "evil.example/secret", "?"]) {
     assert.ok(!out.includes(leak), `skeleton leaked "${leak}":\n${out}`);
   }
+});
+
+test("iframe hostname excludes credentials/port and parses IPv6", () => {
+  assert.equal(S.hostnameOf("https://privateuser:secret@evil.example:8080/private?q=token"), "evil.example");
+  assert.equal(S.hostnameOf("https://[::1]:8080/path"), "[::1]");
+  assert.equal(S.hostnameOf("javascript:secret"), "x");
+});
+
+test("arbitrary short account tokens never survive enum-valued attributes", () => {
+  const out = build(doc('<html><body><div role="VibeEyeX" data-testid="VibeEyeX" aria-selected="VibeEyeX" class="VibeEyeX-profile"></div></body></html>'));
+  assert.ok(!out.includes("VibeEyeX"), out);
+  assert.ok(out.includes("role=x"), out);
+  assert.ok(out.includes("data-testid=x"), out);
+  assert.equal(S.enumValue("button", "aria-hidden"), "x");
+});
+
+test("all attribute names survive, including attributes beyond the former cap", () => {
+  const document = doc('<html><body><div></div></body></html>');
+  for (let i = 0; i < 20; i += 1) document.querySelector('div').setAttribute('data-flag-' + i, 'private');
+  const out = build(document);
+  for (let i = 0; i < 20; i += 1) assert.ok(out.includes('data-flag-' + i + '=x'), out);
+});
+
+test("folding preserves text lengths, attribute values and separate iframe structures", () => {
+  const document = doc('<html><body><p>a</p><p>longer</p><div role="button"></div><div role="dialog"></div><iframe></iframe><iframe></iframe></body></html>');
+  const frames = document.querySelectorAll('iframe');
+  Object.defineProperty(frames[0], 'contentDocument', { value: doc('<html><body><div></div></body></html>') });
+  Object.defineProperty(frames[1], 'contentDocument', { value: doc('<html><body><span></span></body></html>') });
+  const out = build(document);
+  assert.ok(out.includes('#text(1)') && out.includes('#text(6)'), out);
+  assert.ok(out.includes('role=button') && out.includes('role=dialog'), out);
+  assert.equal((out.match(/#iframe-doc/g) || []).length, 2, out);
+});
+
+test("bounded signatures handle very deep and wide DOMs without walking beyond limits", () => {
+  const document = doc('<html><body></body></html>');
+  let parent = document.body;
+  for (let i = 0; i < 12000; i += 1) { const el = document.createElement('div'); parent.append(el); parent = el; }
+  assert.match(build(document), /TRUNCATED nodes=61 depth=60$/);
+  document.body.replaceChildren();
+  for (let i = 0; i < 6100; i += 1) document.body.append(document.createElement('div'));
+  assert.match(build(document), /TRUNCATED nodes=6000 depth=0$/);
 });
 
 test("deep trees truncate and report TRUNCATED nodes/depth", () => {

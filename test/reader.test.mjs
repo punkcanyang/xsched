@@ -254,7 +254,7 @@ test("maskSample keeps digits/punctuation but masks every letter, mark, and symb
   assert.equal(Array.from(R.maskSample("x".repeat(200))).length, 60);
 });
 
-test("sanitizeLang keeps only short ASCII language tags", () => {
+test("sanitizeLang keeps registered language tags, masks usernames/private-use variants", () => {
   assert.equal(R.sanitizeLang("en-US"), "en-US");
   assert.equal(R.sanitizeLang("zh-Hant"), "zh-Hant");
   assert.equal(R.sanitizeLang(""), "x");
@@ -262,6 +262,8 @@ test("sanitizeLang keeps only short ASCII language tags", () => {
   assert.equal(R.sanitizeLang("en_US"), "x");
   assert.equal(R.sanitizeLang("a".repeat(30)), "x");
   assert.equal(R.sanitizeLang("en<x>"), "x");
+  for (const value of ["VibeEyeX", "secret-user", "en-secret", "en-x-VibeEyeX", "zh-Fake", "xx"]) assert.equal(R.sanitizeLang(value), "x");
+  assert.equal(R.sanitizeLang("es-419"), "es-419");
 });
 
 test("hostMounted is true only for a connected, laid-out host", () => {
@@ -273,6 +275,31 @@ test("hostMounted is true only for a connected, laid-out host", () => {
   assert.equal(R.hostMounted(el), false, "zero-size host is not mounted");
   Object.defineProperty(el, "getBoundingClientRect", { value: () => ({ width: 10, height: 5 }), configurable: true });
   assert.equal(R.hostMounted(el), true, "connected + sized host is mounted");
+  Object.defineProperty(el, "getBoundingClientRect", { value: () => ({ width: 0, height: 5 }), configurable: true });
+  assert.equal(R.hostMounted(el), false, "both dimensions must be nonzero");
+});
+
+test("time samples exclude year-only text, tweetText descendants and aggregate rows", () => {
+  const document = fixture("selectors-broken.html");
+  const row = document.querySelector('[role="button"]');
+  const body = document.createElement('div');
+  body.setAttribute('data-testid', 'tweetText');
+  const span = document.createElement('span');
+  span.textContent = 'Will send on 2027-04-05 18:30 UTC private 987654321';
+  body.append(span);
+  row.append(body);
+  const yearOnly = document.createElement('p');
+  yearOnly.textContent = 'private purchase 2027 1122334455';
+  row.append(yearOnly);
+  const flatRow = document.createElement('div');
+  flatRow.setAttribute('role', 'button');
+  flatRow.textContent = 'Will send on 2027-04-05 18:30 UTC combined body 9988776655';
+  document.querySelector('[role="dialog"]').append(flatRow);
+  const report = snap(document);
+  assert.equal(report.samples.length, 2);
+  const diag = R.buildDiagnostic(report);
+  assert.ok(!diag.includes('987654321') && !diag.includes('1122334455') && !diag.includes('9988776655'), diag);
+  assert.ok(report.samples.every((sample) => !/[A-WYZa-wyz]/.test(sample)));
 });
 
 test("buildDiagnostic emits masked samples only when a phrase failed to parse", () => {

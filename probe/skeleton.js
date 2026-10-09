@@ -3,7 +3,7 @@
 // Turns the live DOM into a compact, content-free structural map so the owner can paste
 // it back and we can repair the readers. It NEVER keeps text, attribute prose, URLs,
 // account handles, or hashes: text becomes a length, prose values become "x", and
-// short enumerated values (role, data-testid, aria-*, dir, type, tabindex…) survive.
+// only known UI enum values (role, data-testid, aria-*, dir, type, tabindex…) survive.
 //
 // Classic script, shared two ways (same trick as reader.js):
 //   - Chrome: loaded as a content script in the isolated world before content.js.
@@ -15,13 +15,23 @@
 const SKELETON_VERSION = "0.0.2";
 const MAX_NODES = 6000;
 const MAX_DEPTH = 60;
-const MAX_LINE_ATTRS = 12;
 
 // Attribute values safe to keep when they are short enumerated tokens.
 const VALUE_KEEP = new Set([
   "role", "data-testid", "aria-selected", "aria-hidden", "aria-expanded", "aria-checked",
   "aria-current", "aria-modal", "aria-live", "dir", "type", "tabindex", "data-focusable",
 ]);
+// Only fixed UI enums are values. An arbitrary short token can be an account name.
+const ENUMS = {
+  role: "alert alertdialog application article banner button cell checkbox columnheader combobox complementary contentinfo definition dialog document feed figure form generic grid gridcell group heading img link list listbox listitem log main marquee math menu menubar menuitem menuitemcheckbox menuitemradio navigation none note option presentation progressbar radio radiogroup region row rowgroup rowheader scrollbar search searchbox separator slider spinbutton status switch tab table tablist tabpanel term textbox timer toolbar tooltip tree treegrid treeitem",
+  "data-testid": "cellInnerDiv tweetText primaryColumn tweetTextarea_0 scheduledDateField scheduledTimeField scheduleConfirm scheduleOption scheduleChip",
+  "aria-selected": "true false", "aria-hidden": "true false", "aria-expanded": "true false",
+  "aria-checked": "true false mixed", "aria-current": "true false page step location date time",
+  "aria-modal": "true false", "aria-live": "off polite assertive", dir: "ltr rtl auto",
+  type: "button submit reset checkbox radio text password email number search tel url hidden file image range date datetime-local month week time color",
+  tabindex: "-1 0", "data-focusable": "true false",
+};
+const KNOWN_ENUMS = new Set(Object.values(ENUMS).join(" ").split(" "));
 
 const HOST_ID = "xsched-probe-root";
 
@@ -50,14 +60,15 @@ function digitMajority(text) {
 }
 
 // Keep only short, plain, non-identifying enumerated values; otherwise "x".
-function enumValue(value) {
+function enumValue(value, name) {
   const text = String(value == null ? "" : value);
   if (!text) return "x";
   if (codePoints(text) > 32) return "x";
   if (!/^[A-Za-z0-9_:-]+$/.test(text)) return "x";
   if (looksLikeUuid(text) || looksLikeHash(text)) return "x";
   if (text.length >= 4 && digitMajority(text)) return "x";
-  return text;
+  const allowed = name ? new Set((ENUMS[name] || "").split(" ")) : KNOWN_ENUMS;
+  return allowed.has(text) ? text : "x";
 }
 
 function classToken(token) {
@@ -67,7 +78,9 @@ function classToken(token) {
   if (segments.some((part) => /^[0-9a-f]{5,}$/i.test(part))) return "h";
   if (segments.some((part) => part.length >= 6 && /[0-9]/.test(part) && /[a-z]/i.test(part))) return "h";
   const prefix = token.split(/[_-]/)[0] || token;
-  return Array.from(prefix).slice(0, 20).join("");
+  // X's known class namespaces are r/css. Other prefixes may be usernames;
+  // never echo arbitrary readable words merely because they are short.
+  return prefix === "r" || prefix === "css" ? prefix : "x";
 }
 
 // class=[a,css,h] — up to three tokens, each reduced to a prefix or "h" for a hash.
@@ -85,11 +98,7 @@ function attrToken(el, name) {
   const raw = el.getAttribute(name);
   if (raw === null || raw === "") return name;
   if (!VALUE_KEEP.has(name)) return `${name}=x`;
-  return `${name}=${enumValue(raw)}`;
-}
-
-function attrSignature(el) {
-  return [...el.attributes].map((attr) => attr.name).sort().join(",");
+  return `${name}=${enumValue(raw, name)}`;
 }
 
 function tagOf(node) {
@@ -101,37 +110,10 @@ function isHost(node) {
 }
 
 function hostnameOf(value) {
-  const match = /^(?:[a-z][a-z0-9+.-]*:)?\/\/([^/?#]+)/i.exec(String(value == null ? "" : value));
-  if (!match) return "x";
-  return match[1].split(":")[0] || "x";
-}
-
-function childNodesOf(node) {
-  return [...(node.childNodes || [])];
-}
-
-function elementChildren(node) {
-  return childNodesOf(node).filter((child) => child.nodeType === 1 && !isHost(child));
-}
-
-// Bottom-up subtree signature so consecutive identical siblings can collapse to "×N".
-function signature(node, memo) {
-  if (memo.has(node)) return memo.get(node);
-  let value;
-  if (node.nodeType === 3) {
-    value = `#${codePoints(node.nodeValue).toString(36)}`;
-  } else if (node.nodeType !== 1) {
-    value = "";
-  } else if (node.shadowRoot) {
-    value = `${tagOf(node)}<${attrSignature(node)}>#shadow[${elementChildren(node.shadowRoot).map((child) => signature(child, memo)).join(",")}]`;
-  } else if (tagOf(node) === "script" || tagOf(node) === "style") {
-    value = `${tagOf(node)}<${attrSignature(node)}>`;
-  } else {
-    const kids = childNodesOf(node).filter((child) => child.nodeType === 1 || (child.nodeType === 3 && /\S/.test(child.nodeValue || "")));
-    value = `${tagOf(node)}<${attrSignature(node)}>${kids.map((child) => signature(child, memo)).join(",")}`;
-  }
-  memo.set(node, value);
-  return value;
+  try {
+    const address = URL.parse(String(value == null ? "" : value), "https://x.com");
+    return address && /^(https?:)$/.test(address.protocol) ? address.hostname : "x";
+  } catch { return "x"; }
 }
 
 function pathKind(pathname) {
@@ -141,103 +123,81 @@ function pathKind(pathname) {
 // Build the skeleton string. Root defaults to document.body (fallback documentElement).
 function buildSkeleton(target, options = {}) {
   const doc = options.document || (target && target.ownerDocument) || target;
-  const body = options.root
-    || (doc && doc.body)
-    || (doc && doc.documentElement)
-    || (target && target.documentElement)
-    || null;
-  const header = `xsched-skeleton v${SKELETON_VERSION} path=${pathKind(options.pathname)} nodes=`;
-  if (!body) return `${header}0`;
-
-  const lines = [];
-  const memo = new Map();
-  let nodes = 0;
+  const body = options.root || (doc && (doc.body || doc.documentElement)) || null;
+  const header = "xsched-skeleton v" + SKELETON_VERSION + " path=" + pathKind(options.pathname) + " nodes=";
+  if (!body) return header + "0";
+  let visited = 0;
   let maxDepthSeen = 0;
   let truncated = false;
-  let stop = false;
-
-  const push = (depth, text) => {
-    lines.push(`${"  ".repeat(depth)}${text}`);
-    nodes += 1;
-    if (depth > maxDepthSeen) maxDepthSeen = depth;
-  };
-
-  function walk(node, depth) {
-    if (stop) return;
-    if (nodes >= MAX_NODES || depth > MAX_DEPTH) { truncated = true; stop = true; return; }
-    if (!node) return;
-
+  let exhausted = false;
+  const signatures = new Map();
+  // Bound traversal before signatures; keep sanitized values and text lengths in
+  // keys, so folding cannot silently lose a different enum or text length.
+  function entry(line, depth, children = []) {
+    const signature = JSON.stringify([line, children.map((child) => child.key)]);
+    if (!signatures.has(signature)) signatures.set(signature, signatures.size);
+    return { line, depth, children, key: signatures.get(signature) };
+  }
+  function reserve(depth) {
+    if (exhausted) return false;
+    if (visited >= MAX_NODES) { truncated = true; exhausted = true; return false; }
+    if (depth > MAX_DEPTH) { truncated = true; return false; }
+    visited += 1;
+    maxDepthSeen = Math.max(maxDepthSeen, depth);
+    return true;
+  }
+  function collectChildren(parent, depth) {
+    const children = [];
+    // Avoid allocating an unbounded whole-list array before checking the budget.
+    for (let child = parent.firstChild; child && !exhausted; child = child.nextSibling) {
+      const item = collect(child, depth);
+      if (item) children.push(item);
+    }
+    return children;
+  }
+  function collect(node, depth) {
+    if (!node || isHost(node)) return null;
     if (node.nodeType === 3) {
       const text = node.nodeValue || "";
-      if (!/\S/.test(text)) return;
-      push(depth, `#text(${codePoints(text)})`);
-      return;
+      return /\S/.test(text) && reserve(depth) ? entry("#text(" + codePoints(text) + ")", depth) : null;
     }
-    if (node.nodeType !== 1) return;
-    if (isHost(node)) return;
-
+    if (node.nodeType !== 1 || !reserve(depth)) return null;
     const tag = tagOf(node);
-    const attrs = [...node.attributes].map((attr) => attr.name).slice(0, MAX_LINE_ATTRS).map((name) => attrToken(node, name));
-    const line = `${tag} c=${childNodesOf(node).length}${attrs.length ? " " + attrs.join(" ") : ""}`;
-
-    if (tag === "script" || tag === "style") {
-      push(depth, line);
-      return;
-    }
-
+    // Record every attribute name; values still pass the conservative allowlist.
+    const attrs = [...node.attributes].map((attr) => attrToken(node, attr.name)).sort();
+    const line = tag + " c=" + node.childNodes.length + (attrs.length ? " " + attrs.join(" ") : "");
+    const children = [];
     if (tag === "iframe") {
-      push(depth, line);
-      let sameOrigin = false;
       let inner = null;
-      try {
-        inner = node.contentDocument || (node.contentWindow && node.contentWindow.document) || null;
-      } catch { inner = null; }
-      if (inner) {
-        push(depth + 1, "#iframe-doc");
-        const innerRoot = inner.body || inner.documentElement;
-        if (innerRoot) {
-          for (const child of elementChildren(innerRoot)) walk(child, depth + 2);
-        }
-      } else {
-        push(depth + 1, `#iframe origin=${hostnameOf(node.getAttribute("src"))}`);
+      try { inner = node.contentDocument || (node.contentWindow && node.contentWindow.document); } catch { /* cross origin */ }
+      if (reserve(depth + 1)) {
+        const innerRoot = inner && (inner.body || inner.documentElement);
+        children.push(entry(innerRoot ? "#iframe-doc" : "#iframe origin=" + hostnameOf(node.getAttribute("src")),
+          depth + 1, innerRoot ? collectChildren(innerRoot, depth + 2) : []));
       }
-      return;
+    } else if (tag !== "script" && tag !== "style") {
+      if (node.shadowRoot && reserve(depth + 1)) {
+        children.push(entry("#shadow", depth + 1, collectChildren(node.shadowRoot, depth + 2)));
+      }
+      children.push(...collectChildren(node, depth + 1));
     }
-
-    push(depth, line);
-
-    const shadow = node.shadowRoot;
-    if (shadow) {
-      push(depth + 1, "#shadow");
-      const kids = elementChildren(shadow);
-      emitChildren(kids, depth + 2);
-    }
-    emitChildren(childNodesOf(node), depth + 1);
+    return entry(line, depth, children);
   }
-
-  // Emit children, collapsing consecutive identical siblings into one "×N" line.
-  function emitChildren(children, depth) {
+  const tree = collectChildren(body, 0);
+  const lines = [];
+  function emit(children) {
     for (let index = 0; index < children.length;) {
-      if (stop) return;
-      const child = children[index];
-      if (isHost(child)) { index += 1; continue; }
-      if (child.nodeType === 3 && !/\S/.test(child.nodeValue || "")) { index += 1; continue; }
-      const sig = signature(child, memo);
+      const item = children[index];
       let group = 1;
-      while (index + group < children.length && signature(children[index + group], memo) === sig) group += 1;
-      const before = lines.length;
-      walk(child, depth);
-      if (group > 1 && lines.length > before) {
-        lines[lines.length - 1] = `${lines[lines.length - 1]} ×${group}`;
-      }
+      while (index + group < children.length && children[index + group].key === item.key) group += 1;
+      lines.push("  ".repeat(item.depth) + item.line + (group > 1 ? " ×" + group : ""));
+      emit(item.children);
       index += group;
     }
   }
-
-  emitChildren(childNodesOf(body), 0);
-
-  const trailer = truncated ? `\nTRUNCATED nodes=${nodes} depth=${maxDepthSeen}` : "";
-  return `${header}${nodes}\n${lines.join("\n")}${trailer}`;
+  emit(tree);
+  const trailer = truncated ? "\nTRUNCATED nodes=" + visited + " depth=" + maxDepthSeen : "";
+  return header + lines.length + "\n" + lines.join("\n") + trailer;
 }
 
 globalThis.XSCHED_SKELETON = {

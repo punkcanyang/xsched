@@ -15,7 +15,7 @@ const HOST_ID = "xsched-probe-root";
 const POLL_MS = 400;
 const SETTLE_MS = 60;
 const REMOUNT_WINDOW_MS = 3000;
-const REMOUNT_LIMIT = 40;
+const REMOUNT_LIMIT = 3;
 
 let host = null;
 let timer = 0;
@@ -33,7 +33,6 @@ let remounts = 0;
 let hostCreations = 0;
 let remountWindowStart = 0;
 let remountWindowCount = 0;
-let remountGaveUp = false;
 let copyTimer = 0;
 let lastDiag = "";
 let lastReport = null;
@@ -57,6 +56,15 @@ function textNode(tag, text, style) {
 
 function ensureHost() {
   if (host && host.isConnected) return host;
+  const now = Date.now();
+  if (now - remountWindowStart >= REMOUNT_WINDOW_MS) {
+    remountWindowStart = now;
+    remountWindowCount = 0;
+  }
+  // Count actual creations, not mutation notifications. Retry on the location poll
+  // after the window expires, so a transient redraw never disables us permanently.
+  if (remountWindowCount >= REMOUNT_LIMIT) return null;
+  remountWindowCount += 1;
   const existed = hostCreations > 0;
   hostCreations += 1;
   if (existed) remounts += 1;
@@ -108,18 +116,6 @@ function writeDataset(node, report, count, diag) {
 }
 
 function scheduleRemount() {
-  const now = Date.now();
-  if (now - remountWindowStart > REMOUNT_WINDOW_MS) {
-    remountWindowStart = now;
-    remountWindowCount = 0;
-    remountGaveUp = false;
-  }
-  remountWindowCount += 1;
-  if (remountWindowCount > REMOUNT_LIMIT) {
-    // X and the probe are fighting over the DOM: stop remounting rather than loop.
-    remountGaveUp = true;
-    return;
-  }
   schedule();
 }
 
@@ -130,17 +126,20 @@ function writeClipboard(text, button, label, fallback) {
     window.clearTimeout(copyTimer);
     copyTimer = window.setTimeout(() => { if (button.isConnected) button.textContent = label; }, 1500);
   };
-  const clipboard = navigator.clipboard;
-  if (clipboard && typeof clipboard.writeText === "function") {
-    clipboard.writeText(text).then(done, () => fallback());
-    return;
-  }
+  try {
+    const clipboard = navigator.clipboard;
+    if (clipboard && typeof clipboard.writeText === "function") {
+      Promise.resolve(clipboard.writeText(text)).then(done, fallback);
+      return;
+    }
+  } catch { /* synchronous denial also offers manual copy */ }
   fallback();
 }
 
 function showFallbackText(text) {
   const shadow = host && host.shadowRoot;
   if (!shadow) return;
+  for (const old of shadow.querySelectorAll('.fallback, [data-xsched-select]')) old.remove();
   const area = document.createElement("textarea");
   area.className = "fallback";
   area.readOnly = true;
@@ -159,6 +158,7 @@ function showFallbackText(text) {
     "white-space": "pre",
   });
   const select = textNode("button", "全選", buttonStyle(true));
+  select.setAttribute("data-xsched-select", "1");
   select.type = "button";
   select.addEventListener("click", (event) => {
     event.preventDefault();
@@ -183,6 +183,7 @@ function makeButton(label, datasetKey) {
 
 function render(report, items) {
   const node = ensureHost();
+  if (!node) { mounted = 0; return; }
   const mountedNow = hostMounted(node) ? 1 : 0;
   const count = items.length;
   const effectiveCollapsed = collapsed === null ? !report.onScheduled : collapsed;
@@ -303,7 +304,7 @@ function tick() {
 }
 
 function schedule() {
-  if (remountGaveUp && host && !host.isConnected) return;
+  if (host && !host.isConnected && remountWindowCount >= REMOUNT_LIMIT && Date.now() - remountWindowStart < REMOUNT_WINDOW_MS) return;
   // A bounded throttle: continuous mutations cannot postpone reading forever.
   if (timer) return;
   timer = window.setTimeout(() => { timer = 0; tick(); }, SETTLE_MS);
@@ -323,20 +324,31 @@ function pollLocation() {
     lastLocation = now;
     schedule();
   }
+  if (!host || !host.isConnected) scheduleRemount();
+  else if (hostMounted(host) !== Boolean(mounted)) schedule();
 }
 
 function start() {
+  if (observer) return;
   document.addEventListener("scroll", onScroll, true);
   observer = new MutationObserver((records) => {
     let hostRemoved = false;
+    let changed = false;
     for (const record of records) {
       if (record.target === host || (host && host.contains && host.contains(record.target))) continue;
+      // Appending our own host is not a page change. Shadow mutations never reach
+      // this observer; host attribute writes are excluded above.
+      if (record.type === "childList" && [...record.addedNodes, ...record.removedNodes].every((node) => node === host)) {
+        if ([...record.removedNodes].includes(host)) hostRemoved = true;
+        continue;
+      }
+      changed = true;
       for (const node of record.removedNodes) {
         if (node && node.nodeType === 1 && node.id === HOST_ID) hostRemoved = true;
       }
     }
     if (hostRemoved || !host || !host.isConnected) scheduleRemount();
-    else schedule();
+    else if (changed) schedule();
   });
   observer.observe(document.documentElement, {
     childList: true,
@@ -356,6 +368,7 @@ function stop() {
   observer?.disconnect();
   observer = null;
   window.clearInterval(pollId);
+  pollId = 0;
   window.clearTimeout(timer);
   window.clearTimeout(copyTimer);
   timer = 0;
