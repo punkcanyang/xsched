@@ -20,9 +20,11 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 
 閘 0 做完回報商務拓展，老闆實測通過才往下做 1.0。
 
-## 閘 0.2：Dagaz 快捷鈕＋讀法結構整理（probe 0.0.3，進行中）
+## 閘 0.2：Dagaz 快捷鈕＋讀法結構整理（probe 0.0.3，實作完成、待外部驗證）
 
 2026-10-09 23:05（UTC+8）老闆改優先序：xsched 第一。分支 `gate0.2/shortcut-button`。右下圓形 Dagaz 快捷鈕（開關浮層、一鍵前往 Scheduled、整合小膠囊、自動重掛、九語）、版本 0.0.3、診斷第一行印版本（舊快取明顯可見）、選擇器集中但**不猜新選擇器**（等老闆貼 0.0.2「複製頁面結構」）。寫：Codex gpt-6.1-sol high；審：另一 Codex session。不再打包 zip。交接見 `notes/HANDOFF-gate0.2.md`。
+
+本寫碼 session 已實作快捷鈕／九語／控制項矩形避讓／SPA 開關／版本與 invalidated 提示／舊版接手，reader 的 60 組基準快照一致。實跑單程序測試 72 過、0 敗、1 跳過（真骨架尚無），verify 30／14／9／15 自測全過；npm test 沙箱只顯示 7 個檔案過，詳細測試另用不隔離程序重跑。**未達 READY**：沙箱 listen EPERM 擋住 e2e 本機 server，0 個浏览器斷言／0 張新截圖；.git 唯讀擋 commit。需老闆在外面跑 e2e、產生 gate0.2 截圖、提交並交另一 Codex session 複審；本 session 未 push／PR／改 main。
 
 ## 1.0（閘 0 過才做）
 

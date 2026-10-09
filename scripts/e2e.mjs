@@ -316,7 +316,7 @@ async function main() {
       const s = await probeState(page);
       return s.mode === 'other' && s.expanded === 'false' ? s : null;
     }, 'shortcut home defaults closed');
-    assert(home.shortcut && !home.panelVisible && home.count === 0, 'home shows only shortcut, no capsule');
+    assert(home.shortcut && !home.panelVisible && home.count === 0, 'home shows only shortcut, no shortcut');
     await checkNative('desktop home closed');
     await page.screenshot({ path: join(DOCS, 'gate0.2-home-closed.png') });
     const homeOpen = await toggle(true);
@@ -652,11 +652,11 @@ async function main() {
     await open("en");
     await until(async () => (await probeState(page)).count === 2, "SPA: initial Scheduled");
     await page.evaluate(() => document.querySelector('[role="tab"][aria-selected="true"]').setAttribute("aria-selected", "false"));
-    await until(async () => (await probeState(page)).mode === "other", "SPA: deselected tab turns the overlay into a capsule");
+    await until(async () => (await probeState(page)).mode === "other", "SPA: deselected tab turns the overlay into a shortcut");
     await page.evaluate(() => document.querySelectorAll('[role="tab"]')[1].setAttribute("aria-selected", "true"));
     await until(async () => (await probeState(page)).count === 2, "SPA: selected tab restores overlay");
     await page.evaluate(() => history.replaceState({}, "", "/home"));
-    await until(async () => (await probeState(page)).mode === "other", "SPA: route poll turns the overlay into a capsule on home");
+    await until(async () => (await probeState(page)).mode === "other", "SPA: route poll turns the overlay into a shortcut on home");
     await page.evaluate(() => history.replaceState({}, "", "/compose/post/unsent/scheduled"));
     await until(async () => (await probeState(page)).count === 2, "SPA: route poll restores overlay");
     console.log("  ✓ SPA: attribute-only tabs and route changes");
@@ -705,12 +705,12 @@ async function main() {
     assert((await probeState(page)).count === 2, "bfcache restore reconstructs current rows without stale state");
     console.log("  ✓ lifecycle: pagehide cleanup and bfcache restart");
 
-    // ── home timeline: probe must hide and read nothing ─────────────────────────
+    // ── home timeline: shortcut stays closed and reads nothing ─────────────────────────
     await open("home", "/home");
     await sleep(900);
     const homeState = await probeState(page);
-    assert(homeState.present && homeState.mode === "other" && homeState.count === 0, `home: overlay should be a 0-row capsule, got ${JSON.stringify(homeState)}`);
-    assert(homeState.countText === "xsched 探針：非 Scheduled 頁", `home: capsule text was "${homeState.countText}"`);
+    assert(homeState.present && homeState.mode === "other" && homeState.count === 0, `home: overlay should be a 0-row shortcut, got ${JSON.stringify(homeState)}`);
+    assert(homeState.countText === "xsched 探針：非 Scheduled 頁", `home: shortcut text was "${homeState.countText}"`);
     await page.screenshot({ path: join(DOCS, "gate0.2-not-scheduled.png") });
     console.log("  ✓ home: 0 rows (shortcut stays mounted off the Scheduled page)");
 
@@ -730,7 +730,10 @@ async function main() {
     // The overlay only exists if the content script ran, which only happens if the
     // extension was loaded from probe/.
     assert(sawOverlay, "extension content script never ran (overlay never appeared)");
-    console.log(`  ✓ network: ${requests.length} request(s), only local fixture documents / browser favicon; 0 extension requests`);
+    assert(requests.filter((event) => event.type === "Document" && event.request.url === 'https://x.com/compose/post/unsent/scheduled').length === 1, 'exactly one explicitly clicked goto navigation; no repeated automatic navigation');
+    const resources = requests.filter((event) => hasExtensionInitiator(event.initiator) && !(event.type === "Document" && userNavigations.has(event.request.url)));
+    assert(resources.length === 0, 'zero extension resource/background requests (clicked goto is page navigation)');
+    console.log(`  ✓ network: ${requests.length} local fixture/favicon/page navigation request(s); 0 extension resource/background requests; 1 user-triggered goto navigation`);
 
     assert(!consoleLogs.some((entry) => entry.startsWith("pageerror ")), "no uncaught page/content-script errors");
     console.log(`\ne2e: OK — ${assertions} assertions`);

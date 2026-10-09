@@ -23,11 +23,14 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en') {
     setInterval(fn) { polls.set(++id, fn); return id; }, clearInterval(key) { polls.delete(key); },
     addEventListener() {}, removeEventListener() {},
   };
-  document.defaultView.HTMLElement.prototype.getBoundingClientRect = function () {
+  const rect = function () {
     let el = this;
     while (el) { if (el.style?.display === 'none') return { width: 0, height: 0 }; el = el.parentElement; }
     return { left: 0, right: 44, top: 0, bottom: 44, width: 44, height: 44 };
   };
+  for (const el of document.querySelectorAll('*')) el.getBoundingClientRect = rect;
+  const create = document.createElement.bind(document);
+  document.createElement = (...args) => { const el = create(...args); el.getBoundingClientRect = rect; return el; };
   const context = vm.createContext({
     XSCHED_READER: globalThis.XSCHED_READER, XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: globalThis.XSCHED_UI,
     document, window, navigator: { language: 'en-US' }, location, innerWidth: 1100, innerHeight: 820,

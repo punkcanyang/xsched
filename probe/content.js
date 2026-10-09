@@ -248,6 +248,7 @@ function makeButton(label, datasetKey) {
 function fixedObstacles() {
   const rectangles = [];
   const seen = new Set();
+  const fixedParents = new Map();
   // Supplied Post/FAB controls and arbitrary Messages/Grok controls are covered
   // by generic interactive elements plus their fixed/sticky ancestor containers.
   for (const control of document.querySelectorAll('button, a, [role="button"], [role="dialog"], aside')) {
@@ -255,9 +256,11 @@ function fixedObstacles() {
     let fixed = null;
     for (let node = control; node && node !== document.body; node = node.parentElement) {
       if (node === host || node.getAttribute("data-xsched-host") === "1") break;
+      if (fixedParents.has(node)) { fixed = fixedParents.get(node); break; }
       const style = getComputedStyle(node);
       if (style.position === "fixed" || style.position === "sticky") { fixed = node; break; }
     }
+    fixedParents.set(control, fixed);
     if (!fixed || seen.has(fixed)) continue;
     seen.add(fixed);
     const style = getComputedStyle(fixed);
@@ -272,12 +275,17 @@ function positionUI() {
   const panel = host.shadowRoot.querySelector("section");
   const obstacles = fixedObstacles();
   const isOpen = panel.style.getPropertyValue("display") !== "none";
-  // Try the full panel first. If a drawer fills that space, keep the button
-  // accessible and limit panel height to the available space above it.
+  // Restore the ordinary maximum before measuring; a previously expanded drawer
+  // must not leave the panel permanently cramped after it closes.
+  css(panel, { "max-height": `${Math.max(80, innerHeight - 188)}px` });
   let position = placement(innerWidth, innerHeight, obstacles, isOpen ? panel.getBoundingClientRect().height : 0);
   if (!position.clear && isOpen) {
-    position = placement(innerWidth, innerHeight, obstacles);
-    css(panel, { "max-height": `${Math.max(60, innerHeight - position.bottom - 72)}px` });
+    // A short scrollable panel can fit a gap that the full panel cannot.
+    for (let cap = panel.getBoundingClientRect().height - 64; cap >= 80; cap -= 64) {
+      css(panel, { "max-height": `${cap}px` });
+      position = placement(innerWidth, innerHeight, obstacles, panel.getBoundingClientRect().height);
+      if (position.clear) break;
+    }
   }
   css(host, { right: `${position.right}px`, bottom: `${position.bottom}px` });
 }
@@ -290,9 +298,10 @@ function render(report, items) {
   const effectiveCollapsed = collapsed === null ? !report.onScheduled : collapsed;
   mounted = mountedNow;
 
+  const runtime = runtimeState();
   const diag = buildDiagnostic({
     ...report,
-    ...runtimeState(),
+    ...runtime,
     mounted: mountedNow,
     items: count,
     remounts,
@@ -328,7 +337,7 @@ function render(report, items) {
   const badge = shortcut.querySelector(".badge");
   badge.textContent = String(count);
   css(badge, { display: report.onScheduled ? "block" : "none" });
-  const kicker = textNode("div", versionLine(runtimeState().manifestVersion, runtimeState().runtimeInvalidated), { color: "#8b98a5", "font-size": "11px", "word-break": "break-word" });
+  const kicker = textNode("div", versionLine(runtime.manifestVersion, runtime.runtimeInvalidated), { color: "#8b98a5", "font-size": "11px", "word-break": "break-word" });
   kicker.className = "version";
   panel.append(kicker);
 

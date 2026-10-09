@@ -36,6 +36,10 @@ test("network policy rejects same-URL fetches, extension initiators, and externa
     { url: "https://evil.example/a.png", type: "Image", navigation: false },
     { url: "chrome-extension://id/data", type: "Other", navigation: false },
   ]) assert.equal(allowedRequest(request, navigations), false);
+  assert.equal(allowedRequest({ url, type: "Document", navigation: true, extensionInitiator: true, userNavigation: true }, navigations), true);
+  for (const extra of [{ type: "Fetch", navigation: false }, { type: "Other", navigation: false }, { type: "Document", navigation: false }, { url: "https://evil.example/", type: "Document", navigation: true }]) {
+    assert.equal(allowedRequest({ url, extensionInitiator: true, userNavigation: true, ...extra }, navigations), false);
+  }
   assert.equal(hasExtensionInitiator({ stack: { callFrames: [], parent: { callFrames: [{ url: "chrome-extension://id/content.js" }] } } }), true);
 });
 

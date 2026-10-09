@@ -246,6 +246,8 @@ export function scanSource(text, label) {
   for (const rule of BANNED) {
     if (rule.re.test(text) || rule.re.test(canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
   }
+  const navigation = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, "");
+  if (/\blocation\s*(?:=|\.\s*(?:assign|replace)\s*\(|\.\s*(?:href|pathname|search|hash)\s*=)/.test(navigation)) errors.push(`${label}: only the fixed Scheduled navigation is allowed`);
   if (/\bimport\s*\(/.test(canonical)) errors.push(`${label}: dynamic import forbidden`);
   return errors;
 }
@@ -435,6 +437,7 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
 
 function selfTest() {
   const violations = [
+    'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
     'a.setAttributeNS(null, "href", "https://evil.example/")',
     'range.createContextualFragment("<img>")', 'parser.parseFromString("<img>", "text/html")',
     "fetch/*comment*/('x')", "globalThis.fetch", 'window["fe"+"tch"]("x")',
