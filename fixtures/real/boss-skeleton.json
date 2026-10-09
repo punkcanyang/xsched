@@ -1,0 +1,10 @@
+{
+  "pathname": "/compose/post/unsent/scheduled",
+  "onScheduled": 1,
+  "count": 1,
+  "layer": "a11y",
+  "times": ["將於2026年10月10日 上午9:00傳送"],
+  "formatted": ["2026-10-10 09:00 (Sat)"],
+  "timeFail": 0,
+  "provenance": "Owner skeleton L36-124, one row L108. Time text and zh-Hant are inferred synthetic examples; actual grammar UNKNOWN."
+}

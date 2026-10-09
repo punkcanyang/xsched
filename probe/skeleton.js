@@ -159,7 +159,11 @@ function buildSkeleton(target, options = {}) {
     if (!node || isHost(node)) return null;
     if (node.nodeType === 3) {
       const text = node.nodeValue || "";
-      return /\S/.test(text) && reserve(depth) ? entry("#text(" + codePoints(text) + ")", depth) : null;
+      if (!/\S/.test(text) || !reserve(depth)) return null;
+      const reader = globalThis.XSCHED_READER;
+      const parent = node.parentElement;
+      const sample = reader && parent && reader.isIsolatedTimeElement(parent) ? reader.timeSample(text) : "";
+      return entry("#text(" + codePoints(text) + ")" + (sample ? " calendar=" + encodeURIComponent(sample) : ""), depth);
     }
     if (node.nodeType !== 1 || !reserve(depth)) return null;
     const tag = tagOf(node);

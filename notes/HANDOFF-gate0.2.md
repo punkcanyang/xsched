@@ -79,3 +79,13 @@
 先對最後工作樹跑 `npm test`、`npm run verify`、`npm run e2e`，留存實際 assertions／request 數字與假資料截圖；再由另一 session 複審。本輪沒有加權限／網路資源／儲存／API 呼叫，$0、不登入真 X、不打包 zip。
 
 Chrome 的幾何避讓、真 0.0.2 並存接手與网络證據待外部實跑。真頁未驗證；reader 完全保留舊假設，需老闆回傳 0.0.3 骨架＋診斷、X 語系／列數／捲到底狀態，修時間格式另需去內容的時間文案。滿版覆蓋／closed shadow／極小視窗仍可能找不到位置；舊 0.0.2 script 接手後只是隱藏連線，直到刷新才消失。老闆實測 5 步與完整限制見 GATE0.md「閘 0.2」。
+
+## 續作計畫：真頁骨架與時間（老闆擴大驗收）
+
+外部已提交 722c83f／e607b5d，使用者回報既有 e2e 305 斷言通過；本輪從這份乾淨分支續作，commit／Chrome e2e 仍由外部跑。
+
+1. 分析收到的 0.0.2 骨架：雙層 dialog（36／42 行），上層列表只有 108 行一顆含 tweetText 的 button；背景 126 行起 aria-hidden=true，article/time/cellInnerDiv 都在背景。時間候選是 117–118 行獨立 span/#text(28)，無 time/datetime、列 button 沒 aria-label；內容格式不可確認。
+2. 依上述證據修最近 dialog 的 scope 與 button + tweetText + 獨立 span 讀法；背景 article 排除，舊層備援保留。轉換脚本只從骨架複製安全結構／enum，時間及文字全用假資料，原骨架不提交。
+3. 補五語系時間／無年份／跨年／12-24 小時制解析，保留舊輸出欄位；浮層顯示統一解析时间，失敗明示。未解析的真結構列也保留則數。
+4. 共用日曆詞白名單遮罩、fmt／samples 與 skeleton 的短時間文字樣本；時間候選嚴格隔離內文，新增洩漏攻擊 self-test，不放寬舊守門。
+5. 新 real／跨年 fixtures、單元／Chrome e2e 情境與文件；本機實跑 test／verify，交外部跑 e2e、提交與另一 session 複審。結論保留「則數依骨架可讀、時間格式待老闆診斷確認」。

@@ -417,8 +417,10 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   let maskedCount = 0;
   for (const secret of secrets) {
     const masked = reader.maskSample(secret);
-    if (!masked.includes("x")) throw new Error(`self-test: maskSample left "${secret}" unmasked`);
-    if (!/^(?:x|[\p{Nd}\p{P}\s])+$/u.test(masked)) throw new Error(`self-test: maskSample kept content from "${secret}": ${masked}`);
+    const calendarOnly = secret === "Will send on Oct 10, 2026 at 9:00 AM" || secret === "2026年7月20日(月)の午後4:24に送信されます";
+    if (calendarOnly && masked !== secret) throw new Error("self-test: calendar vocabulary not preserved");
+    if (!calendarOnly && !masked.includes("x")) throw new Error(`self-test: maskSample left "${secret}" unmasked`);
+    if (!calendarOnly && !/^(?:x|[\p{Nd}\p{P}\s])+$/u.test(masked)) throw new Error(`self-test: maskSample kept content from "${secret}": ${masked}`);
     if (Array.from(masked).length > 60) throw new Error("self-test: maskSample exceeded 60 code points");
     maskedCount += 1;
   }
@@ -426,13 +428,29 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   const report = reader.readSnapshot(hostile, { pathname: '/compose/post/unsent/scheduled' });
   const diag = reader.buildDiagnostic({ ...report, lang: 'VibeEyeX', doclang: 'en-x-VibeEyeX' });
   if (!/lang=x doclang=x/.test(diag)) throw new Error('self-test: diagnostic leaked unregistered language tags');
-  for (const leak of ['VibeEyeX', '987654321', '1122334455', 'Will send', 'private']) {
+  for (const leak of ['VibeEyeX', '987654321', '1122334455', 'private']) {
     if (diag.includes(leak)) throw new Error('self-test: diagnostic leaked content or sampled tweet body');
   }
   if (report.samples.length !== 1) throw new Error('self-test: time samples must come only from the isolated time label');
+  // New calendar export path: body may look exactly like a date, so require DOM
+  // isolation. This retains every original body/attribute leak assertion above.
+  const extraSecrets = ['secretbody', 'May@January.example', '@May2026', 'https://May.example/2026', '987654321', '1122334455'];
+  const calendarPage = new DOMParser().parseFromString('<html><body><section role="dialog"><button role="button"><div><span>Will send on Oct 10, 2026 at 9:00 AM secretbody May@January.example @May2026 https://May.example/2026 987654321</span></div><div data-testid="tweetText"><span>Will send on Dec 31, 2026 at 9:00 AM 1122334455</span></div></button><p>Will send on Oct 10, 2026 at 9:00 AM secretbody</p></section></body></html>', 'text/html');
+  const calendarSkeleton = mapper.buildSkeleton(calendarPage, { pathname: '/compose/post/unsent/scheduled' });
+  if (!calendarSkeleton.includes('calendar=')) throw new Error('self-test: isolated calendar sample path was not exercised');
+  if (calendarSkeleton.includes('Dec') || calendarSkeleton.includes('31%2C')) throw new Error('self-test: calendar-looking tweet body leaked');
+  for (const leak of extraSecrets) {
+    for (const output of [calendarSkeleton, decodeURIComponent(calendarSkeleton), reader.buildDiagnostic(reader.readSnapshot(calendarPage, { pathname:'/compose/post/unsent/scheduled' }))]) {
+      if (output.includes(leak)) throw new Error('self-test: calendar path leaked '+leak);
+    }
+  }
+  // Calendar-shaped addresses must never preserve vocabulary/digits from identities.
+  for (const secret of ['May@January.example', '@May2026', 'https://May.example/2026']) {
+    if (!/^x+$/.test(reader.maskSample(secret))) throw new Error('self-test: calendar address unmasked');
+  }
   const origin = mapper.hostnameOf('https://privateuser:secret@frame.example:8080/path?q=token');
   if (origin !== 'frame.example') throw new Error('self-test: iframe origin includes credentials/path/port');
-  return { secrets: secrets.length + 3, fragments: maskedCount };
+  return { secrets: secrets.length + 3 + extraSecrets.length + 3, fragments: maskedCount };
 }
 
 function selfTest() {

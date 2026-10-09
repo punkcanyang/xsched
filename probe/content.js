@@ -2,7 +2,7 @@
 // All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
 (() => {
 "use strict";
-const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted, versionLine } = globalThis.XSCHED_READER;
+const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted, versionLine, formatTime } = globalThis.XSCHED_READER;
 const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 
 const { stringsFor, placement } = globalThis.XSCHED_UI;
@@ -356,7 +356,7 @@ function render(report, items) {
       for (const item of items) {
         const row = document.createElement("div");
         css(row, { padding: "6px 0", "border-top": "1px solid #2f3336" });
-        const time = textNode("div", item.time, { color: "#1d9bf0", "font-weight": "680", "word-break": "break-word" });
+        const time = textNode("div", formatTime(item.at), { color: "#1d9bf0", "font-weight": "680", "word-break": "break-word" });
         time.className = "time";
         const preview = textNode("div", item.preview || "（沒有文字）", { "word-break": "break-word" });
         preview.className = "preview";
