@@ -29,6 +29,7 @@
 1. **獨立複審已完成**：依老闆指定，由 Codex 在本次獨立 session（與 CodeWhale 寫碼 session 不同）讀完整差異、直接修正守門／日期／scope／去重／浮層節流與清理／e2e 網路證據／文件。最新結果以 `notes/GATE0.md` §5 為準，PR 說明請補上複審身分與結果。
 2. **PR 已開**：[PR #2](https://github.com/punkcanyang/xsched/pull/2)，`gate0/scheduled-read` → `main`（使用者提供的 PR 資訊）。複審只在本機 commit，**未 push、未 merge、未改 main 或 PR 說明**；由产品开发推送複審 commits 並更新 PR 的 1–7。
 3. **老闆真帳號實測**（在他的 Chrome，`AGENTS.md` 規矩 7）：照 `notes/GATE0.md` §6 的 ≤5 步；回報「複製診斷」與語系。**在真頁驗證前，結論只能是「有條件可行」。**
+4. **Logo B（Dagaz）接續複審**：產品開發已推送首輪複審 `abd42d8`，並新增 Logo commit `587aca2`。SVG 在 `docs/xsched-logo-B*.svg`；16／32／48／128 PNG 在 `probe/icons/`，與指定來源逐位元相同。manifest 只加 icons，沒有 action／額外權限／web_accessible_resources。Codex 在同一複審 session 補嚴格圖示／SVG 守門及 Chrome 資源讀取測試；本輪仍只在本機 commit，不 push／merge，測試數字見 `notes/GATE0.md`。
 
 ## 下一步
 

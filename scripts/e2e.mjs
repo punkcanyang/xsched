@@ -263,6 +263,40 @@ async function main() {
       if (result.result.value) extensionContext = context.id;
     }
     assert(extensionContext, "reader must run in an isolated extension context");
+    const iconInfo = await network.send("Runtime.evaluate", {
+      contextId: extensionContext,
+      expression: "({icons: chrome.runtime.getManifest().icons, hasAction: Object.hasOwn(chrome.runtime.getManifest(), 'action'), url: chrome.runtime.getURL('icons/icon128.png')})",
+      returnByValue: true,
+    });
+    const loadedIcons = iconInfo.result.value;
+    assert(JSON.stringify(loadedIcons.icons) === JSON.stringify({ 16: "icons/icon16.png", 32: "icons/icon32.png", 48: "icons/icon48.png", 128: "icons/icon128.png" }), "loaded extension manifest must register the four local icons");
+    assert(!loadedIcons.hasAction, "logo must not introduce an action");
+    // The test navigates a separate target directly to a packaged extension image.
+    // Its requests are recorded separately; fixture request policy stays unchanged.
+    const iconPage = await browser.newPage();
+    const iconRequests = [];
+    const iconDenied = [];
+    try {
+      await iconPage.setRequestInterception(true);
+      iconPage.on("request", (req) => {
+        iconRequests.push(req.url());
+        const allowed = req.url() === loadedIcons.url;
+        if (!allowed) iconDenied.push(req.url());
+        void (allowed ? req.continue() : req.abort()).catch((error) => consoleLogs.push(error.message));
+      });
+      await iconPage.goto(loadedIcons.url, { waitUntil: "load", timeout: 10000 });
+      assert(iconPage.url() === loadedIcons.url, "test must load the packaged chrome-extension icon URL");
+      const dimensions = await iconPage.evaluate(() => {
+        const image = document.querySelector("img");
+        return [image?.naturalWidth, image?.naturalHeight];
+      });
+      assert(dimensions[0] === 128 && dimensions[1] === 128, "packaged icon128.png must decode as 128x128 in Chrome");
+      // Chrome may serve extension-scheme files without page request events. The
+      // URL and successful image decode prove existence; any surfaced extra request
+      // is still blocked. This never exempts an extension request on the fixture.
+      assert(iconRequests.every((url) => url === loadedIcons.url) && iconDenied.length === 0, `test icon target must request only its packaged image: ${JSON.stringify(iconDenied)}`);
+      console.log("  ✓ Logo B: registered 4 icons, no action; packaged 128x128 resource decoded in a separate test-driven target");
+    } finally { await iconPage.close(); }
     await network.send("Runtime.evaluate", { contextId: extensionContext, expression: `
       globalThis.__fixtureCopies = [];
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {

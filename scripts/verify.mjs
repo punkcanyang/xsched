@@ -12,9 +12,157 @@ import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, lstatSync, w
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
+import { DOMParser } from "linkedom";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROBE = join(ROOT, "probe");
+const DOCS = join(ROOT, "docs");
+const ICON_SIZES = new Set(["16", "32", "48", "128"]);
+const PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+// Validate the complete PNG container, CRCs, and decompressed scanline layout;
+// checking only the IHDR magic would accept a fake or truncated image.
+export function checkPng(bytes, size, label = "icon") {
+  const errors = [];
+  try {
+    if (!bytes.subarray(0, 8).equals(PNG_SIGNATURE)) throw new Error("not a PNG");
+    let offset = 8;
+    let header;
+    let ended = false;
+    let palette = false;
+    const data = [];
+    let dataEnded = false;
+    while (offset < bytes.length) {
+      if (offset + 12 > bytes.length) throw new Error("truncated PNG chunk");
+      const length = bytes.readUInt32BE(offset);
+      const end = offset + 12 + length;
+      if (end > bytes.length) throw new Error("truncated PNG chunk data");
+      const type = bytes.toString("ascii", offset + 4, offset + 8);
+      if (!/^[A-Za-z]{4}$/.test(type)) throw new Error("invalid PNG chunk type");
+      if (crc32(bytes.subarray(offset + 4, end - 4)) !== bytes.readUInt32BE(end - 4)) throw new Error("invalid PNG CRC");
+      const chunk = bytes.subarray(offset + 8, end - 4);
+      if (!header && type !== "IHDR") throw new Error("PNG must start with IHDR");
+      if (type === "IHDR") {
+        if (header || length !== 13) throw new Error("invalid PNG IHDR");
+        header = chunk;
+      } else if (type === "PLTE") {
+        if (palette || data.length || !length || length % 3 || length > 768) throw new Error("invalid PNG palette");
+        palette = true;
+      } else if (type === "IDAT") {
+        if (dataEnded) throw new Error("nonconsecutive PNG IDAT chunks");
+        data.push(chunk);
+      } else if (type === "IEND") {
+        if (length || !data.length || end !== bytes.length) throw new Error("invalid PNG IEND/trailing bytes");
+        ended = true;
+      } else if (type[0] === type[0].toUpperCase()) {
+        throw new Error("unknown critical PNG chunk");
+      }
+      if (data.length && type !== "IDAT") dataEnded = true;
+      offset = end;
+    }
+    if (!header || !ended) throw new Error("incomplete PNG");
+    const width = header.readUInt32BE(0);
+    const height = header.readUInt32BE(4);
+    if (width !== Number(size) || height !== Number(size)) throw new Error(`PNG dimensions ${width}x${height} must be ${size}x${size}`);
+    const depth = header[8];
+    const color = header[9];
+    const depths = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
+    if (!depths[color]?.includes(depth) || header[10] !== 0 || header[11] !== 0 || header[12] > 1 || (color === 3 && !palette)) throw new Error("invalid PNG encoding");
+    const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[color];
+    const passes = header[12] === 0 ? [[0, 0, 1, 1]] : [[0, 0, 8, 8], [4, 0, 8, 8], [0, 4, 4, 8], [2, 0, 4, 4], [0, 2, 2, 4], [1, 0, 2, 2], [0, 1, 1, 2]];
+    const rows = [];
+    for (const [x, y, dx, dy] of passes) {
+      const columns = Math.max(0, Math.ceil((width - x) / dx));
+      const count = Math.max(0, Math.ceil((height - y) / dy));
+      if (columns) for (let row = 0; row < count; row++) rows.push(1 + Math.ceil(columns * channels * depth / 8));
+    }
+    const expected = rows.reduce((sum, row) => sum + row, 0);
+    const pixels = inflateSync(Buffer.concat(data), { maxOutputLength: expected });
+    if (pixels.length !== expected) throw new Error("invalid PNG pixel data length");
+    let position = 0;
+    for (const row of rows) {
+      if (pixels[position] > 4) throw new Error("invalid PNG scanline filter");
+      position += row;
+    }
+  } catch (error) { errors.push(`${label}: ${error.message}`); }
+  return errors;
+}
+
+export function checkIconMap(icons, label = "icons", dir = PROBE) {
+  if (!icons || typeof icons !== "object" || Array.isArray(icons) || !Object.keys(icons).length) return [`${label}: must be a nonempty icon size object`];
+  const errors = [];
+  for (const [size, path] of Object.entries(icons)) {
+    if (!ICON_SIZES.has(size)) { errors.push(`${label}: unsupported icon size ${size}`); continue; }
+    // This grammar also excludes schemes, absolute paths, .., percent encoding,
+    // backslashes, extra directories, query strings, and fragments.
+    if (typeof path !== "string" || !/^icons\/[A-Za-z0-9_-]+\.png$/.test(path)) {
+      errors.push(`${label}.${size}: icon path must be icons/*.png inside probe`);
+      continue;
+    }
+    try {
+      const folder = lstatSync(join(dir, "icons"));
+      const file = lstatSync(join(dir, path));
+      if (folder.isSymbolicLink() || !folder.isDirectory() || file.isSymbolicLink() || !file.isFile()) throw new Error("icon must be a regular file in a real icons directory");
+      errors.push(...checkPng(readFileSync(join(dir, path)), size, `${label}.${size}`));
+    } catch (error) { errors.push(`${label}.${size}: icon file missing or unsafe (${error.message})`); }
+  }
+  return errors;
+}
+
+// A deliberately small vocabulary for these authored, purely geometric logos.
+// No CSS/style, animation, embedded HTML, entities, or executable SVG is needed.
+export function checkLogoSvg(source, label = "logo") {
+  const errors = [];
+  if (/<\s*![\s]*(?:DOCTYPE|ENTITY)\b|<\?/i.test(source)) return [`${label}: SVG declarations/processing instructions forbidden`];
+  const document = new DOMParser().parseFromString(source, "image/svg+xml");
+  const root = document.documentElement;
+  if (!root || root.tagName !== "svg" || root.getAttribute("xmlns") !== "http://www.w3.org/2000/svg" || [...document.childNodes].some((node) => node.nodeType === 1 && node !== root)) return [`${label}: must be a single SVG root`];
+  const tags = new Set(["svg", "title", "defs", "clipPath", "g", "path", "rect"]);
+  const attributes = new Set(["xmlns", "xmlns:xlink", "viewBox", "id", "x", "y", "width", "height", "rx", "ry", "d", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "clip-path", "transform", "href", "xlink:href"]);
+  const elements = [root, ...root.querySelectorAll("*")];
+  const ids = new Set(elements.map((element) => element.getAttribute("id")).filter(Boolean));
+  for (const element of elements) {
+    if (!tags.has(element.tagName)) errors.push(`${label}: forbidden SVG element ${element.tagName}`);
+    for (const { name, value } of element.attributes) {
+      if (/^on/i.test(name) || !attributes.has(name)) { errors.push(`${label}: forbidden SVG attribute ${name}`); continue; }
+      if (name === "xmlns" || name === "xmlns:xlink") {
+        const expected = name === "xmlns" ? "http://www.w3.org/2000/svg" : "http://www.w3.org/1999/xlink";
+        if (value !== expected) errors.push(`${label}: unexpected namespace`);
+        continue;
+      }
+      if (value.includes("\\")) { errors.push(`${label}: SVG escape sequences forbidden`); continue; }
+      if (name === "href" || name === "xlink:href") {
+        if (!/^#[A-Za-z_][\w.-]*$/.test(value) || !ids.has(value.slice(1))) errors.push(`${label}: external or unresolved SVG href`);
+      } else if (/url\s*\(/i.test(value)) {
+        const local = /^url\(\s*(["']?)#([A-Za-z_][\w.-]*)\1\s*\)$/.exec(value);
+        if (!local || !ids.has(local[2])) errors.push(`${label}: external or unresolved SVG url reference`);
+      } else if (/[a-z][\w+.-]*:|\/\//i.test(value)) errors.push(`${label}: external SVG reference`);
+    }
+  }
+  return errors;
+}
+
+export function checkLogoDir(dir = DOCS) {
+  const names = readdirSync(dir).filter((name) => /^xsched-logo-B.*\.svg$/.test(name));
+  const required = ["xsched-logo-B.svg", "xsched-logo-B-black-on-light.svg", "xsched-logo-B-white-on-dark.svg", "xsched-logo-B-accent-icon.svg"];
+  const errors = required.filter((name) => !names.includes(name)).map((name) => `docs/${name}: missing logo`);
+  for (const name of names) {
+    const file = join(dir, name);
+    if (lstatSync(file).isSymbolicLink() || !lstatSync(file).isFile()) errors.push(`docs/${name}: logo must be a regular file`);
+    else errors.push(...checkLogoSvg(readFileSync(file, "utf8"), `docs/${name}`));
+  }
+  return { errors, scanned: names.length };
+}
 
 // Things the probe must never contain. (Whole probe/ tree, any file type.)
 const BANNED = [
@@ -95,12 +243,21 @@ export function scanSource(text, label) {
   return errors;
 }
 
-export function checkManifest(manifest, label = "probe/manifest.json") {
+export function checkManifest(manifest, label = "probe/manifest.json", dir = PROBE) {
   const errors = [];
   if (manifest.manifest_version !== 3) errors.push(`${label}: manifest_version must be 3`);
-  const keys = new Set(["manifest_version", "name", "version", "description", "content_scripts"]);
+  const keys = new Set(["manifest_version", "name", "version", "description", "content_scripts", "icons", "action"]);
   for (const key of Object.keys(manifest)) {
     if (!keys.has(key)) errors.push(`${label}: unexpected manifest field "${key}"`);
+  }
+  if (Object.hasOwn(manifest, "icons")) errors.push(...checkIconMap(manifest.icons, `${label}.icons`, dir));
+  if (Object.hasOwn(manifest, "action")) {
+    const action = manifest.action;
+    if (!action || typeof action !== "object" || Array.isArray(action) || !Object.hasOwn(action, "default_icon")) errors.push(`${label}: action must contain only default_icon`);
+    else {
+      for (const key of Object.keys(action)) if (key !== "default_icon") errors.push(`${label}: unexpected action field ${key}`);
+      errors.push(...checkIconMap(action.default_icon, `${label}.action.default_icon`, dir));
+    }
   }
 
   if (Array.isArray(manifest.permissions) && manifest.permissions.length > 0) {
@@ -162,7 +319,7 @@ export function checkProbeDir(dir) {
         errors.push(`${rel}: not valid JSON (${err.message})`);
         continue;
       }
-      errors.push(...checkManifest(manifest, rel));
+      errors.push(...checkManifest(manifest, rel, dir));
       for (const entry of manifest.content_scripts || []) {
         for (const script of Array.isArray(entry?.js) ? entry.js : []) {
           if (!existsSync(join(dir, script))) errors.push(`${rel}: missing script ${script}`);
@@ -223,7 +380,35 @@ function selfTest() {
     if (goodResult.errors.length !== 0) {
       throw new Error(`self-test: scanner flagged a clean probe: ${goodResult.errors.join("; ")}`);
     }
-    return violations.length;
+    mkdirSync(join(good, "icons"));
+    writeFileSync(join(good, "icons", "icon16.png"), readFileSync(join(PROBE, "icons", "icon16.png")));
+    writeFileSync(join(good, "icons", "fake.png"), "not a PNG");
+    const iconCases = [
+      null, [], "icons/icon16.png", {}, { 64: "icons/icon16.png" },
+      { 16: "../icon16.png" }, { 16: "icons/../icon16.png" }, { 16: "/icons/icon16.png" },
+      { 16: "https://evil.example/icon16.png" }, { 16: "data:image/png;base64,x" },
+      { 16: "icons\\icon16.png" }, { 16: "icons/missing.png" }, { 16: "icons/fake.png" },
+      { 32: "icons/icon16.png" },
+    ];
+    for (const icons of iconCases) {
+      if (!checkIconMap(icons, "self-test icons", good).length) throw new Error(`self-test: missed invalid icons ${JSON.stringify(icons)}`);
+    }
+    if (checkIconMap({ 16: "icons/icon16.png" }, "self-test icons", good).length) throw new Error("self-test: rejected valid local PNG icon");
+    const cleanManifest = JSON.parse(readFileSync(join(good, "manifest.json"), "utf8"));
+    if (checkManifest({ ...cleanManifest, action: { default_icon: { 16: "icons/icon16.png" } } }, "self-test action", good).length) throw new Error("self-test: rejected icon-only action");
+    if (!checkManifest({ ...cleanManifest, action: { default_icon: { 16: "icons/icon16.png" }, default_popup: "popup.html" } }, "self-test action", good).length) throw new Error("self-test: allowed extra action field");
+    const svg = (body) => `<svg xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+    const svgCases = [
+      svg("<script/>"), svg('<rect onclick="alert(1)"/>'), svg("<foreignObject/>"),
+      svg('<path href="https://evil.example/"/>'), svg('<path fill="url(//evil.example/a.svg)"/>'),
+      svg('<path href="&#104;ttps://evil.example/"/>'),
+      svg('<path fill="u\\72l(\\68ttps://evil.example/a.svg)"/>'),
+      '<!DOCTYPE svg SYSTEM "https://evil.example/a.dtd">' + svg(""),
+      '<?xml-stylesheet href="https://evil.example/a.css"?>' + svg(""),
+    ];
+    for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
+    if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -231,7 +416,7 @@ function selfTest() {
 
 function main() {
   const problems = [];
-  let selfTests = 0;
+  let selfTests;
   try {
     selfTests = selfTest();
   } catch (err) {
@@ -243,13 +428,15 @@ function main() {
   // Optional synthetic directory is checked in addition to the real probe. It must
   // never provide a way to skip the production guard.
   if (process.argv[2]) problems.push(...checkProbeDir(process.argv[2]).errors);
+  const logos = checkLogoDir();
+  problems.push(...logos.errors);
 
   if (problems.length) {
     console.error("verify: FAILED");
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ scanned; ${selfTests} bypass self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG self-tests; no banned APIs, minimal permissions.`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
