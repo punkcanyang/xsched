@@ -148,3 +148,11 @@ npm run e2e
 缺的關鍵證據是 0.0.3 診斷含 `fmt=`／`samples=` 的整行與新版骨架；若兩欄皆 none，請另給一則僅含安排時間的短句，保留日期／時分／上午下午，排除本文／帳號／網址。五語語法是合成測試；另外四語只有快捷鈕與日曆詞遮罩，本地時區與無年份依列表順序的假設待真機確認。DOM 可見／自己捲過才有計數、同時間同本文去重、虛擬累加不能反映同 scope 刪改等限制保留。
 
 無新增權限／網路 API／遠端資源／儲存，$0，不登入真 X。
+
+## 外部狀態（产品开发，2026-10-10 00:26 UTC+8）
+
+- 寫碼 session `01a1212e-3e31-74f3-ba55-1c3c643723cb` 兩輪完成；外部 commit 到 `793e370` 並 push。
+- 外部實跑：`npm test` 102/102、`npm run verify` OK、`npm run e2e` OK 322 斷言；截圖 `docs/gate0.2-*.png`，box 複本 `/workspace/xsched-shots/gate0.2/`。
+- PR：https://github.com/punkcanyang/xsched/pull/5
+- 複審：Codex gpt-6.1-sol high，session `01a12013-6780-77c1-9466-bb1e9f78097f`（resume），log `/workspace/bd-punkcan/logs/codex-xsched-gate0.2-review.log`。通過即 `merge --no-ff` 到 main 並 push。
+- 結論：則數依骨架可讀、時間格式待老闆診斷確認。
