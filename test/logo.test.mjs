@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { runNode } from "../scripts/test-cli.mjs";
 import { checkIconMap, checkLogoDir, checkLogoSvg, checkManifest, checkPng } from "../scripts/verify.mjs";
 
 const manifest = JSON.parse(readFileSync(new URL("../probe/manifest.json", import.meta.url), "utf8"));
@@ -79,7 +79,7 @@ test("verify CLI actually exits 1 for bad paths, external URLs, and mismatched i
     const clean = { manifest_version: 3, content_scripts: [{ matches: ["https://x.com/*"], js: ["ok.js"] }] };
     for (const [icons, expected] of [[{ 16: "icons/../icon16.png" }, /icon path/], [{ 16: "https://evil.example/icon16.png" }, /icon path/], [{ 32: "icons/icon16.png" }, /dimensions/]]) {
       writeFileSync(join(dir, "manifest.json"), JSON.stringify({ ...clean, icons }));
-      const result = spawnSync(process.execPath, ["scripts/verify.mjs", dir], { timeout: 10000, stdio: ["ignore", "pipe", "pipe"] });
+      const result = runNode(["scripts/verify.mjs", dir], { timeout: 10000 });
       assert.equal(result.status, 1);
       assert.match(result.stderr.toString(), expected);
     }

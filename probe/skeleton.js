@@ -1,9 +1,10 @@
-// xsched gate 0.1 — page-skeleton builder (pure, read-only).
+// xsched gate 0.2 — page-skeleton builder (pure, read-only).
 //
 // Turns the live DOM into a compact, content-free structural map so the owner can paste
-// it back and we can repair the readers. It NEVER keeps text, attribute prose, URLs,
-// account handles, or hashes: text becomes a length, prose values become "x", and
-// only known UI enum values (role, data-testid, aria-*, dir, type, tabindex…) survive.
+// it back and we can repair the readers. It never keeps body text, attribute prose,
+// URLs, account handles, or hashes. Text becomes a length, except an isolated short
+// time span may add the reader's calendar-only masked sample. Prose values become
+// "x"; known UI enums (role, data-testid, aria-*, dir, type, tabindex…) survive.
 //
 // Classic script, shared two ways (same trick as reader.js):
 //   - Chrome: loaded as a content script in the isolated world before content.js.
@@ -12,7 +13,7 @@
 (() => {
 "use strict";
 
-const SKELETON_VERSION = "0.0.2";
+const SKELETON_VERSION = "0.0.3";
 const MAX_NODES = 6000;
 const MAX_DEPTH = 60;
 
@@ -159,7 +160,11 @@ function buildSkeleton(target, options = {}) {
     if (!node || isHost(node)) return null;
     if (node.nodeType === 3) {
       const text = node.nodeValue || "";
-      return /\S/.test(text) && reserve(depth) ? entry("#text(" + codePoints(text) + ")", depth) : null;
+      if (!/\S/.test(text) || !reserve(depth)) return null;
+      const reader = globalThis.XSCHED_READER;
+      const parent = node.parentElement;
+      const sample = reader && parent && reader.isIsolatedTimeElement(parent) ? reader.timeSample(text) : "";
+      return entry("#text(" + codePoints(text) + ")" + (sample ? " calendar=" + encodeURIComponent(sample) : ""), depth);
     }
     if (node.nodeType !== 1 || !reserve(depth)) return null;
     const tag = tagOf(node);

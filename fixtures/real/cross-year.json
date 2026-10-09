@@ -1,0 +1,11 @@
+{
+  "pathname": "/compose/post/unsent/scheduled",
+  "now": "2026-12-31T12:00:00",
+  "onScheduled": 1,
+  "count": 2,
+  "layer": "loose",
+  "times": ["12月31日 下午11:59", "1月1日 上午12:05"],
+  "formatted": ["2026-12-31 23:59 (Thu)", "2027-01-01 00:05 (Fri)"],
+  "timeFail": 0,
+  "provenance": "Synthetic second row cloned from owner structural row solely for year rollover testing; owner DOM itself has ONE visible row."
+}

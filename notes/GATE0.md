@@ -209,3 +209,191 @@ xsched-gate0 v0.0.1 onScheduled=1 tab=1 scope=2 cell=0 button=5 listitem=0 link=
 - 短 enum／class／語系採保守白名單，未知項會遮罩，可能減少診斷細節；無安全獨立時間標籤時 samples=none。
 - mounted 是連線＋布局，不是「確實看得見」；持續移除時會等重試窗口，不能保證浮層永遠留住。
 - 骨架保留標籤及屬性**名稱**（規格要求），不保留內容值；跨源 hostname 是明確允許例外。closed shadow／跨源內容無法走訪；大頁會截斷。
+
+---
+
+# 閘 0.2：Dagaz 快捷鈕與讀法結構整理（probe v0.0.3；首輪交付歷史）
+
+以下保留首輪沙箱交付紀錄；外部後續已提交並回報首輪 e2e 305 斷言通過。最新真骨架／時間工作與驗收缺口見後面的「閘 0.2 真頁骨架分析」。
+
+2026-10-09，Codex 寫碼 session；分支 `gate0.2/shortcut-button`，基準 `d875959`。**實作完成，待外部 Chrome e2e／截圖與另一 Codex session 複審，未達 READY。**
+
+## 做了什麼與 DOM 依據
+
+- 44px 圓形 Dagaz 快捷鈕取代非 Scheduled 膠囊；SVG 用 createElementNS／path 建立，幾何來自 `docs/xsched-logo-B.svg`，不載入圖檔、不加 web_accessible_resources。Scheduled 顯示則數角標，預設展開；首頁預設收合。第一次點擊後保留手動開關狀態，跨 SPA／host 重掛也保留；頁面重新整理才重設。
+- 浮層與所有可見 UI 都在 open shadow root。非 Scheduled 浮層提供九語「前往 Scheduled」按鈕，固定 `location.assign("https://x.com/compose/post/unsent/scheduled")`；這是使用者點擊的頁面導覽。既有守門禁止 href 寫入，所以不用 anchor，不放寬資源 sink 規則。測試檢查固定目標及實際導覽，截圖名稱仍為 home-open-goto-link。
+- 九語 aria-label／title 集中 `probe/ui.js` 的 STRINGS：zh-Hant／zh-Hans／en／ja／ko／es／fr／de／pt。優先用 documentElement.lang（X 頁面語系），不支援時用 navigator.language，再預設 en；zh-TW／HK／MO→Hant，zh-CN／SG→Hans。
+- reader 的 `READ_CONFIG` 集中原選擇器、Scheduled 標籤、路徑與 strict／loose 時間格式，註明來源與推測。**沒有新的列表選擇器、沒有修讀法**；DOM 依據仍是閘 0 §1–2，真頁未驗證。`fixtures/real/README.md` 說明遮罩骨架重建流程；測試自動發現 `.html` 並要求同名 `.json` 預期，空目錄跳過。
+- 0.0.3 同步 manifest、package／lockfile、reader 與 skeleton 版本常數。無新增權限、API／伺服器、儲存或背景發文；不用 CDN／資源圖檔；未登入真 X，花費 $0。
+
+## 位置策略與依據
+
+預設 right 16px／bottom 112px，44px 按鈕上方 12px 展開浮層（panel bottom 56px），空白 host 區不接收 pointer events。根據可見原生互動元素的 fixed／sticky 祖先矩形避讓，先往上、再往左搜尋，保留 8px 間距；較高浮層找不到位置時縮成可捲動短面板。resize、頁面 mutation／scroll、400ms 輪詢重新計算，因此 FAB 抬高或抽屜展开可再移位。
+
+**依據是本輪設計與本機模擬，不是真頁量測。** `fixtures/en.html`／`home.html` 加入左側 Post、窄版右下 FAB 與 Messages/Grok 假控制項，Post/FAB testid 是任務提供的例子；它們不加入 reader 設定。e2e 以 1100×820、390×820、600×820 驗證開／關狀態不重疊、elementFromPoint 命中與實際點擊到原生發文鈕；再測較高的假抽屜。這些 Chrome 幾何情境因沙箱限制**尚未實跑**。
+
+## 版本與舊快取偵測
+
+診斷第一行正常為 `xsched probe v0.0.3 (manifest 0.0.3)`，浮層頂部也顯示。只允許短數字 manifest version，不輸出任意值／例外文字。script 與 manifest 不同時明顯印 `⚠ 版本不符：script 0.0.3 / manifest 0.0.2，請重新整理頁面`；runtime id 失效或 getManifest 拋錯時顯示 `擴充已重新載入，請重新整理頁面`，400ms 輪詢可更新狀態。
+
+content.js 改 IIFE，避免與 0.0.2 的頂層 const 衝突；新 session 提供 dispose 清理自己的 observer／timer／事件。0.0.2 沒有 dispose，直接移除 host 會引起它重掛，因此接手時把舊 host 移到 inert／aria-hidden／display:none 的 shadow 停放容器，移除舊 ID但保留連線，讓舊輪詢不搶新 UI；直到頁面重新整理才完全清除舊 script。新版 host 用 data-xsched-version 辨識；仍沿用 60ms 節流、每 3 秒最多 3 次建立、400ms 輪詢恢復與 mounted／remounts 的原語意。
+
+## 實跑結果與環境限制
+
+- `npm test`：退出 0，沙箱 reporter 只顯示 **7 個測試檔通過／0 失敗**，未輸出子測試事件。再用 `node --test --test-isolation=none test/` 在同程序實跑：**73 項，72 過／0 敗／1 跳過**；跳過僅是尚無真骨架的 fixture。包括真 content.js DOM 的開關／SPA／重掛／固定導覽（dataset 篡改仍用常數）／runtime 警告／重複注入；幾何命中仍需 e2e。
+- CLI 測試子程序的 pipe 被沙箱拒絕 EPERM，改成暫存檔擷取 stdout／stderr；所有退出碼、錯誤字串、實際守門違規斷言保留，且 spawn error 會直接失敗，不跳過。
+- reader 對照基準 `d875959`：10 個現有 fixture × 6 條路徑，**60 組快照 JSON 完全一致**（只省略 DOM scope 節點實體）；包括每列 time、preview、key、at、tier、samples、所有計數。
+- `npm run verify`：退出 0，**9 probe 檔／4 Logo SVG，30 API bypass／14 icon／9 SVG／15 leak 自測全過**。原规则全保留；新增 namespace 資源屬性、markup parsing、非固定 Scheduled 導覽守門。
+- `npm run e2e`：退出 **1**，本機 HTTPS server 尚未啟動就拋 `Error: listen EPERM: operation not permitted 127.0.0.1`（scripts/e2e.mjs 的 fixture server failed）；**0 個浏览器斷言、0 個網路證據結果、0 張新截圖**。Chrome for Testing 預設執行檔與 xvfb-run 都存在。外部請跑原命令；不得把規劃的情境當成通過。
+- e2e 保留原語系／scope／虚擬化／lifecycle／clipboard 檢查；新增本輪情境、兩種版本警告、讀基準 commit 真 0.0.2 scripts 在另一 isolated world 執行後接手。網路證據只另記一次物理點擊觸發的固定頂層導覽；其他 extension resource／background 請求仍要求 0，並拒絕相同 URL 的 Fetch 或非頂層導覽。
+- `git diff --check` 通過。git commit 嘗試失敗：`Unable to create '/workspace/xsched/.git/index.lock': Read-only file system`，**本 session 未能 commit；外部另建立 WIP 快照 b3a1684，仍有最後修正未提交**。未 push／PR／merge／改 main／打包 zip。
+
+預定由 e2e 產生（**尚不存在，不是已交截圖**）：
+`docs/gate0.2-{scheduled-open,scheduled-closed,home-closed,home-open-goto-link,narrow-fab,remount,diag-version,version-mismatch,runtime-invalidated,en,ja,zh-Hans,zh-Hant,ko,roles-fallback,empty,selectors-broken,skeleton-copied,skeleton-fallback,virtual-before,virtual-after,not-scheduled}.png`，另 `docs/gate0.2-skeleton-sample.txt`。資料全是 fixture 假資料；所有 gate0／gate0.1 舊圖與舊骨架保留不動。
+
+## 老闆實測（≤5 步；合 main 後）
+
+1. `git pull main`。
+2. 自己的 Chrome 開 `chrome://extensions`，重新載入 `probe/`，確認版本 **0.0.3**。
+3. **重新整理 x.com 頁面**，確認右下抬高處有 Dagaz 快捷鈕。
+4. 點快捷鈕開／關浮層；非 Scheduled 按「前往 Scheduled」，確認原生 Post／窄版 FAB／抽屜仍能點。
+5. 在 Scheduled 頁按「複製頁面結構」並立即貼到回覆草稿，再按「複製診斷」貼在同份草稿，**兩者一起貼回**（clipboard 被拒時用 textarea 全選）。
+
+## 已知限制與下一份證據
+
+- **真頁未驗證，讀法仍可能 0 命中**；不能從假 fixture 推定真 X 可行。需老闆貼新版骨架＋診斷，附 X 語系、可見排程列數與是否已自己捲到底；時間原文被遮罩，要修時間格式還需單獨去內容的時間文案，不能猜回。
+- Chrome e2e／幾何避讓／網路證據／真 0.0.2 接手情境待外部實跑，另一 Codex session 尚未複審。
+- 位置策略是 DOM 矩形啟發式；全螢幕覆蓋、closed shadow／不可辨識原生控制項、極小視窗或沒有可容納面板的空間仍可能找不到位置。未宣稱排除所有真頁遮擋；此時需回報畫面與語系。
+- 接手不能停止 0.0.2 的舊 observer；隱藏但連線直到刷新。僅舊 0.0.2 script 還在頁面、未注入新版時，舊程式本身不能產生新版警告，必須重新整理。
+- mounted 仍只表示 host 連線且有尺寸，不能證明未被別的堆疊脈絡蓋住；重試仍有窗口限制。九語只保證快捷鈕與前往 Scheduled 的 label／title，探針其他文案保持原繁中。
+- 原虛擬列表累加、同時間同本文去重、scope 內刪除／編輯與骨架截斷限制沿用閘 0.1；必須老闆自己捲動，擴充不自動捲、不操作發文。
+
+---
+
+# 閘 0.2 真頁骨架分析（續作：2026-10-10）
+
+**結論：則數依骨架可讀、時間格式待老闆診斷確認。** 本輪修改依老闆新增 A–D 驗收範圍；未宣稱安排時間已在真頁驗證，也尚未達到時間硬標準。先前「不猜新選擇器」的限制已由收到骨架與本輪明確授權取代；新 DOM 選擇器只使用下面有行號的結構。
+
+## 收到的資料與列表位置
+
+來源：`/workspace/xsched-shots/boss-skeleton-0.0.2-2026-10-09.txt`；340748 bytes、4110 行，首行 `xsched-skeleton v0.0.2 path=scheduled nodes=4109`。沒有附診斷。原始骨架留在 repo 外，本輪不提交。SHA-256：`402375daac852d2b2ebee4bcf0702499a1ad8c0fb4ab4e2f980292399cbfa52e`。
+
+以下是對收到檔案實際逐行讀取的結構事實；不是登入 X 的量測。
+
+| 行號 | 結構／路徑 | 可以支持的判斷 |
+|---|---|---|
+| 36 | `div[role=dialog]` 外層 | 包住 modal 的外殼。不能直接當列表 scope，舊 readable 規則會排除裡面另一個 dialog 的全部列。 |
+| 42 | 外層 dialog → group → `div[role=dialog][aria-modal=true]` | 實際可見 modal scope；列表與兩個頁籤都在這個最近 dialog 內。 |
+| 84、86、93 | 內層 dialog → nav → tablist → presentation → `a[role=tab]`；86 `aria-selected=false`，93 `aria-selected=true` | 選中 tab 的文字只剩第 97 行 `#text(3)`，名稱／語系未知。URL path=scheduled 是讀取條件，不能自行補出某個真 tab 文案。 |
+| 107–108 | 內層 dialog 的列表分支 → `div → button[role=button][type=button]` | **唯一一顆含 tweetText 的列表 button，沒有 ×N 收合標記，應為 1 則當時 DOM 可見排程列**。這不是整個帳號的完整排程總數。 |
+| 109–118 | button → div → div 的第一分支 → div → div → `div[dir=ltr]`，內有 SVG 與 `span → #text(28)` | **安排時間候選在第 117 行 span、第 118 行文字**；獨立於本文，與時間 icon 並列。真文字全部遮掉，28 只表示 code point 長度。 |
+| 119–124 | 同一 row 的第二分支 → div → div → `div[data-testid=tweetText] → span → #text(2)` | 獨立本文。時間樣本、fmt 與骨架日曆文字匯出都排除這個子樹，內容全是假字替代。 |
+| 126 | modal 分支的兄弟 `div[aria-hidden=true]` | 下層首頁背景，包含四周導覽、timeline、article。不能把其貼文當排程。 |
+| 507、520 | 背景 tablist 的兩個 tab | 與 86／93 的 modal tabs 不同；讀法優先限定目前 modal 內的 tab。 |
+| 539 起 | 21 個 `cellInnerDiv`；542 起 14 個 article；122 以外的 14 個 tweetText 都在背景 | 21 不是排程則數，cell 是通用 timeline 容器。上層排程沒有 cellInnerDiv。 |
+| 627、823、998、1173、1348、1825、2003、2178、2357、2534、2629、2783、2960、3146、3323 | 背景 article／引用分支中的 `time[datetime=x]` | 本次對檔案逐行計得 **15 個 time**（含引用分支），全在背景；不能拿 datetime=x 推安排時間。上層 modal 裡 **0 個 time／datetime**。 |
+
+排程 row 的 button 第 108 行**沒有 aria-label 属性**；第 117 行 span 也沒有日期相關屬性，只有長度 28 的文字。因而真正時間來源是「推定為安排時間的獨立文字 span」，不能聲稱讀 datetime 或從 aria-label 找到真日期。原始值／語系／時區都無法由此骨架復原。
+
+## 讀法與舊行為保留
+
+`READ_CONFIG` 集中新增：`[role=dialog][aria-modal=true]`、已選中 tab、`button[role=button]`、`span`、`article/[role=article]`，註解對應上表行號。未知 tab 名稱時依 Scheduled path 尋找含 selected tab 的最近可見 modal；已知 tab／aria-controls、舊 cell→a11y→文字層仍保留。
+
+真結構 row 使用 **HTML button＋tweetText＋獨立 span**；只從不在 tweetText／composer／article 子樹的短 span 讀時間。不讀背景 `time[datetime]`，也沒有猜新 testid。即使時間無法解析，這種已證據支持的 row 仍計入則數，`unparsed=1`／`timeFail` 明示，浮層時間列顯示「時間未解析」。多個非本文 span 無法唯一決定時間時保守標未解析。
+
+背景 `article` 不只在祖先排除，也擋住包 article 的 cell／聚合節點，避免 fallback 在 modal 消失／背景可見的 SPA 暫態把 timeline 文字洗成排程。測試包含取消背景 aria-hidden、背景放假的 Scheduled tab、article 本文刻意含完整排程片語，仍只有 modal 的 1 則；沒有 modal 的 column/body fallback 也不會算 article。
+
+本輪對 `e607b5d` 的舊 10 個 fixture × 6 路徑，**60 組快照的則數、所有舊計數、各列 time／preview／key／at／tier 全部一致**；比較只省略 DOM 節點實體，以及任務明定要改的 samples／新增 fmt。沒有用新格式規則把舊 selectors-broken 的假 ISO/UTC 時間猜成正確。
+
+## 時間、跨年與樣本
+
+- 保留 legacy strict／loose 解析；新增具體合成例子支援 en／zh-Hant／zh-Hans／ja／ko 的有／無年份、AM/PM／午前午後／上午下午／오전오후、24 小時制與中文時／點。**這些文案是測試例子，不是從骨架解密出來的真 X 文案**。其餘四語已有日曆詞遮罩與快捷鈕文字，尚未聲稱有安排時間解析支援。
+- 12:05 AM／上午12:05→00:05；PM／下午12:05→12:05；中文上午12點／下午12點→00:00／12:00。非法 meridiem 小時、分鐘／秒溢出、非法日期與 DST 空洞不猜 Date。
+- 無年份以瀏覽器本地日期的今年為起點；月日已過則下一年。相同日的較早小時不跳一年。按目前列表順序，後列無年份用前列已解析日期當 reference，12/31→1/1 推到隔年；顯式年份保留原值。這依賴 Scheduled 列表日期按順序的假設；需老闆逐則對照，未知年份格式仍不能當已驗證。
+- 浮層改顯示 `YYYY-MM-DD HH:mm (weekday)`，星期由本地 Date 算，不照抄文案。例如假的 `Fri, Oct 10, 2026` 實際是 Sat；reader 原 time 字串保留，UI 星期正確計算。重畫判斷也比較解析後時間，避免無年份文字不變但推定年份更新時仍顯示舊日期。
+- `samples=` 仍最多 3 筆、各 ≤60 code points、percent encoding。全部成功時仍加 `fmt=`（第一則時間樣本）；失敗列也有 samples。會先提取時間短語，不把跟在時間後面的本文數字／網址帶進遮罩。
+- 共用 `maskSample` 精确日曆詞白名單：英／西／法／德／葡月份星期、AM/PM，繁簡日韓的日曆詞／上午下午／午前午後／오전오후／排程片語。字詞邊界完整才保留，任意字變 x；URL／email／handle／UUID 先整段變 x（包括敏感 span 中的數字），避免 `@May2026`、`May@January.example` 被白名單保留下來。未知格式樣本仍要求有界的日期＋時鐘，不接受排程片語後混入任意本文數字。
+- skeleton 0.0.3 在已隔離的短時間 span 用 `#text(N) calendar=<encoded masked sample>`；其他仍只印長度，尤其 tweetText 即使寫成完整日期、數字或排程片語也不能匯出。若無法安全提取／分離時間，fmt/samples 保守為 none。
+- verify 所有原網路／注入／權限規則不變；原網址、ID、屬性、內文與 iframe 隱私攻擊全保留。依本輪授權調整「純日曆詞」的預期，新增短時間節點／fmt 匯出攻擊，證明 calendar-looking 的內文、handle、email、URL 仍不洩漏。
+
+## fixture、轉換與提交前隱私掃描
+
+`fixtures/real/boss-skeleton.html`／同名 JSON：保留 L36–124 的元素層級與安全 role／aria enum，未知 tab 文字替換成同長度假字；未知時間明寫假的「將於2026年10月10日 上午9:00傳送」，zh-Hant 也是推定。假本文甲乙；背景精簡成一則假 article/time。應讀 **1** 則、09:00、timeFail=0；只驗證這個合成時間例子。
+
+`fixtures/real/cross-year.html`／JSON：僅為時間測試複製 row 成兩則，12/31 下午11:59→次年1/1 上午12:05，now 固定 2026-12-31 12:00；預期 2026-12-31 23:59、2027-01-01 00:05。這 2 則是人工情境，不能用來推真骨架有 2 則。
+
+`scripts/real-skeleton-fixture.mjs` 從骨架只取元素階層與固定 enum；不複製原 id/class/style/href/src/aria-label／未知屬性值／任何原文字。SVG 保留空結構，不保留幾何屬性。所有文字／日期替代值都是腳本明寫的假值。轉換時確認原 header、modal、row 行號與 1 列符合證據；不符合即失敗。
+
+**已實跑掃描**：腳本 `scanFixture` 對輸出拒絕 `http(s)://`、www、email、@handle、UUID；用 DOM 檢查屬性只能是固定 enum／lang／charset／合成 datetime。單元測試再要求輸出中沒有 id／href／src／aria-label，並確認雙 dialog／row 数；real JSON 時間 provenance 明列推定。原始 340KB 檔案未複製／提交，repo 只有約 2KB 的合成精簡 fixture、預期 JSON 與轉換腳本。
+
+## 測試與外部續跑
+
+外部已提交首輪 `722c83f`／`e607b5d`，使用者回報首輪 Chrome e2e **305 斷言通過**、截圖已提交。本輪續作又由外部建立 WIP `5da24dd`；此 WIP 不包含最後所有修改，不能直接當完成。
+
+本輪最新實跑：
+
+- `npm test`：退出 0，沙箱只回報 **8 檔通過**；完整同程序 `node --test --test-isolation=none test/`：**102 過／0 敗／0 跳過**，包含 25 個日曆／真結構／隱私測試、實際 content.js 標準時間／未解析顯示、兩個 real fixtures。
+- `npm run verify`：退出 0；**9 probe 檔／4 Logo SVG；30 API bypass／14 icon／9 SVG／25 leak self-test**，原靜態守門未放寬。
+- `git diff --check`：通過。既有 fixture 60 組基準比較如上。
+- 最新 `npm run e2e` 本沙箱仍退出 1：`listen EPERM: operation not permitted 127.0.0.1`。本輪新浏览器情境 **未實跑**，新增 real／跨年截图尚未產生，不能沿用首輪 305 宣稱本輪通過。
+
+外部請在最後工作樹跑：`npm test`、`npm run verify`、`npm run e2e`。新增 e2e 驗證真骨架 1 列、統一時間／timeFail=0／fmt、背景可見不混入、未知時間仍計數與 samples、固定假時鐘的跨年 2 列；新增截圖 `docs/gate0.2-real-skeleton.png`、`docs/gate0.2-real-time-unparsed.png`、`docs/gate0.2-cross-year.png`。保留舊 e2e 情境與網路證據：資源／背景請求必須 0，只有使用者物理點擊前往 Scheduled 的一次頂層導覽例外。新截图只能是這些假的 fixture。
+
+無新增權限／host／資源載入／網路呼叫／儲存／花費，未登入 X。manifest／package／程式仍 **0.0.3**，因此老闆必須 reload 擴充後刷新 x.com，避免同版號舊 script 仍留在頁面。commit／push／PR／外部 e2e 由使用者安排；本沙箱 .git 唯讀。
+
+## 老闆實測（≤5 步；合 main 後）
+
+1. `git pull main`，取得最新 probe 檔。
+2. 自己的 Chrome 開 `chrome://extensions`，重新載入 `probe/`，確認 **0.0.3**。
+3. **重新整理 x.com**，看右下抬高處的 Dagaz 快捷鈕。
+4. 到 Scheduled，對照浮層與 X 頁面的**則數**；再**逐則對照日期＋時分**（有上午／下午也要對照，自己捲過才是完整列表）。
+5. 按「複製診斷」，立即貼到回覆草稿；再按「複製頁面結構」貼在同份草稿，一起貼回，附 X 語系。有 textarea 時全選手動複製。
+
+## 還缺什麼與可直接轉給老闆的請求
+
+仍缺 **0.0.3 的診斷／fmt／samples**，以及可以支持真日期文案與語系的新版骨架。0.0.2 的 #text(28) 無法確認月份、年份、上午／下午或時分，因此不能宣稱時間硬標準已過。也缺本輪外部 e2e 結果與另一 Codex session 複審。
+
+> 請拉最新 main，在 chrome://extensions 重新載入 probe/ 確認 0.0.3，接著重新整理你的 x.com Scheduled 頁。先逐則對照浮層的日期＋時分是否和 X 一樣；按「複製診斷」立即貼到回覆草稿，再按「複製頁面結構」貼在後面，把兩份一起貼回，並說明 X 的語系。需要診斷中含 fmt=／samples= 的整行；若它們都是 none，請另外只貼一則 X 顯示的安排時間短句（保留日期／時分／上午下午，不貼本文、帳號或完整網址）。
+
+保留限制：只讀當時 DOM／自己捲過的列；無唯一 ID 的同時間同本文仍可能去重；同 scope 刪除／編輯的虛擬窗口累加不能當即時權威總數。article 安全排除亦可能漏掉未來改版把真正排程放進 article 的布局；新骨架來了再據證據修。五語系合成例子已過，其他語系時間格式尚未承諾；本地時區與無年份的列表順序假設都需真機逐則核對。
+
+---
+
+# 閘 0.2 Codex 複審
+
+2026-10-10；獨立 Codex 複審 session，與寫碼 session `01a1212e` 不同。審查 [PR #5](https://github.com/punkcanyang/xsched/pull/5) 的 `git diff d875959...HEAD`，接續到 `9545dc7`。本節是最新複審結果；前面的首輪測試與「尚未複審」描述保留為歷史。原骨架只在 repo 外親讀，沒有複製或提交。
+
+## 發現與修正
+
+| 嚴重度 | 檔案 | 問題與修正 |
+|---|---|---|
+| 高：隱私 | `probe/reader.js` | 日期先從 URL／email／handle 抽出會失去敏感來源，繞過整段遮罩。改為先遮罩完整身份字串再解析／提取；包含中日韓日期、protocol-relative URL、帶空格的引號 email。結構列仍保留則數，敏感時間標為未解析，fmt／samples／calendar 不匯出。 |
+| 高：隱私 | `probe/reader.js` | 舊 cell／文字備援的 item.time 可能來自像日期的 tweetText。移除 fmt／samples 對 item.time 的後備匯出，只接受認證的獨立時間節點；失敗樣本也必須符合隔離檢查。舊讀取則數規則保留。 |
+| 中：使用者觸發 | `probe/content.js` | 固定導覽原先接受頁面合成 click；改為 event.isTrusted 才執行固定 Scheduled location.assign，並停止冒泡。單元及 Chrome 測試加入合成點擊不得導覽；真物理點擊仍須導覽。 |
+| 低：可讀性 | `probe/reader.js` | fmt 的 percent encoding 不便老闆核對；改為獨立第三行的可讀遮罩字串，先正規化空白，仍最多 60 code points。samples 保留既有 encoded token／pipe 格式，避免樣本中的空白與標點混淆欄位。 |
+| 中：測試失敗 | `scripts/e2e.mjs` | 上一輪 fmt 換行後漏更新 samples 的解析；舊 `[^ ]*` 把下一行 fmt 吃進最後一筆。改成遇任何空白即停止，實際解析式以 selectors-broken 真 reader 輸出驗證 LF／CRLF 均只取到兩筆時間樣本。核對了版本首行、clipboard 三行格式、fmt、未知時間與跨年等其餘診斷斷言。 |
+
+前三項與 fmt 修正已由使用者外部提交為 `1f784f7`，另含單元回歸與 verify 攻擊自測；本次續作只改 `scripts/e2e.mjs` 與本文件，commit／e2e 由外部執行。
+
+## 完整核對結果
+
+- **親讀骨架** L36／L42／L93／L108／L117／L122，支持最近 modal、選中 tab、唯一 button＋獨立 span＋tweetText；L126 起背景與 article/time 必須排除。`aria-current=page` 是沿用備援，不是本骨架證據；真時間格式、語系、時區仍未知，沒有據遮罩長度猜回文字。
+- **實跑離線重建**：原檔 340748 bytes，SHA-256 與上述記錄一致；兩份 real HTML 均與轉換腳本逐字輸出一致且隱私掃描通過。HTML／JSON 清楚標示全部時間／本文是假值；跨年第二列是合成情境。檢視既有真結構與窄版假資料截圖，沒有將其當真頁驗證。
+- **程式與測試核對**：manifest 只升版／加入本機 ui.js，無新增權限／host／action／web_accessible_resources；UI 在 shadow root，以 DOM／CSSOM／textContent 建立；不載入圖檔，不新增請求／儲存／背景操作。verify 原 API／注入／權限規則均保留；日曆詞例外依本輪明確規格，本文／身份資料的攻擊仍須失敗，新增先抽日期繞過及舊備援來源攻擊。
+- **快捷鈕與生命週期**：九語、手動開關跨 SPA／重掛、60ms 節流、3 秒最多 3 次建立、400ms 恢復輪詢、dispose／pagehide 清理均核對；舊 0.0.2 採隱藏連線停放，不能宣稱已停止其 observer。矩形避讓及版本警告有單元／Chrome 情境；真頁避讓仍為啟發式，滿版覆蓋／極小視窗可能無處放置。
+- **時間與背景**：五語合成例子、12 AM/PM／上午下午／午前午後／오전오후、24h、非法日期／DST 空洞、無年份與 12/31→1/1、標準時間重畫、未知列保留、背景可見仍排除均有通過的單元斷言。無年份推年依賴本地日期與列表順序；虛擬累加／同時間同本文去重限制保留，不能當即時權威總數。
+
+## 實跑結果與外部續跑
+
+- `npm test`：退出 0，8 個測試檔全部通過；補充同程序 reporter：**105 過／0 敗／0 跳過**。
+- `npm run verify`：退出 0；**9 probe 檔、4 Logo SVG；30 API bypass、14 icon、9 SVG、32 leak self-test** 全過。故意洩漏的變體會令 self-test 失敗。
+- `node --check scripts/e2e.mjs`、`git diff --check` 通過；實際 e2e 樣本解析式的 LF／CRLF 離線回歸通過。
+- **外部回報，非本 session 實跑**：`793e370` 的 Chrome e2e 322 斷言通過；`1f784f7` 的 test 105／verify 32 通過，但 e2e 在上述 samples 換行解析處失敗。不能將先前 322 沿用為本次通過；本沙箱 listen 被擋，最新 Chrome 斷言與 0 請求證據仍待外部重跑。
+
+外部請在含本次修正的工作樹跑 `npm test`、`npm run verify`、`npm run e2e` 全過再提交／合併。e2e 應保留所有隱私與網路斷言，更新 gate0.2 假資料截圖（含可讀 fmt）；資源／背景請求仍必須 0，只接受一次可信使用者點擊的固定頂層導覽。不得改連真 X 或用 API 驗證。
+
+## 結論與老闆實測
+
+**VERDICT: APPROVE（程式複審；合併前仍須外部最新 e2e 全過）。** 已修正的阻擋問題有回歸證據，沒有發現其他程式阻擋；這不代表真頁時間驗收或 STATUS READY。產品結論維持：**則數依骨架可讀、時間格式待老闆診斷確認**。
+
+老闆實測沿用上節 **5 步**：取得 main → reload 擴充 → refresh X → Scheduled 逐則對照日期＋時分／則數 → 先複製診斷貼草稿，再在 Scheduled 頁按一下「複製頁面結構」，把結果與新診斷一起貼回（附語系）。fmt 現在可直接讀；samples 仍 encoded，可連同整份診斷貼回，不需老闆手工解碼。兩欄皆 none 時另提供一則不含本文／帳號／網址的安排時間短句。

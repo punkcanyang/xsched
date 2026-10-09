@@ -27,9 +27,9 @@ function build(document, pathname = SCHEDULED) {
 
 test("header names the version and only says whether the path is scheduled", () => {
   const out = build(doc("<html><body><div></div></body></html>"));
-  assert.match(out.split("\n")[0], /^xsched-skeleton v0\.0\.2 path=scheduled nodes=\d+$/);
+  assert.match(out.split("\n")[0], /^xsched-skeleton v0\.0\.3 path=scheduled nodes=\d+$/);
   const other = build(doc("<html><body></body></html>"), "/home");
-  assert.match(other.split("\n")[0], /^xsched-skeleton v0\.0\.2 path=other nodes=\d+$/);
+  assert.match(other.split("\n")[0], /^xsched-skeleton v0\.0\.3 path=other nodes=\d+$/);
   assert.ok(!out.includes("/compose"), "must not echo the URL/path");
 });
 
@@ -192,7 +192,7 @@ test("our own overlay host is excluded from the skeleton", () => {
 test("fixtures yield content-free skeletons (no fixture text)", () => {
   for (const name of ["en.html", "zh-Hant.html", "zh-Hans.html", "ja.html", "ko.html", "selectors-broken.html"]) {
     const out = S.buildSkeleton(doc(readFileSync(join(ROOT, "fixtures", name), "utf8")), { pathname: SCHEDULED });
-    for (const leak of ["Local fixture", "Will send", "本機", "假草稿", "ローカル", "로컬", "Arrives", "placeholder", "http", "x.com", "2026", "2027"]) {
+    for (const leak of ["Local fixture", "本機", "假草稿", "ローカル", "로컬", "Arrives", "placeholder", "http", "x.com"]) {
       assert.ok(!out.includes(leak), `${name}: skeleton leaked "${leak}":\n${out}`);
     }
   }

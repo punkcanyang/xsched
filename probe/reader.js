@@ -11,8 +11,8 @@
 //     scripts: Chrome refuses to resolve extension specifiers without
 //     web_accessible_resources, which the hard rules forbid. Verified empirically.)
 //
-// Every DOM assumption here is a *guess* reconstructed from public sources; none of it
-// has been verified against a logged-in x.com page. See notes/GATE0.md for the source
+// Legacy assumptions come from public clues. Gate 0.2 adds structural evidence from
+// the owner's masked skeleton (notes/GATE0.md); its actual time text is still unknown. See notes/GATE0.md for the source
 // table. When the real page drifts, the diagnostic counters (l1/l2/l3, cell, button,
 // phrase, timeFail) are meant to say *which* assumption broke.
 //
@@ -23,7 +23,7 @@
 (() => {
 "use strict";
 
-const PROBE_VERSION = "0.0.2";
+const PROBE_VERSION = "0.0.3";
 
 // Tab labels that mean "Scheduled". en / ja are from public sources; zh-Hant, zh-Hans
 // and ko are *guesses* (no public source found) and are marked as such in GATE0.md.
@@ -136,6 +136,99 @@ const SEND_VERB_RE = /will send on|に送信されます|將於|将于|전송됩
 // Any 4-digit year in an element that we could not parse → format drift signal.
 const YEAR_RE = /\b20\d{2}\b|\d{4}\s*年|\d{4}\s*년/;
 
+// Calendar vocabulary is an exact token allowlist, never arbitrary prose. Locale
+// examples below are synthetic until the owner sends fmt/samples. Shared by skeleton.
+const CALENDAR_WORDS = new Set((
+  "will send on at am pm a.m. p.m. " +
+  "jan january feb february mar march apr april may jun june jul july aug august sep sept september oct october nov november dec december " +
+  "mon monday tue tues tuesday wed wednesday thu thur thurs thursday fri friday sat saturday sun sunday " +
+  "janvier février mars avril mai juin juillet août septembre octobre novembre décembre lundi mardi mercredi jeudi vendredi samedi dimanche " +
+  "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre lunes martes miércoles jueves viernes sábado domingo " +
+  "januar februar märz april mai juni juli august september oktober november dezember montag dienstag mittwoch donnerstag freitag samstag sonntag " +
+  "janeiro fevereiro março abril maio junho julho agosto setembro outubro novembro dezembro segunda terça quarta quinta sexta sábado domingo"
+).split(" "));
+const CJK_CALENDAR = ["に送信されます", "전송됩니다", "게시됩니다", "예약됩니다", "예약됨", "將於", "将于", "傳送", "發送", "发送", "传送", "发出", "午前", "午後", "上午", "下午", "晚上", "中午", "凌晨", "清晨", "오전", "오후", "년", "월", "일", "시", "분", "年", "月", "日", "時", "时", "點", "点", "分", "の", "於", "于", "에", "星期", "週", "周", "一", "二", "三", "四", "五", "六", "七", "火", "水", "木", "金", "土", "요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"].sort((a, b) => b.length - a.length);
+const CJK_CALENDAR_RE = new RegExp("^(?:" + CJK_CALENDAR.join("|") + ")+$", "u");
+const LABEL_PATTERNS = [
+  { lang: "en", re: new RegExp(`^(?:will send on\\s+)?(${WEEKDAY_PREFIX}${MONTH}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?\\s*(?:,|at)?\\s*(\\d{1,2}):(\\d{2})\\s*(a\\.?m\\.?|p\\.?m\\.?)?)`, "i"), parts: m => ({year:m[4], month:MONTH_INDEX[monthKey(m[2])], day:m[3], hour:m[5], minute:m[6], meridiem:m[7], meridiemStyle:"en"}) },
+  { lang: "en", re: new RegExp(`^(?:will send on\\s+)?(${WEEKDAY_PREFIX}(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH}(?:\\s+(\\d{4}))?\\s*(?:,|at)?\\s*(\\d{1,2}):(\\d{2})\\s*(a\\.?m\\.?|p\\.?m\\.?)?)`, "i"), parts: m => ({year:m[4], month:MONTH_INDEX[monthKey(m[3])], day:m[2], hour:m[5], minute:m[6], meridiem:m[7], meridiemStyle:"en"}) },
+  { lang: "zh", re: /^((?:將於|将于|於|于)?\s*(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*[(（][^)）]{1,12}[)）])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2})(?::(\d{2})|(?:點|点|時|时)\s*(\d{1,2})?\s*分?)\s*(?:傳送|發送|发送|传送|发出)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7] || m[8] || "0",meridiem:m[5],meridiemStyle:"cjk"}) },
+  { lang: "ja", re: /^((?:(\d{4})年\s*)?(\d{1,2})月\s*(\d{1,2})日(?:\s*[(（][^)）]{1,12}[)）])?(?:\s*の)?\s*(午前|午後)?\s*(\d{1,2})(?::|時)(\d{1,2})\s*分?\s*(?:に送信されます)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7],meridiem:m[5],meridiemStyle:"cjk"}) },
+  { lang: "ko", re: /^((?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(오전|오후)?\s*(\d{1,2})(?::|시\s*)(\d{1,2})\s*분?\s*(?:에\s*)?(?:전송됩니다|게시됩니다|예약됩니다|예약됨)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7],meridiem:m[5],meridiemStyle:"cjk"}) },
+];
+// Gate 0.2: legacy values plus owner skeleton evidence (line numbers in GATE0.md).
+// Sources: notes/GATE0.md gate 0 §1–2 and gate 0.2 skeleton analysis. Real time text is pending.
+const READ_CONFIG = Object.freeze({
+  selectors: Object.freeze({
+    // cell: public generic X cell (§1 #5); namedRow/roles: Japanese a11y clue (#3).
+    // tweet, scope, exclusion, wildcard and layout selectors: existing heuristics (§2).
+    // Boss skeleton L36/L42: nested dialogs; L93: selected tab with masked text.
+    modal: '[role="dialog"][aria-modal="true"]',
+    selectedTab: '[role="tab"][aria-selected="true"], [role="tab"][aria-current="page"]',
+    // L108 button, L117 span, L122 tweetText; L126+ background article/time.
+    structuralRow: 'button[role="button"]',
+    timeLeaf: 'span',
+    timeline: 'article, [role="article"]',
+    namedRow: "[role=\"button\"][aria-label], [role=\"listitem\"][aria-label]",
+    tweet: "[data-testid=\"tweetText\"]",
+    rowEvidence: "[data-testid=\"cellInnerDiv\"], [role=\"listitem\"]",
+    tab: "[role=\"tab\"]",
+    dialog: "[role=\"dialog\"]",
+    column: "[data-testid=\"primaryColumn\"]",
+    region: "[role=\"region\"]",
+    styled: "[style]",
+    all: "*",
+    cell: "[data-testid=\"cellInnerDiv\"]",
+    button: "[role=\"button\"]",
+    listitem: "[role=\"listitem\"]",
+    link: "[role=\"link\"]",
+    composer: 'form, [contenteditable="true"], [data-testid="tweetTextarea_0"], [data-testid="scheduledDateField"], [data-testid="scheduledTimeField"], [data-testid="scheduleConfirm"], [data-testid="scheduleOption"], [data-testid="scheduleChip"]',
+  }),
+  paths: Object.freeze({
+    picker: /^\/compose\/(?:post|tweet)\/schedule(?:\/|$)/,
+    scheduled: /^\/compose\/(?:post|tweet)\/unsent\/scheduled(?:\/|$)/,
+    drafts: /^\/compose\/(?:post|tweet)\/unsent\/drafts?(?:\/|$)/,
+    unsent: /^\/compose\/(?:post|tweet)\/unsent(?:\/|$)/,
+  }),
+  // en/ja public clues; zh-Hant/zh-Hans/ko guessed, unchanged from gate 0.
+  labels: SCHEDULED_LABELS,
+  // English tolerance, Japanese public phrase, Chinese/Korean inferred formats.
+  time: Object.freeze({ strict: STRICT, loose: LOOSE, sendVerb: SEND_VERB_RE, year: YEAR_RE, months: MONTH_INDEX, monthPattern: MONTH, weekdayPrefix: WEEKDAY_PREFIX, labelPatterns: LABEL_PATTERNS }),
+});
+
+
+function parseTimeLabel(raw, { now = new Date(), reference = null, lang = "" } = {}) {
+  const text = normalize(raw);
+  if (!text) return null;
+  // Chinese and Japanese overlap on 24-hour labels. Locale is a preference, not
+  // a restriction: a recognizable phrase from another locale still parses.
+  const preferred = lang.split('-')[0];
+  const patterns = [...READ_CONFIG.time.labelPatterns].sort((a,b) => Number(b.lang === preferred) - Number(a.lang === preferred));
+  for (const pattern of patterns) {
+    const m = pattern.re.exec(text);
+    if (!m) continue;
+    const parts = pattern.parts(m);
+    const inferredYear = !parts.year;
+    if (inferredYear) {
+      const floor = reference instanceof Date && !Number.isNaN(reference.getTime()) ? reference : now;
+      if (!(floor instanceof Date) || Number.isNaN(floor.getTime())) return null;
+      parts.year = floor.getFullYear();
+      // Missing years follow calendar order: Dec 31 → Jan 1 is next year.
+      // Do not turn a same-day past hour into a whole year in the future.
+      if (Number(parts.month) < floor.getMonth()+1 || (Number(parts.month) === floor.getMonth()+1 && Number(parts.day) < floor.getDate())) parts.year++;
+    }
+    const suffix = text.slice(m[0].length);
+    const at = /^[\d:]/.test(suffix) ? null : toDate(parts);
+    return { lang: pattern.lang, tier: READ_CONFIG.time.sendVerb.test(m[0]) ? "strict" : "loose", time: normalize(m[1]), body: normalize(suffix), at, unparsed: at === null, inferredYear };
+  }
+  return null;
+}
+function formatTime(at) {
+  if (!(at instanceof Date) || Number.isNaN(at.getTime())) return "時間未解析";
+  const pad = value => String(value).padStart(2,"0");
+  return `${at.getFullYear()}-${pad(at.getMonth()+1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())} (${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][at.getDay()]})`;
+}
+
 function monthKey(raw) {
   return String(raw || "").toLowerCase().replace(/\./g, "").slice(0, 3);
 }
@@ -169,14 +262,43 @@ function sanitizeLang(value) {
   return [match[1].toLowerCase(), script, match[3] && match[3].toUpperCase()].filter(Boolean).join("-");
 }
 
-// Mask a diagnostic sample so it can never carry tweet text or an account.
-// Digits and punctuation/space are kept (they carry no readable content); every
-// letter/mark (\p{L}\p{M}) and every other symbol (emoji, \p{S}) becomes "x".
-// Code points are preserved one-for-one so length information survives; capped at 60.
+// Redact identities before either date extraction or calendar token masking:
+// cutting a date out of a URL/email first would lose its sensitive provenance.
+function redactIdentities(value) {
+  return (typeof value === "string" ? value : "").replace(/(?:[a-z][a-z0-9+.-]*:\/\/|\/\/|www\.|mailto:|tel:|data:)[^\s]+|\u0022(?:[^\u0022\\]|\\.)*\u0022@[^\s]+|\S*@\S+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu,
+    sensitive => Array.from(sensitive, () => "x").join(""));
+}
+// Whitelist tokens survive only as whole words, after full identity redaction.
 function maskSample(value) {
-  const text = String(value == null ? "" : value);
-  const masked = text.replace(/[^\p{Nd}\p{P}\s]/gu, "x");
-  return Array.from(masked).slice(0, 60).join("");
+  const text = redactIdentities(value);
+  const masked = text.replace(/[\p{L}\p{M}]+(?:\.[\p{L}\p{M}]+)*\.?|[^\p{L}\p{M}\p{Nd}\p{P}\s]/gu, token => {
+    const lower = token.toLowerCase();
+    return CALENDAR_WORDS.has(lower) || CALENDAR_WORDS.has(lower.replace(/\.$/, "")) || CJK_CALENDAR_RE.test(token) ? token : Array.from(token, () => "x").join("");
+  });
+  return Array.from(masked).slice(0,60).join("");
+}
+// Extract the date/clock portion before masking, never a trailing post body. Even
+// unknown formats must have date+clock+calendar vocabulary and a bounded label.
+function timeSample(raw) {
+  const text = normalize(redactIdentities(raw));
+  if (!text || Array.from(text).length > 160 || !/\d/.test(text)) return "";
+  const parsed = parseSchedule(text);
+  if (parsed) return maskSample(parsed.time);
+  // Unknown numeric date formats can be sampled, but arbitrary prose between a
+  // send phrase and clock cannot: its numbers might be private post content.
+  const match = /^((?:will send on\s+|(?:將於|将于|於|于)\s*)?(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|(?:\d{4}\s*[年년]\s*)?\d{1,2}\s*[月월]\s*\d{1,2}\s*[日일])(?:\s*[(（][\p{L}\p{M} ]{1,12}[)）])?\s*(?:,|at|の)?\s*(?:上午|下午|午前|午後|오전|오후)?\s*\d{1,2}[:時时點点시]\s*\d{1,2}(?:\s*(?:AM|PM|分|분))?)/iu.exec(text);
+  if (!match) return "";
+  const masked = maskSample(match[1]);
+  // At least one surviving calendar word, not just a number in arbitrary prose.
+  if (!/[a-wyz\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/i.test(masked)) return "";
+  return masked;
+}
+function isIsolatedTimeElement(el) {
+  if (!el || el.children.length || el.closest(READ_CONFIG.selectors.tweet) || el.closest(READ_CONFIG.selectors.composer) || el.closest(READ_CONFIG.selectors.timeline)) return false;
+  const row = el.closest(READ_CONFIG.selectors.structuralRow + ', ' + READ_CONFIG.selectors.button + ', ' + READ_CONFIG.selectors.listitem + ', ' + READ_CONFIG.selectors.cell);
+  // Owner row evidence, or a legacy send phrase on a separate span. No aggregate
+  // buttons, free paragraphs, or body-only nodes can become diagnostic samples.
+  return el.matches(READ_CONFIG.selectors.timeLeaf) && Boolean(row) && Boolean(timeSample(el.textContent));
 }
 
 // True only when the overlay host is actually in the document *and* laid out.
@@ -209,10 +331,10 @@ function dedupStrings(values) {
 
 function classifyPath(pathname) {
   const path = pathname || "";
-  if (/^\/compose\/(?:post|tweet)\/schedule(?:\/|$)/.test(path)) return "picker";
-  if (/^\/compose\/(?:post|tweet)\/unsent\/scheduled(?:\/|$)/.test(path)) return "scheduled";
-  if (/^\/compose\/(?:post|tweet)\/unsent\/drafts?(?:\/|$)/.test(path)) return "drafts";
-  if (/^\/compose\/(?:post|tweet)\/unsent(?:\/|$)/.test(path)) return "unsent";
+  if (READ_CONFIG.paths.picker.test(path)) return "picker";
+  if (READ_CONFIG.paths.scheduled.test(path)) return "scheduled";
+  if (READ_CONFIG.paths.drafts.test(path)) return "drafts";
+  if (READ_CONFIG.paths.unsent.test(path)) return "unsent";
   return "other";
 }
 
@@ -258,10 +380,10 @@ function toDate(parts) {
 // Parse a candidate string (aria-label or textContent) into a schedule record.
 // Returns null when no time phrase is present. `unparsed: true` means a phrase was
 // found but we refuse to guess a Date.
-function parseSchedule(raw, { allowLoose = true } = {}) {
+function parseSchedule(raw, { allowLoose = true, now = new Date(), reference = null, lang = "" } = {}) {
   const text = normalize(raw);
   if (!text) return null;
-  for (const pattern of STRICT) {
+  for (const pattern of READ_CONFIG.time.strict) {
     const m = pattern.re.exec(text);
     if (!m) continue;
     const time = normalize(m[1]);
@@ -272,8 +394,8 @@ function parseSchedule(raw, { allowLoose = true } = {}) {
     const at = pattern.lang === "en" && /^[\d:]/.test(suffix) ? null : toDate(pattern.parts(m));
     return { lang: pattern.lang, tier: "strict", time, body, at, unparsed: at === null };
   }
-  if (!allowLoose) return null;
-  for (const pattern of LOOSE) {
+  if (!allowLoose) return READ_CONFIG.time.sendVerb.test(text) ? parseTimeLabel(text, { now, reference, lang }) : null;
+  for (const pattern of READ_CONFIG.time.loose) {
     const m = pattern.re.exec(text);
     if (!m) continue;
     const time = normalize(m[1]);
@@ -281,7 +403,7 @@ function parseSchedule(raw, { allowLoose = true } = {}) {
     const at = /^[\d:]/.test(text.slice(m[0].length)) ? null : toDate(pattern.parts(m));
     return { lang: pattern.lang, tier: "loose", time, body, at, unparsed: at === null };
   }
-  return null;
+  return parseTimeLabel(text, { now, reference, lang });
 }
 
 function toItem(parsed) {
@@ -322,41 +444,55 @@ function deepest(elements) {
 }
 
 // Composer chips and editor bodies are never list rows, even inside the unsent dialog.
-const COMPOSER = 'form, [contenteditable="true"], [data-testid="tweetTextarea_0"], [data-testid="scheduledDateField"], [data-testid="scheduledTimeField"], [data-testid="scheduleConfirm"], [data-testid="scheduleOption"], [data-testid="scheduleChip"]';
+const COMPOSER = READ_CONFIG.selectors.composer;
 function readable(el, scope) {
+  // A cell/aggregate containing an article must not launder background tweet text
+  // into L1 or text fallback, even during a route/dialog transition.
+  if (el.querySelector && el.querySelector(READ_CONFIG.selectors.timeline)) return false;
   for (let node = el; node; node = node.parentElement) {
-    if (node.id === "xsched-probe-root" || node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true" || node.matches(COMPOSER)) return false;
+    if (node.id === "xsched-probe-root" || node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true" || node.matches(COMPOSER) || node.matches(READ_CONFIG.selectors.timeline)) return false;
     if (node !== scope && node.getAttribute("role") === "dialog") return false;
     if (node === scope) break;
   }
   return true;
 }
 
-function parseElement(el, allowLoose) {
-  const named = el.querySelector && el.querySelector('[role="button"][aria-label], [role="listitem"][aria-label]');
+function parseElement(el, allowLoose, options = {}) {
+  // Boss skeleton L108–124: real HTML button, dedicated date span, separate body.
+  // Count the structurally proven row even if its time grammar is unknown.
+  if (el.matches(READ_CONFIG.selectors.structuralRow) && el.closest(READ_CONFIG.selectors.dialog) && el.querySelector(READ_CONFIG.selectors.tweet)) {
+    const leaves = [...el.querySelectorAll(READ_CONFIG.selectors.timeLeaf)].filter(node => !node.children.length && !node.closest(READ_CONFIG.selectors.tweet) && readable(node, el) && normalize(node.textContent));
+    const parsedLeaves = leaves.filter(node => parseSchedule(redactIdentities(node.textContent), options));
+    const label = parsedLeaves.length === 1 ? parsedLeaves[0] : leaves.length === 1 ? leaves[0] : null;
+    const raw = label ? normalize(label.textContent) : "";
+    const parsed = label && parseSchedule(redactIdentities(raw), options);
+    const body = normalize(el.querySelector(READ_CONFIG.selectors.tweet).textContent);
+    return { ...toItem(parsed ? { ...parsed, body } : { time: raw, body, lang: "x", tier: "loose", at: null, unparsed: true }), sample: label ? timeSample(raw) : "" };
+  }
+  const named = el.querySelector && el.querySelector(READ_CONFIG.selectors.namedRow);
   const aria = (el.getAttribute && el.getAttribute("aria-label")) || (named && named.getAttribute("aria-label")) || "";
-  const fromAria = aria ? parseSchedule(aria, { allowLoose }) : null;
-  const fromText = parseSchedule(el.textContent, { allowLoose });
+  const fromAria = aria ? parseSchedule(aria, { ...options, allowLoose }) : null;
+  const fromText = parseSchedule(el.textContent, { ...options, allowLoose });
   let parsed = fromAria || fromText;
   if (!parsed) return null;
   {
-    const tweet = el.querySelector && el.querySelector('[data-testid="tweetText"]');
+    const tweet = el.querySelector && el.querySelector(READ_CONFIG.selectors.tweet);
     const body = normalize(tweet ? tweet.textContent : "");
     if (body) parsed = { ...parsed, body };
   }
   if (!parsed.body && parsed.tier === "loose") {
     const ariaBody = normalize(fromAria ? el.textContent : aria);
-    const other = parseSchedule(ariaBody, { allowLoose });
+    const other = parseSchedule(ariaBody, { ...options, allowLoose });
     const body = other ? other.body : ariaBody;
     if (body) parsed = { ...parsed, body };
   }
   // A standalone time-only button is a composer chip, not sufficient list evidence.
-  if (!parsed.body && !el.closest('[data-testid="cellInnerDiv"], [role="listitem"]')) return null;
+  if (!parsed.body && !el.closest(READ_CONFIG.selectors.rowEvidence)) return null;
   return toItem(parsed);
 }
 
 function textFallback(scope) {
-  const all = [...scope.querySelectorAll("*")].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER) && parseSchedule(el.textContent, { allowLoose: false }));
+  const all = [...scope.querySelectorAll(READ_CONFIG.selectors.all)].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER) && parseSchedule(el.textContent, { allowLoose: false }));
   const leaves = deepest(all);
   const items = [];
   for (const el of leaves) {
@@ -372,14 +508,24 @@ function textFallback(scope) {
 }
 
 function countDeep(scope, re) {
-  const all = [...scope.querySelectorAll("*")].filter((el) => readable(el, scope) && re.test(normalize(el.textContent)));
+  const all = [...scope.querySelectorAll(READ_CONFIG.selectors.all)].filter((el) => readable(el, scope) && re.test(normalize(el.textContent)));
   return deepest(all).length;
 }
 
+function visibleInDocument(el) {
+  for (let node = el; node; node = node.parentElement) if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return false;
+  return true;
+}
+function selectedModal(doc) {
+  return [...doc.querySelectorAll(READ_CONFIG.selectors.modal)].find(el => visibleInDocument(el) && [...el.querySelectorAll(READ_CONFIG.selectors.selectedTab)].some(tab => tab.closest(READ_CONFIG.selectors.dialog) === el)) || null;
+}
 function findScheduledTab(doc) {
-  const tabs = [...doc.querySelectorAll('[role="tab"]')];
-  const scheduled = tabs.filter((el) => readable(el, el.closest('[role="dialog"]') || doc.body) && isScheduledLabel(labelOf(el)));
-  return scheduled.find(tabIsSelected) || scheduled[0] || null;
+  const modal = selectedModal(doc);
+  const tabs = [...(modal || doc).querySelectorAll(READ_CONFIG.selectors.tab)];
+  const scheduled = tabs.filter((el) => visibleInDocument(el) && readable(el, el.closest(READ_CONFIG.selectors.dialog) || doc.body) && isScheduledLabel(labelOf(el)));
+  const inDialogs = scheduled.filter(el => el.closest(READ_CONFIG.selectors.dialog));
+  const candidates = inDialogs.length ? inDialogs : scheduled;
+  return candidates.find(tabIsSelected) || candidates[0] || null;
 }
 
 function tabIsSelected(tab) {
@@ -395,11 +541,14 @@ function findScope(doc, tab) {
       if (panel) return { el: panel, name: "panel" };
     }
   }
-  const dialog = (tab && tab.closest('[role="dialog"]')) || doc.querySelector('[role="dialog"]');
+  // A wrapper dialog is not the list scope. The selected tab's NEAREST dialog
+  // (owner L42/L93) contains rows; using the outer L36 skips every nested row.
+  const visibleDialogs = [...doc.querySelectorAll(READ_CONFIG.selectors.dialog)].filter(visibleInDocument);
+  const dialog = (tab && tab.closest(READ_CONFIG.selectors.dialog)) || selectedModal(doc) || visibleDialogs[visibleDialogs.length - 1];
   if (dialog) return { el: dialog, name: "dialog" };
-  const column = doc.querySelector('[data-testid="primaryColumn"]');
+  const column = doc.querySelector(READ_CONFIG.selectors.column);
   if (column) return { el: column, name: "column" };
-  const region = doc.querySelector('[role="region"]');
+  const region = doc.querySelector(READ_CONFIG.selectors.region);
   if (region) return { el: region, name: "region" };
   return doc.body ? { el: doc.body, name: "body" } : null;
 }
@@ -419,7 +568,7 @@ function computedOverflow(doc, el) {
 // `needsScroll` = something in the scope can scroll, so the overlay must warn that the
 // count grows only as the user scrolls (we never scroll for them).
 function detectLayout(scope, doc) {
-  const inlineStyled = [scope, ...scope.querySelectorAll("[style]")].slice(0, 200);
+  const inlineStyled = [scope, ...scope.querySelectorAll(READ_CONFIG.selectors.styled)].slice(0, 200);
   let virtualized = 0;
   let overflow = 0;
   for (const el of inlineStyled) {
@@ -457,6 +606,7 @@ function blank(onScheduled) {
     layer: "none",
     mounted: 0,
     samples: [],
+    fmt: "",
     timeOk: 0,
     timeFail: 0,
     unparsed: 0,
@@ -468,7 +618,7 @@ function blank(onScheduled) {
   };
 }
 
-function readSnapshot(doc, { pathname = "" } = {}) {
+function readSnapshot(doc, { pathname = "", now = new Date() } = {}) {
   const kind = classifyPath(pathname);
   const tab = findScheduledTab(doc);
   const selected = tabIsSelected(tab);
@@ -483,13 +633,21 @@ function readSnapshot(doc, { pathname = "" } = {}) {
   const scope = found.el;
   const candidates = (selector) => [...scope.querySelectorAll(selector)].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER));
 
-  const cells = outermost(candidates('[data-testid="cellInnerDiv"]'));
-  const buttons = outermost(candidates('[role="button"]'));
-  const listitems = outermost(candidates('[role="listitem"]'));
-  const links = outermost(candidates('[role="link"]'));
+  const cells = outermost(candidates(READ_CONFIG.selectors.cell));
+  const buttons = outermost(candidates(READ_CONFIG.selectors.button));
+  const listitems = outermost(candidates(READ_CONFIG.selectors.listitem));
+  const links = outermost(candidates(READ_CONFIG.selectors.link));
 
-  const fromCells = dedup(cells.map((el) => parseElement(el, true)).filter(Boolean));
-  const fromA11y = dedup(outermost([...listitems, ...links, ...buttons]).map((el) => parseElement(el, true)).filter(Boolean));
+  const parseRows = (rows) => {
+    let reference = null;
+    return rows.map(el => {
+      const item = parseElement(el, true, { now, reference, lang: doc.documentElement?.lang || "" });
+      if (item?.at) reference = item.at;
+      return item;
+    }).filter(Boolean);
+  };
+  const fromCells = dedup(parseRows(cells));
+  const fromA11y = dedup(parseRows(outermost([...listitems, ...links, ...buttons])));
   const fromText = fromCells.length === 0 && fromA11y.length === 0 ? textFallback(scope) : [];
 
   let items = [];
@@ -509,24 +667,24 @@ function readSnapshot(doc, { pathname = "" } = {}) {
   let timeFail = 0;
   for (const el of pool) {
     const text = normalize(`${(el.getAttribute && el.getAttribute("aria-label")) || ""} ${el.textContent || ""}`);
-    if (!YEAR_RE.test(text)) continue;
+    if (!READ_CONFIG.time.year.test(text)) continue;
     if (!parseSchedule(text, { allowLoose: true })) timeFail += 1;
   }
 
   // Sample only a recognized time phrase in an isolated leaf, never an aggregate
   // row or tweetText subtree. A year alone is not evidence of a time label.
   const sampleRows = new Set(pool);
-  const failNodes = [...scope.querySelectorAll("*")].filter((el) => {
-    if (!readable(el, scope) || el.children.length || sampleRows.has(el) || el.tagName === "BUTTON" || el.closest('[data-testid="tweetText"]')) return false;
+  const failNodes = [...scope.querySelectorAll(READ_CONFIG.selectors.all)].filter((el) => {
+    if (!readable(el, scope) || sampleRows.has(el) || !isIsolatedTimeElement(el)) return false;
     const text = el.textContent;
-    if (!YEAR_RE.test(normalize(text || "")) || !SEND_VERB_RE.test(text || "")) return false;
+    if (!READ_CONFIG.time.year.test(normalize(text || "")) || !READ_CONFIG.time.sendVerb.test(text || "")) return false;
     const parsed = parseSchedule(text, { allowLoose: true });
     return !parsed || parsed.unparsed === true;
   });
-  const samples = dedupStrings(failNodes.map((el) => {
-    const parsed = parseSchedule(el.textContent, { allowLoose: true });
-    return maskSample(parsed ? parsed.time : normalize(el.textContent || ""));
-  })).slice(0, 3);
+  const legacySamples = dedupStrings(failNodes.map((el) => timeSample(el.textContent))).filter(Boolean);
+  const failedRows = items.filter(item => item.unparsed);
+  timeFail = Math.max(timeFail, failedRows.length);
+  const samples = dedupStrings([...failedRows.map(item => item.sample), ...legacySamples]).filter(Boolean).slice(0,3);
 
   const layout = detectLayout(scope, doc);
   return {
@@ -538,8 +696,8 @@ function readSnapshot(doc, { pathname = "" } = {}) {
     button: buttons.length,
     listitem: listitems.length,
     link: links.length,
-    tweetText: scope.querySelectorAll('[data-testid="tweetText"]').length,
-    phrase: countDeep(scope, SEND_VERB_RE),
+    tweetText: scope.querySelectorAll(READ_CONFIG.selectors.tweet).length,
+    phrase: countDeep(scope, READ_CONFIG.time.sendVerb),
     l1: fromCells.length,
     l2: fromA11y.length,
     l3: fromText.length,
@@ -547,6 +705,9 @@ function readSnapshot(doc, { pathname = "" } = {}) {
     // Real mount state is computed by the content glue; the reader cannot know it.
     mounted: 0,
     samples,
+    // Only the structural reader certifies a separate time label. Legacy parsed
+    // item.time may have originated inside tweetText; never export it as a sample.
+    fmt: items.length ? items[0].sample || "" : "",
     timeOk: items.filter((item) => item.at !== null).length,
     timeFail,
     unparsed: items.filter((item) => item.unparsed).length,
@@ -586,6 +747,15 @@ function sampleField(samples) {
 
 // Diagnostic string: counters / booleans / language tags / masked samples / version only.
 // Never a tweet body, account, URL, or unmasked schedule-time string.
+// Manifest data is trusted only after validating a short numeric version. Never echo
+// exception messages: an invalidated extension can throw arbitrary strings.
+function versionLine(manifestVersion, runtimeInvalidated = false) {
+  const version = typeof manifestVersion === "string" && /^\d{1,5}\.\d{1,5}\.\d{1,5}(?:\.\d{1,5})?$/.test(manifestVersion) ? manifestVersion : "unknown";
+  if (runtimeInvalidated) return `xsched probe v${PROBE_VERSION} — 擴充已重新載入，請重新整理頁面`;
+  if (version !== "unknown" && version !== PROBE_VERSION) return `xsched probe v${PROBE_VERSION} ⚠ 版本不符：script ${PROBE_VERSION} / manifest ${version}，請重新整理頁面`;
+  return `xsched probe v${PROBE_VERSION} (manifest ${version})`;
+}
+
 function buildDiagnostic(report) {
   const scopeCode = { none: 0, panel: 1, dialog: 2, column: 3, region: 4, body: 5 };
   const layerCode = { none: 0, cell: 1, a11y: 2, text: 3, loose: 4 };
@@ -598,7 +768,8 @@ function buildDiagnostic(report) {
     const value = report[key];
     return `${key}=${typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0}`;
   });
-  return `xsched-gate0 v${PROBE_VERSION} ${parts.join(" ")} lang=${sanitizeLang(report.lang)} doclang=${sanitizeLang(report.doclang)} samples=${sampleField(report.samples)}`;
+  const fmt = normalize(maskSample(report.fmt)) || "none";
+  return `${versionLine(report.manifestVersion, report.runtimeInvalidated === true)}\n${parts.join(" ")} lang=${sanitizeLang(report.lang)} doclang=${sanitizeLang(report.doclang)} samples=${sampleField(report.samples)}\nfmt=${fmt}`;
 }
 
 // Shared API. `globalThis` so a classic content script loaded right after this file (same
@@ -606,12 +777,18 @@ function buildDiagnostic(report) {
 // and read `globalThis.XSCHED_READER`.
 globalThis.XSCHED_READER = {
   PROBE_VERSION,
+  READ_CONFIG,
+  versionLine,
   SCHEDULED_LABELS,
   normalize,
   previewText,
   classifyPath,
   isScheduledLabel,
   parseSchedule,
+  parseTimeLabel,
+  formatTime,
+  timeSample,
+  isIsolatedTimeElement,
   findScheduledTab,
   readSnapshot,
   mergeItems,

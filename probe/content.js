@@ -1,15 +1,11 @@
-// xsched gate 0.1 — read-only probe glue.
-//
-// Watches the SPA route (MutationObserver + a location poll, never patching history),
-// reads the Scheduled list through reader.js, and ALWAYS shows a small overlay in the
-// bottom-right corner (a compact capsule off the Scheduled page). The overlay only
-// *reads*: it never clicks a page element, never scrolls, never sends anything anywhere.
-// Diagnostics carry counters, language tags, and masked time samples — no content.
-//
-// Classic script: reader.js + skeleton.js are injected first and expose their globals.
-
-const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted } = globalThis.XSCHED_READER;
+// xsched gate 0.2 — read-only panel, DOM SVG shortcut, local diagnostics.
+// All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
+(() => {
+"use strict";
+const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted, versionLine, formatTime } = globalThis.XSCHED_READER;
 const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
+
+const { stringsFor, placement } = globalThis.XSCHED_UI;
 
 const HOST_ID = "xsched-probe-root";
 const POLL_MS = 400;
@@ -22,7 +18,9 @@ let timer = 0;
 let scrolled = 0;
 let accumulated = [];
 let session = "";
-let collapsed = null; // null = auto (expanded on Scheduled, capsule elsewhere)
+let collapsed = null; // auto until first click; preserve user choice across routes/remounts
+let retired = false;
+let runtimeSignature = "";
 let pollId = 0;
 let lastLocation = "";
 let scopeElement = null;
@@ -54,7 +52,37 @@ function textNode(tag, text, style) {
   return node;
 }
 
+function runtimeState() {
+  try {
+    if (!chrome.runtime.id) return { runtimeInvalidated: true };
+    return { manifestVersion: chrome.runtime.getManifest().version };
+  } catch { return { runtimeInvalidated: true }; }
+}
+
+// 0.0.2 has no stop hook and its poll recreates a removed host. Keep that host
+// connected but inert in a hidden shadow parking area; it can keep its private
+// references without competing for the visible ID. No legacy UI remains visible.
+function retireLegacy(old) {
+  const parking = document.createElement("div");
+  parking.setAttribute("data-xsched-host", "1");
+  parking.setAttribute("data-xsched-retired", "1");
+  css(parking, { display: "none", "pointer-events": "none" });
+  parking.setAttribute("aria-hidden", "true");
+  parking.inert = true;
+  const shadow = parking.attachShadow({ mode: "open" });
+  (document.body || document.documentElement).append(parking);
+  old.removeAttribute("id");
+  shadow.append(old);
+}
+
+// Newer sessions can dispose observers/timers instead of parking themselves.
+const previous = globalThis.XSCHED_PROBE_SESSION;
+if (previous && typeof previous.dispose === "function") previous.dispose();
+for (const old of document.querySelectorAll('#xsched-probe-root')) retireLegacy(old);
+
 function ensureHost() {
+  if (retired) return null;
+  for (const old of document.querySelectorAll("#xsched-probe-root")) if (old !== host) retireLegacy(old);
   if (host && host.isConnected) return host;
   const now = Date.now();
   if (now - remountWindowStart >= REMOUNT_WINDOW_MS) {
@@ -71,22 +99,30 @@ function ensureHost() {
   host = document.createElement("div");
   host.id = HOST_ID;
   host.setAttribute("data-xsched-host", "1");
+  host.setAttribute("data-xsched-version", PROBE_VERSION);
   css(host, {
     all: "initial",
     position: "fixed",
     right: "16px",
-    bottom: "16px",
+    bottom: "112px",
     "z-index": "2147483647",
     display: "block",
-    width: "auto",
+    width: "44px",
+    height: "44px",
     "max-width": "360px",
     margin: "0",
-    "pointer-events": "auto",
+    "pointer-events": "none",
   });
   const shadow = host.attachShadow({ mode: "open" });
   const panel = document.createElement("section");
   panel.className = "panel";
   css(panel, {
+    position: "absolute",
+    right: "0",
+    bottom: "56px",
+    width: "min(344px, calc(100vw - 32px))",
+    "box-sizing": "border-box",
+    "pointer-events": "auto",
     font: "13px/1.45 ui-sans-serif, system-ui, sans-serif",
     color: "#e7e9ea",
     background: "rgba(22, 24, 28, 0.96)",
@@ -94,11 +130,38 @@ function ensureHost() {
     border: "1px solid #38444d",
     "box-shadow": "0 8px 28px rgba(0, 0, 0, 0.45)",
     padding: "10px 12px 12px",
-    "max-height": "72vh",
+    "max-height": "calc(100vh - 188px)",
     "max-width": "344px",
     overflow: "auto",
   });
-  shadow.append(panel);
+  panel.id = "xsched-panel";
+  const shortcut = makeButton("", "xschedToggle");
+  shortcut.className = "shortcut";
+  css(shortcut, { position: "relative", width: "44px", height: "44px", padding: "8px", display: "grid", "place-items": "center", "pointer-events": "auto", "box-shadow": "0 4px 16px #0008" });
+  shortcut.setAttribute("aria-controls", panel.id);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 64 64");
+  svg.setAttribute("width", "28");
+  svg.setAttribute("height", "28");
+  svg.setAttribute("aria-hidden", "true");
+  // Exact Dagaz path / stroke geometry from docs/xsched-logo-B.svg, clipped
+  // by the SVG viewport to the same y=6..58 extent without a URL reference.
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  for (const [key, value] of Object.entries({ d: "M12 10 L12 54 L52 10 L52 54 Z", fill: "none", stroke: "#0B1220", "stroke-width": "8", "stroke-linecap": "butt", "stroke-linejoin": "miter", "stroke-miterlimit": "10" })) path.setAttribute(key, value);
+  svg.setAttribute("viewBox", "0 6 64 52");
+  svg.append(path);
+  shortcut.append(svg);
+  const badge = textNode("span", "", { position: "absolute", top: "-5px", right: "-5px", background: "#1d9bf0", color: "white", "border-radius": "10px", padding: "1px 5px", font: "11px/1.4 system-ui", "pointer-events": "none" });
+  badge.className = "badge";
+  shortcut.append(badge);
+  shortcut.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!lastReport) return;
+    collapsed = !(collapsed === null ? !lastReport.onScheduled : collapsed);
+    render(lastReport, lastItems);
+  });
+  shadow.append(panel, shortcut);
   (document.body || document.documentElement).append(host);
   // A fresh host has no panel content: force the next render to build it.
   lastRender = "";
@@ -165,7 +228,8 @@ function showFallbackText(text) {
     event.stopPropagation();
     try { area.focus(); area.select(); } catch { /* ignore */ }
   });
-  shadow.append(area, select);
+  shadow.querySelector("section").append(area, select);
+  positionUI();
 }
 
 function buttonStyle(ghost) {
@@ -181,6 +245,51 @@ function makeButton(label, datasetKey) {
   return button;
 }
 
+function fixedObstacles() {
+  const rectangles = [];
+  const seen = new Set();
+  const fixedParents = new Map();
+  // Supplied Post/FAB controls and arbitrary Messages/Grok controls are covered
+  // by generic interactive elements plus their fixed/sticky ancestor containers.
+  for (const control of document.querySelectorAll('button, a, [role="button"], [role="dialog"], aside')) {
+    if (control === host || control.closest('[data-xsched-host="1"]')) continue;
+    let fixed = null;
+    for (let node = control; node && node !== document.body; node = node.parentElement) {
+      if (node === host || node.getAttribute("data-xsched-host") === "1") break;
+      if (fixedParents.has(node)) { fixed = fixedParents.get(node); break; }
+      const style = getComputedStyle(node);
+      if (style.position === "fixed" || style.position === "sticky") { fixed = node; break; }
+    }
+    fixedParents.set(control, fixed);
+    if (!fixed || seen.has(fixed)) continue;
+    seen.add(fixed);
+    const style = getComputedStyle(fixed);
+    const rect = fixed.getBoundingClientRect();
+    if (style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0) rectangles.push(rect);
+  }
+  return rectangles;
+}
+
+function positionUI() {
+  if (!host?.isConnected) return;
+  const panel = host.shadowRoot.querySelector("section");
+  const obstacles = fixedObstacles();
+  const isOpen = panel.style.getPropertyValue("display") !== "none";
+  // Restore the ordinary maximum before measuring; a previously expanded drawer
+  // must not leave the panel permanently cramped after it closes.
+  css(panel, { "max-height": `${Math.max(80, innerHeight - 188)}px` });
+  let position = placement(innerWidth, innerHeight, obstacles, isOpen ? panel.getBoundingClientRect().height : 0);
+  if (!position.clear && isOpen) {
+    // A short scrollable panel can fit a gap that the full panel cannot.
+    for (let cap = panel.getBoundingClientRect().height - 64; cap >= 80; cap -= 64) {
+      css(panel, { "max-height": `${cap}px` });
+      position = placement(innerWidth, innerHeight, obstacles, panel.getBoundingClientRect().height);
+      if (position.clear) break;
+    }
+  }
+  css(host, { right: `${position.right}px`, bottom: `${position.bottom}px` });
+}
+
 function render(report, items) {
   const node = ensureHost();
   if (!node) { mounted = 0; return; }
@@ -189,8 +298,10 @@ function render(report, items) {
   const effectiveCollapsed = collapsed === null ? !report.onScheduled : collapsed;
   mounted = mountedNow;
 
+  const runtime = runtimeState();
   const diag = buildDiagnostic({
     ...report,
+    ...runtime,
     mounted: mountedNow,
     items: count,
     remounts,
@@ -203,9 +314,11 @@ function render(report, items) {
     samples: report.samples || [],
   });
 
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled]);
+  const strings = stringsFor(document.documentElement.lang, navigator.language);
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
+    positionUI();
     return;
   }
   lastRender = signature;
@@ -216,18 +329,17 @@ function render(report, items) {
   const panel = node.shadowRoot.querySelector("section");
   while (panel.firstChild) panel.removeChild(panel.firstChild);
 
-  const head = document.createElement("div");
-  css(head, { display: "flex", "align-items": "baseline", gap: "8px" });
-  const kicker = textNode("span", `xsched 探針 v${PROBE_VERSION}`, { color: "#71767b", "font-size": "11px", "letter-spacing": "0.04em", flex: "1" });
-  const toggle = makeButton(effectiveCollapsed ? "展開" : "收合", "xschedToggle");
-  toggle.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    collapsed = !effectiveCollapsed;
-    render(lastReport || report, lastItems);
-  });
-  head.append(kicker, toggle);
-  panel.append(head);
+  css(panel, { display: effectiveCollapsed ? "none" : "block" });
+  const shortcut = node.shadowRoot.querySelector(".shortcut");
+  shortcut.setAttribute("aria-expanded", String(!effectiveCollapsed));
+  shortcut.setAttribute("aria-label", strings.shortcut);
+  shortcut.title = strings.shortcut;
+  const badge = shortcut.querySelector(".badge");
+  badge.textContent = String(count);
+  css(badge, { display: report.onScheduled ? "block" : "none" });
+  const kicker = textNode("div", versionLine(runtime.manifestVersion, runtime.runtimeInvalidated), { color: "#8b98a5", "font-size": "11px", "word-break": "break-word" });
+  kicker.className = "version";
+  panel.append(kicker);
 
   const countLine = textNode("div", report.onScheduled ? `讀到 ${count} 則` : "xsched 探針：非 Scheduled 頁", { "font-size": "18px", "font-weight": "760", margin: "4px 0 8px" });
   countLine.className = "count";
@@ -244,7 +356,7 @@ function render(report, items) {
       for (const item of items) {
         const row = document.createElement("div");
         css(row, { padding: "6px 0", "border-top": "1px solid #2f3336" });
-        const time = textNode("div", item.time, { color: "#1d9bf0", "font-weight": "680", "word-break": "break-word" });
+        const time = textNode("div", formatTime(item.at), { color: "#1d9bf0", "font-weight": "680", "word-break": "break-word" });
         time.className = "time";
         const preview = textNode("div", item.preview || "（沒有文字）", { "word-break": "break-word" });
         preview.className = "preview";
@@ -252,6 +364,16 @@ function render(report, items) {
         panel.append(row);
       }
     } else {
+      const go = makeButton(strings.goto, "xschedGoto");
+      go.title = strings.goto;
+      go.setAttribute("aria-label", strings.goto);
+      go.dataset.xschedTarget = "https://x.com/compose/post/unsent/scheduled";
+      go.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.isTrusted) location.assign("https://x.com/compose/post/unsent/scheduled");
+      });
+      panel.append(go);
       panel.append(textNode("p", "非 Scheduled 頁面：此頁不讀取列表，僅保留診斷與頁面結構工具。", { color: "#8b98a5", "font-size": "12px", margin: "0 0 8px" }));
     }
 
@@ -282,6 +404,7 @@ function render(report, items) {
   }
 
   writeDataset(node, report, count, diag);
+  positionUI();
 }
 
 function tick() {
@@ -304,6 +427,7 @@ function tick() {
 }
 
 function schedule() {
+  if (retired) return;
   if (host && !host.isConnected && remountWindowCount >= REMOUNT_LIMIT && Date.now() - remountWindowStart < REMOUNT_WINDOW_MS) return;
   // A bounded throttle: continuous mutations cannot postpone reading forever.
   if (timer) return;
@@ -319,6 +443,10 @@ function onScroll(event) {
 }
 
 function pollLocation() {
+  const state = JSON.stringify(runtimeState());
+  if (state !== runtimeSignature) { runtimeSignature = state; schedule(); }
+  if (document.querySelectorAll("#xsched-probe-root").length > 1) schedule();
+  positionUI();
   const now = `${location.pathname || ""}${location.search || ""}`;
   if (now !== lastLocation) {
     lastLocation = now;
@@ -358,6 +486,7 @@ function start() {
     attributeFilter: ["aria-selected", "aria-current", "aria-controls", "aria-label", "hidden", "aria-hidden", "data-testid"],
   });
   window.addEventListener("popstate", schedule);
+  window.addEventListener("resize", schedule);
   pollId = window.setInterval(pollLocation, POLL_MS);
   lastLocation = `${location.pathname || ""}${location.search || ""}`;
   ensureHost();
@@ -374,11 +503,22 @@ function stop() {
   timer = 0;
   document.removeEventListener("scroll", onScroll, true);
   window.removeEventListener("popstate", schedule);
+  window.removeEventListener("resize", schedule);
   accumulated = [];
   scopeElement = null;
   // Keep the host mounted across bfcache/SPA teardown; start() re-attaches the observer.
 }
 
+function onPageShow(event) { if (event.persisted && !retired) start(); }
+globalThis.XSCHED_PROBE_SESSION = { dispose() {
+  retired = true;
+  stop();
+  window.removeEventListener("pagehide", stop);
+  window.removeEventListener("pageshow", onPageShow);
+  host?.remove();
+} };
 window.addEventListener("pagehide", stop);
-window.addEventListener("pageshow", (event) => { if (event.persisted) start(); });
+window.addEventListener("pageshow", onPageShow);
 if (typeof document !== "undefined" && document.documentElement) start();
+
+})();

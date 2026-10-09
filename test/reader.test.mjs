@@ -213,16 +213,15 @@ test("mergeItems accumulates across a virtualized window swap and dedups", () =>
 });
 
 // ── diagnostics must never leak content ────────────────────────────────────────
-test("buildDiagnostic carries counters only, no tweet body / time / account / url", () => {
+test("buildDiagnostic has counters and calendar-only fmt, no tweet body/account/url", () => {
   const report = snap(fixture("en.html"));
   const diag = R.buildDiagnostic({ ...report, scrolled: 1 });
-  assert.match(diag, /^xsched-gate0 v0\.0\.2 /);
+  assert.match(diag, /^xsched probe v0\.0\.3 \(manifest unknown\)\n/);
   assert.match(diag, /onScheduled=1 /);
   assert.match(diag, /layer=1 /);
 
   const forbidden = [
-    "Local fixture", "Will send", "@local_fixture", "9:00", "8:05", "Oct", "Nov",
-    "http", "x.com", "2026",
+    "Local fixture", "@local_fixture", "http", "x.com",
   ];
   for (const fragment of forbidden) {
     assert.ok(!diag.includes(fragment), `diagnostic leaked "${fragment}": ${diag}`);
@@ -244,10 +243,10 @@ test("buildDiagnostic never leaks any localized fixture text", () => {
 });
 
 // ── gate 0.1 additions ─────────────────────────────────────────────────────────
-test("maskSample keeps digits/punctuation but masks every letter, mark, and symbol", () => {
-  assert.equal(R.maskSample("Will send on Oct 10, 2026 at 9:00 AM"), "xxxx xxxx xx xxx 10, 2026 xx 9:00 xx");
-  assert.equal(R.maskSample("將於2026年7月20日"), "xx2026x7x20x");
-  assert.equal(R.maskSample("2026년 10월 10일"), "2026x 10x 10x");
+test("maskSample keeps calendar vocabulary and masks all other words/identities", () => {
+  assert.equal(R.maskSample("Will send on Oct 10, 2026 at 9:00 AM"), "Will send on Oct 10, 2026 at 9:00 AM");
+  assert.equal(R.maskSample("將於2026年7月20日"), "將於2026年7月20日");
+  assert.equal(R.maskSample("2026년 10월 10일"), "2026년 10월 10일");
   assert.equal(R.maskSample("a😀b"), "xxx");
   assert.equal(R.maskSample(""), "");
   assert.equal(R.maskSample(null), "");
@@ -299,7 +298,7 @@ test("time samples exclude year-only text, tweetText descendants and aggregate r
   assert.equal(report.samples.length, 2);
   const diag = R.buildDiagnostic(report);
   assert.ok(!diag.includes('987654321') && !diag.includes('1122334455') && !diag.includes('9988776655'), diag);
-  assert.ok(report.samples.every((sample) => !/[A-WYZa-wyz]/.test(sample)));
+  assert.ok(report.samples.every((sample) => sample.startsWith('Will send on 2027-04-') && !sample.includes('private')));
 });
 
 test("buildDiagnostic emits masked samples only when a phrase failed to parse", () => {
@@ -320,7 +319,7 @@ test("buildDiagnostic emits masked samples only when a phrase failed to parse", 
 test("buildDiagnostic sanitizes adversarial lang/doclang values", () => {
   const diag = R.buildDiagnostic({ lang: "en-US<script>alert(1)</script>", doclang: "https://evil.example/" });
   assert.match(diag, / lang=x /);
-  assert.match(diag, / doclang=x samples=none$/);
+  assert.match(diag, / doclang=x samples=none\nfmt=none$/);
   for (const leak of ["script", "alert", "evil", "example", "https"]) {
     assert.ok(!diag.includes(leak), `diagnostic leaked "${leak}": ${diag}`);
   }

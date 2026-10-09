@@ -171,6 +171,8 @@ export function checkLogoDir(dir = DOCS) {
 
 // Things the probe must never contain. (Whole probe/ tree, any file type.)
 const BANNED = [
+  { name: "namespaced resource attribute", re: /\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
+  { name: "markup parsing", re: /\b(?:createContextualFragment|parseFromString)\b/ },
   { name: "fetch(", re: /\bfetch\s*\(/ },
   { name: "XMLHttpRequest", re: /XMLHttpRequest/ },
   { name: "WebSocket", re: /\bWebSocket\b/ },
@@ -244,6 +246,8 @@ export function scanSource(text, label) {
   for (const rule of BANNED) {
     if (rule.re.test(text) || rule.re.test(canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
   }
+  const navigation = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, "");
+  if (/\blocation\s*(?:=|\.\s*(?:assign|replace)\s*\(|\.\s*(?:href|pathname|search|hash)\s*=)/.test(navigation)) errors.push(`${label}: only the fixed Scheduled navigation is allowed`);
   if (/\bimport\s*\(/.test(canonical)) errors.push(`${label}: dynamic import forbidden`);
   return errors;
 }
@@ -413,26 +417,71 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   let maskedCount = 0;
   for (const secret of secrets) {
     const masked = reader.maskSample(secret);
-    if (!masked.includes("x")) throw new Error(`self-test: maskSample left "${secret}" unmasked`);
-    if (!/^(?:x|[\p{Nd}\p{P}\s])+$/u.test(masked)) throw new Error(`self-test: maskSample kept content from "${secret}": ${masked}`);
+    const calendarOnly = secret === "Will send on Oct 10, 2026 at 9:00 AM" || secret === "2026年7月20日(月)の午後4:24に送信されます";
+    if (calendarOnly && masked !== secret) throw new Error("self-test: calendar vocabulary not preserved");
+    if (!calendarOnly && !masked.includes("x")) throw new Error(`self-test: maskSample left "${secret}" unmasked`);
+    if (!calendarOnly && !/^(?:x|[\p{Nd}\p{P}\s])+$/u.test(masked)) throw new Error(`self-test: maskSample kept content from "${secret}": ${masked}`);
     if (Array.from(masked).length > 60) throw new Error("self-test: maskSample exceeded 60 code points");
     maskedCount += 1;
   }
-  const hostile = new DOMParser().parseFromString('<html><body><section role="dialog"><button><span>Will send on 2027-04-05 18:30 UTC</span><div data-testid="tweetText"><span>Will send on 2027-04-05 18:30 UTC private 987654321</span></div><p>private purchase 2027 1122334455</p></button></section></body></html>', 'text/html');
+  const hostile = new DOMParser().parseFromString('<html><body><section role="dialog"><button role="button"><span>Will send on 2027-04-05 18:30 UTC</span><div data-testid="tweetText"><span>Will send on 2027-04-05 18:30 UTC private 987654321</span></div><p>private purchase 2027 1122334455</p></button></section></body></html>', 'text/html');
   const report = reader.readSnapshot(hostile, { pathname: '/compose/post/unsent/scheduled' });
   const diag = reader.buildDiagnostic({ ...report, lang: 'VibeEyeX', doclang: 'en-x-VibeEyeX' });
   if (!/lang=x doclang=x/.test(diag)) throw new Error('self-test: diagnostic leaked unregistered language tags');
-  for (const leak of ['VibeEyeX', '987654321', '1122334455', 'Will send', 'private']) {
+  for (const leak of ['VibeEyeX', '987654321', '1122334455', 'private']) {
     if (diag.includes(leak)) throw new Error('self-test: diagnostic leaked content or sampled tweet body');
   }
   if (report.samples.length !== 1) throw new Error('self-test: time samples must come only from the isolated time label');
+  // New calendar export path: body may look exactly like a date, so require DOM
+  // isolation. This retains every original body/attribute leak assertion above.
+  const extraSecrets = ['secretbody', 'May@January.example', '@May2026', 'https://May.example/2026', '987654321', '1122334455'];
+  const calendarPage = new DOMParser().parseFromString('<html><body><section role="dialog"><button role="button"><div><span>Will send on Oct 10, 2026 at 9:00 AM secretbody May@January.example @May2026 https://May.example/2026 987654321</span></div><div data-testid="tweetText"><span>Will send on Dec 31, 2026 at 9:00 AM 1122334455</span></div></button><p>Will send on Oct 10, 2026 at 9:00 AM secretbody</p></section></body></html>', 'text/html');
+  const calendarSkeleton = mapper.buildSkeleton(calendarPage, { pathname: '/compose/post/unsent/scheduled' });
+  if (!calendarSkeleton.includes('calendar=')) throw new Error('self-test: isolated calendar sample path was not exercised');
+  if (calendarSkeleton.includes('Dec') || calendarSkeleton.includes('31%2C')) throw new Error('self-test: calendar-looking tweet body leaked');
+  for (const leak of extraSecrets) {
+    for (const output of [calendarSkeleton, decodeURIComponent(calendarSkeleton), reader.buildDiagnostic(reader.readSnapshot(calendarPage, { pathname:'/compose/post/unsent/scheduled' }))]) {
+      if (output.includes(leak)) throw new Error('self-test: calendar path leaked '+leak);
+    }
+  }
+  // Calendar-shaped addresses must never preserve vocabulary/digits from identities.
+  for (const secret of ['May@January.example', '@May2026', 'https://May.example/2026']) {
+    if (!/^x+$/.test(reader.maskSample(secret))) throw new Error('self-test: calendar address unmasked');
+  }
+  const prose = 'Will send on private purchase 987654321 at 23:59';
+  if (reader.timeSample(prose)) throw new Error('self-test: unknown date sample included prose/private numbers');
+  calendarPage.querySelector('button span').textContent = prose;
+  const proseSkeleton = mapper.buildSkeleton(calendarPage, { pathname:'/compose/post/unsent/scheduled' });
+  const proseDiag = reader.buildDiagnostic(reader.readSnapshot(calendarPage, { pathname:'/compose/post/unsent/scheduled' }));
+  if (proseSkeleton.includes('calendar=') || proseDiag.includes('987654321')) throw new Error('self-test: unknown date export leaked private numbers');
   const origin = mapper.hostnameOf('https://privateuser:secret@frame.example:8080/path?q=token');
   if (origin !== 'frame.example') throw new Error('self-test: iframe origin includes credentials/path/port');
-  return { secrets: secrets.length + 3, fragments: maskedCount };
+  const embeddedDates = [
+    'https://evil.example/將於2026年10月10日上午9:00傳送',
+    '//evil.example/2026年7月20日の午後4:24に送信されます',
+    '將於2026年10月10日上午9:00傳送@January.example',
+    '@將於2026年10月10日上午9:00傳送',
+    '"May 10, 2026 at 9:00 AM"@January.example',
+  ];
+  for (const secret of embeddedDates) {
+    if (reader.timeSample(secret) || !/^x+$/.test(reader.maskSample(secret))) throw new Error('self-test: date extraction laundered an identity');
+    calendarPage.querySelector('button span').textContent = secret;
+    const identityReport = reader.readSnapshot(calendarPage, { pathname:'/compose/post/unsent/scheduled' });
+    if (identityReport.fmt || identityReport.samples.length || identityReport.timeFail !== 1 || mapper.buildSkeleton(calendarPage, { pathname:'/compose/post/unsent/scheduled' }).includes('calendar=')) throw new Error('self-test: calendar identity reached diagnostic or skeleton');
+  }
+  const legacyBody = new DOMParser().parseFromString('<html><body><section role="dialog"><div data-testid="cellInnerDiv"><div data-testid="tweetText">Will send on Oct 10, 2026 at 9:00 AM private 987654321</div></div></section></body></html>', 'text/html');
+  const legacyReport = reader.readSnapshot(legacyBody, { pathname:'/compose/post/unsent/scheduled' });
+  if (legacyReport.fmt || legacyReport.samples.length || /Oct|987654321/.test(reader.buildDiagnostic(legacyReport))) throw new Error('self-test: legacy body exported as a time sample');
+  const readableFmt = reader.buildDiagnostic({ fmt: '將於2026年10月10日 上午9:00傳送' });
+  if (!readableFmt.endsWith('\nfmt=將於2026年10月10日 上午9:00傳送')) throw new Error('self-test: fmt must be directly readable on its own line');
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 2, fragments: maskedCount };
 }
 
 function selfTest() {
   const violations = [
+    'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
+    'a.setAttributeNS(null, "href", "https://evil.example/")',
+    'range.createContextualFragment("<img>")', 'parser.parseFromString("<img>", "text/html")',
     "fetch/*comment*/('x')", "globalThis.fetch", 'window["fe"+"tch"]("x")',
     'navigator["sendBeacon"]("x")', 'window["XML" + "HttpRequest"]',
     'window["Web" + "Socket"]', 'globalThis["Event" + "Source"]',

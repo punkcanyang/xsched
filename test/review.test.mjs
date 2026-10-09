@@ -4,7 +4,7 @@ import { parseHTML } from "linkedom";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { spawnSync } from "node:child_process";
+import { runNode } from "../scripts/test-cli.mjs";
 import { scanSource, checkManifest, checkProbeDir, attackSelfTest } from "../scripts/verify.mjs";
 import { allowedRequest, hasExtensionInitiator } from "../scripts/network-policy.mjs";
 await import("../probe/reader.js");
@@ -36,6 +36,10 @@ test("network policy rejects same-URL fetches, extension initiators, and externa
     { url: "https://evil.example/a.png", type: "Image", navigation: false },
     { url: "chrome-extension://id/data", type: "Other", navigation: false },
   ]) assert.equal(allowedRequest(request, navigations), false);
+  assert.equal(allowedRequest({ url, type: "Document", navigation: true, extensionInitiator: true, userNavigation: true }, navigations), true);
+  for (const extra of [{ type: "Fetch", navigation: false }, { type: "Other", navigation: false }, { type: "Document", navigation: false }, { url: "https://evil.example/", type: "Document", navigation: true }]) {
+    assert.equal(allowedRequest({ url, extensionInitiator: true, userNavigation: true, ...extra }, navigations), false);
+  }
   assert.equal(hasExtensionInitiator({ stack: { callFrames: [], parent: { callFrames: [{ url: "chrome-extension://id/content.js" }] } } }), true);
 });
 
@@ -85,13 +89,13 @@ test("loose date-only accessible label uses the entire separate text as body", (
 });
 
 test("at uses the process local timezone and refuses a DST gap", () => {
-  const result = spawnSync(process.execPath, ["--input-type=module", "-e", `
+  const result = runNode(["--input-type=module", "-e", `
     import './probe/reader.js';
     const R = globalThis.XSCHED_READER;
     const local = R.parseSchedule('Will send on Jan 1, 2027 at 9:00 AM x').at;
     const gap = R.parseSchedule('Will send on Mar 14, 2027 at 2:30 AM x');
     if(local.toISOString() !== '2027-01-01T14:00:00.000Z' || gap.at !== null) process.exit(1);
-  `], { env: { ...process.env, TZ: "America/New_York" }, timeout: 10000, stdio: ["ignore", "pipe", "pipe"] });
+  `], { env: { ...process.env, TZ: "America/New_York" }, timeout: 10000 });
   assert.equal(result.status, 0, result.stderr?.toString());
 });
 
@@ -148,7 +152,7 @@ test("diagnostic accepts only safe nonnegative integers and numeric enum codes",
   const secret = "@private https://private.example/ Oct 10 2026 9:00 AM private post";
   const report = Object.fromEntries(["onScheduled", "tab", "scope", "cell", "button", "listitem", "link", "tweetText", "phrase", "l1", "l2", "l3", "layer", "mounted", "timeOk", "timeFail", "unparsed", "loose", "needsScroll", "virtualized", "empty", "scrolled"].map((key) => [key, secret]));
   const diagnostic = R.buildDiagnostic(report);
-  assert.match(diagnostic, /^xsched-gate0 v0\.0\.2 (?:\w+=[\w%|-]* ?)+$/);
+  assert.match(diagnostic, /^xsched probe v0\.0\.3 \(manifest unknown\)\n(?:\w+=[\w%|-]* ?)+\nfmt=none$/);
   assert.ok(!diagnostic.includes(secret));
   for (const value of [-1, NaN, Infinity, 1.5, {}, () => secret]) {
     assert.match(R.buildDiagnostic({ cell: value }), /cell=0 /);
@@ -184,7 +188,7 @@ test("verify CLI exits nonzero for an actual synthetic violation; missing manife
     assert.ok(checkProbeDir(directory).errors.length);
     writeFileSync(join(directory, "manifest.json"), JSON.stringify(goodManifest));
     writeFileSync(join(directory, "ok.js"), 'window["fe" + "tch"]("x");');
-    const result = spawnSync(process.execPath, ["scripts/verify.mjs", directory], { timeout: 10000, stdio: ["ignore", "pipe", "pipe"] });
+    const result = runNode(["scripts/verify.mjs", directory], { timeout: 10000 });
     assert.equal(result.status, 1, result.stdout.toString() + result.stderr.toString());
     assert.match(result.stderr.toString(), /banned API/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
