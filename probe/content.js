@@ -9,7 +9,7 @@
 // Classic script: reader.js + skeleton.js are injected first and expose their globals.
 
 const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted } = globalThis.XSCHED_READER;
-const { buildSkeleton } = globalThis.XSCHED_SKELETON;
+const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 
 const HOST_ID = "xsched-probe-root";
 const POLL_MS = 400;
@@ -234,17 +234,20 @@ function render(report, items) {
 
   if (!effectiveCollapsed) {
     if (report.onScheduled) {
-      panel.append(textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color: "#ffd400", "font-size": "12px", margin: "0 0 8px" }));
+      const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color: "#ffd400", "font-size": "12px", margin: "0 0 8px" });
+      hint.className = "hint";
+      panel.append(hint);
       if (count === 0) {
         panel.append(textNode("p", report.timeFail > 0 ? "看到疑似排程列，但時間格式解析不出來（格式可能改版）。" : "這一頁目前沒有解析到排程時間。", { color: "#ffd400", "font-size": "12px", margin: "0 0 8px" }));
       }
       for (const item of items) {
         const row = document.createElement("div");
         css(row, { padding: "6px 0", "border-top": "1px solid #2f3336" });
-        row.append(
-          textNode("div", item.time, { color: "#1d9bf0", "font-weight": "680", "word-break": "break-word" }),
-          textNode("div", item.preview || "（沒有文字）", { "word-break": "break-word" }),
-        );
+        const time = textNode("div", item.time, { color: "#1d9bf0", "font-weight": "680", "word-break": "break-word" });
+        time.className = "time";
+        const preview = textNode("div", item.preview || "（沒有文字）", { "word-break": "break-word" });
+        preview.className = "preview";
+        row.append(time, preview);
         panel.append(row);
       }
     } else {
@@ -267,7 +270,7 @@ function render(report, items) {
       try {
         text = buildSkeleton(document, { pathname: location.pathname || "" });
       } catch {
-        text = `xsched-skeleton v0.0.2 path=other nodes=0`;
+        text = `xsched-skeleton v${SKELETON_VERSION} path=other nodes=0`;
       }
       writeClipboard(text, skeleton, "複製頁面結構", () => showFallbackText(text));
     });
