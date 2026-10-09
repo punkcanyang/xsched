@@ -121,6 +121,13 @@ async function probeState(page) {
       scrolled: host.dataset.xschedScrolled || "",
       diag: host.dataset.xschedDiag || "",
       countText: pick(".count"),
+      expanded: shadow?.querySelector('.shortcut')?.getAttribute('aria-expanded'),
+      shortcut: Boolean(shadow?.querySelector('.shortcut svg path')),
+      label: shadow?.querySelector('.shortcut')?.getAttribute('aria-label'),
+      title: shadow?.querySelector('.shortcut')?.title,
+      version: pick('.version'),
+      target: shadow?.querySelector('[data-xsched-goto]')?.dataset.xschedTarget,
+      panelVisible: shadow?.querySelector('section')?.getBoundingClientRect().height > 0,
       times: shadow ? [...shadow.querySelectorAll(".time")].map((el) => el.textContent) : [],
       hint: pick(".hint"),
       fallback: shadow && shadow.querySelector("textarea.fallback") ? shadow.querySelector("textarea.fallback").value : "",
@@ -129,13 +136,13 @@ async function probeState(page) {
 }
 
 const CASES = [
-  { fixture: "en", file: "gate0.1-en.png", count: 2, times: ["Fri, Oct 10, 2026 at 9:00 AM", "Mon, Nov 9, 2026 at 8:05 PM"] },
-  { fixture: "ja", file: "gate0.1-ja.png", count: 2, times: ["2026年7月20日(月)の午後4:24に送信されます", "2026年8月3日(月)の午前9:05に送信されます"] },
-  { fixture: "zh-Hans", file: "gate0.1-zh-Hans.png", count: 2, times: ["将于2026年10月10日 上午9:00发送", "将于2026年11月9日 下午8:05发送"] },
-  { fixture: "zh-Hant", file: "gate0.1-zh-Hant.png", count: 2, times: ["將於2026年10月10日 上午9:00傳送", "將於2026年11月9日 下午8:05傳送"] },
-  { fixture: "ko", file: "gate0.1-ko.png", count: 2, times: ["2026년 10월 10일 오전 9:00에 전송됩니다", "2026년 11월 9일 오후 8:05에 전송됩니다"] },
-  { fixture: "roles", file: "gate0.1-roles-fallback.png", count: 2, layer: "a11y", times: ["Fri, Oct 16, 2026 at 7:30 AM", "Sat, Oct 17, 2026 at 6:00 PM"] },
-  { fixture: "empty", file: "gate0.1-empty.png", count: 0 },
+  { fixture: "en", file: "gate0.2-en.png", count: 2, times: ["Fri, Oct 10, 2026 at 9:00 AM", "Mon, Nov 9, 2026 at 8:05 PM"] },
+  { fixture: "ja", file: "gate0.2-ja.png", count: 2, times: ["2026年7月20日(月)の午後4:24に送信されます", "2026年8月3日(月)の午前9:05に送信されます"] },
+  { fixture: "zh-Hans", file: "gate0.2-zh-Hans.png", count: 2, times: ["将于2026年10月10日 上午9:00发送", "将于2026年11月9日 下午8:05发送"] },
+  { fixture: "zh-Hant", file: "gate0.2-zh-Hant.png", count: 2, times: ["將於2026年10月10日 上午9:00傳送", "將於2026年11月9日 下午8:05傳送"] },
+  { fixture: "ko", file: "gate0.2-ko.png", count: 2, times: ["2026년 10월 10일 오전 9:00에 전송됩니다", "2026년 11월 9일 오후 8:05에 전송됩니다"] },
+  { fixture: "roles", file: "gate0.2-roles-fallback.png", count: 2, layer: "a11y", times: ["Fri, Oct 16, 2026 at 7:30 AM", "Sat, Oct 17, 2026 at 6:00 PM"] },
+  { fixture: "empty", file: "gate0.2-empty.png", count: 0 },
 ];
 
 async function main() {
@@ -194,6 +201,7 @@ async function main() {
 
     const page = await browser.newPage();
     const navigations = new Set();
+    const userNavigations = new Set();
     const network = await page.createCDPSession();
     const contexts = new Map();
     network.on("Runtime.executionContextCreated", ({ context }) => contexts.set(context.id, context));
@@ -204,7 +212,7 @@ async function main() {
     network.on("Network.requestWillBeSent", (event) => requests.push(event));
     await page.setRequestInterception(true);
     page.on("request", (req) => {
-      const allowed = allowedRequest({ url: req.url(), type: req.resourceType(), navigation: req.isNavigationRequest() && req.frame() === page.mainFrame() }, navigations);
+      const allowed = allowedRequest({ url: req.url(), type: req.resourceType(), navigation: req.isNavigationRequest() && req.frame() === page.mainFrame(), userNavigation: userNavigations.has(req.url()) }, navigations);
       if (!allowed) denied.push(`${req.resourceType()} ${req.url()}`);
       void (allowed ? req.continue() : req.abort()).catch((error) => consoleLogs.push(error.message));
     });
@@ -238,6 +246,143 @@ async function main() {
     // We can't assert on chrome-extension:// *requests*: content-script JS is not a
     // page-level subresource, so puppeteer's request events never surface it.
     let sawOverlay = false;
+
+    async function clickShadow(selector) {
+      const handle = await page.evaluateHandle((sel) => document.getElementById('xsched-probe-root').shadowRoot.querySelector(sel), selector);
+      try { await handle.asElement().click(); } finally { await handle.dispose(); }
+    }
+    async function toggle(expected) {
+      await clickShadow('.shortcut');
+      const state = await until(async () => {
+        const s = await probeState(page);
+        return s.expanded === String(expected) && s.panelVisible === expected ? s : null;
+      }, `shortcut expanded=${expected}`);
+      assert(state.label === state.title && Boolean(state.title), 'localized aria-label matches tooltip');
+      return state;
+    }
+    async function checkNative(label) {
+      const results = await page.evaluate(() => {
+        const host = document.getElementById('xsched-probe-root');
+        const shortcut = host.shadowRoot.querySelector('.shortcut');
+        const panel = host.shadowRoot.querySelector('section');
+        const rects = [shortcut, panel].map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height);
+        return [...document.querySelectorAll('.native-post, .native-fab, .native-drawer')].map((el) => {
+          const r = el.getBoundingClientRect();
+          if (!r.width || !r.height) return null;
+          return { testid: el.dataset.testid || 'drawer', overlap: rects.some((a) => a.left < r.right && a.right > r.left && a.top < r.bottom && a.bottom > r.top), hit: document.elementFromPoint(r.left + r.width/2, r.top + r.height/2) === el };
+        }).filter(Boolean);
+      });
+      assert(results.length === 2, `${label}: post/FAB plus drawer must be visible`);
+      for (const r of results) {
+        assert(!r.overlap, `${label}: shortcut/panel overlaps ${r.testid}`);
+        assert(r.hit, `${label}: elementFromPoint must hit native ${r.testid}`);
+      }
+      const selector = await page.evaluate(() => innerWidth <= 600 ? '.native-fab' : '.native-post');
+      await page.click(selector);
+      assert(await page.evaluate(() => window.fixturePostClicks > 0), `${label}: physical Post click reaches native button`);
+    }
+
+    // ── 0.2 shortcut / positioning / navigation ────────────────────────────
+    await open('en');
+    const scheduled = await until(async () => {
+      const s = await probeState(page);
+      return s.count === 2 && s.expanded === 'true' ? s : null;
+    }, 'shortcut Scheduled defaults open');
+    assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
+    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.0.3 (manifest 0.0.3)', 'diagnostic first line includes both versions');
+    await checkNative('desktop scheduled open');
+    await page.screenshot({ path: join(DOCS, 'gate0.2-scheduled-open.png') });
+    await page.screenshot({ path: join(DOCS, 'gate0.2-diag-version.png') });
+    await toggle(false);
+    await checkNative('desktop scheduled closed');
+    await page.screenshot({ path: join(DOCS, 'gate0.2-scheduled-closed.png') });
+    await page.evaluate(() => history.replaceState({}, '', '/home'));
+    await until(async () => (await probeState(page)).mode === 'other', 'closed state survives SPA home');
+    assert((await probeState(page)).expanded === 'false', 'explicit closed survives route change');
+    await page.evaluate(() => history.replaceState({}, '', '/compose/post/unsent/scheduled'));
+    await until(async () => (await probeState(page)).mode === 'scheduled', 'return Scheduled');
+    assert((await probeState(page)).expanded === 'false', 'explicit closed overrides Scheduled auto default');
+    await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
+    const shortcutRemount = await until(async () => {
+      const s = await probeState(page);
+      return s.remounts > 0 && s.shortcut ? s : null;
+    }, 'shortcut remount');
+    assert(shortcutRemount.expanded === 'false' && shortcutRemount.mounted === '1', 'remount preserves closed choice and mounted state');
+    await toggle(true);
+    await page.screenshot({ path: join(DOCS, 'gate0.2-remount.png') });
+
+    await open('home', '/home');
+    const home = await until(async () => {
+      const s = await probeState(page);
+      return s.mode === 'other' && s.expanded === 'false' ? s : null;
+    }, 'shortcut home defaults closed');
+    assert(home.shortcut && !home.panelVisible && home.count === 0, 'home shows only shortcut, no capsule');
+    await checkNative('desktop home closed');
+    await page.screenshot({ path: join(DOCS, 'gate0.2-home-closed.png') });
+    const homeOpen = await toggle(true);
+    const target = 'https://x.com/compose/post/unsent/scheduled';
+    assert(homeOpen.target === target, 'goto button fixed target is exact (location.assign, no href sink)');
+    await checkNative('desktop home open');
+    await page.screenshot({ path: join(DOCS, 'gate0.2-home-open-goto-link.png') });
+    for (const width of [390, 600]) {
+      await page.setViewport({ width, height: 820 });
+      await sleep(600);
+      await checkNative(`narrow ${width} open`);
+      await toggle(false);
+      await checkNative(`narrow ${width} closed`);
+      if (width === 390) await page.screenshot({ path: join(DOCS, 'gate0.2-narrow-fab.png') });
+      await toggle(true);
+    }
+    await page.setViewport({ width: 1100, height: 820 });
+    await sleep(600);
+    // An expanded lower-right drawer must cause both button and panel to shift.
+    await page.evaluate(() => Object.assign(document.querySelector('.native-drawer').style, { width: '400px', height: '620px' }));
+    await sleep(600);
+    await checkNative('expanded Messages/Grok drawer');
+    navigations.add(target);
+    userNavigations.add(target); // test's physical click authorizes only this navigation
+    await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickShadow('[data-xsched-goto]')]);
+    assert(page.url() === target, 'goto physically navigates to Scheduled');
+    await until(async () => (await probeState(page)).count === 2, 'goto destination reads fixture');
+    console.log('  ✓ shortcut: open/close, SPA choice, remount, home navigation, desktop/narrow FAB and drawer hit tests');
+
+    // Runtime warnings are exercised in the extension isolated world only.
+    const versionContext = await findExtensionContext();
+    await network.send('Runtime.evaluate', { contextId: versionContext, expression: `
+      globalThis.__originalManifest = chrome.runtime.getManifest;
+      chrome.runtime.getManifest = () => ({version: '0.0.2'});
+    ` });
+    await until(async () => (await probeState(page)).version.includes('⚠ 版本不符'), 'manifest mismatch warning');
+    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.0.3 / manifest 0.0.2'), 'diagnostic mismatch warning');
+    await page.screenshot({ path: join(DOCS, 'gate0.2-version-mismatch.png') });
+    await network.send('Runtime.evaluate', { contextId: versionContext, expression: `chrome.runtime.getManifest = () => { throw new Error('Extension context invalidated. private account'); };` });
+    await until(async () => (await probeState(page)).version.includes('擴充已重新載入'), 'context invalidated warning');
+    assert(!(await probeState(page)).diag.includes('private account'), 'runtime exception is never copied into diagnostic');
+    await page.screenshot({ path: join(DOCS, 'gate0.2-runtime-invalidated.png') });
+    await network.send('Runtime.evaluate', { contextId: versionContext, expression: 'chrome.runtime.getManifest = globalThis.__originalManifest;' });
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.0.3 (manifest 0.0.3)'), 'runtime warning clears');
+
+    // Reproduce an actual 0.0.2 reader/content session in another isolated world.
+    // Historical sources are read from the task's base commit, never downloaded.
+    await network.send('Runtime.evaluate', { contextId: versionContext, expression: 'globalThis.XSCHED_PROBE_SESSION.dispose();' });
+    const frame = await network.send('Page.getFrameTree');
+    const legacy = await network.send('Page.createIsolatedWorld', { frameId: frame.frameTree.frame.id, worldName: 'xsched-fixture-legacy-0.0.2' });
+    for (const file of ['reader.js', 'skeleton.js', 'content.js']) {
+      const source = execFileSync('git', ['show', `d875959:probe/${file}`], { cwd: ROOT, encoding: 'utf8' });
+      const result = await network.send('Runtime.evaluate', { contextId: legacy.executionContextId, expression: source });
+      assert(!result.exceptionDetails, `legacy ${file} must execute`);
+    }
+    await until(async () => (await probeState(page)).diag.startsWith('xsched-gate0 v0.0.2'), 'actual old host visible');
+    const takeover = await network.send('Runtime.evaluate', { contextId: versionContext, expression: readFileSync(join(PROBE, 'content.js'), 'utf8') });
+    assert(!takeover.exceptionDetails, 'new script reinjection avoids top-level const collisions');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.0.3'), 'new script takes over old UI');
+    await sleep(1200); // legacy poll has run repeatedly
+    assert(await page.evaluate(() => document.querySelectorAll('#xsched-probe-root').length === 1 && [...document.querySelectorAll('[data-xsched-retired]')].every((el) => el.getBoundingClientRect().height === 0)), 'one active UI; legacy stays connected and hidden');
+    await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
+    await until(async () => (await probeState(page)).remounts > 0, 'takeover host removal recovers');
+    await sleep(800);
+    assert(await page.evaluate(() => document.querySelectorAll('#xsched-probe-root').length === 1), 'legacy poll never reclaims visible host after remount');
+    console.log('  ✓ version: mismatch, invalidated runtime, actual 0.0.2 takeover, reinjection and remount');
 
     // ── locale + fallback cases ────────────────────────────────────────────────
     for (const testCase of CASES) {
@@ -324,7 +469,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched-gate0 v0\.0\.2 (?:\w+=[\w%|.:-]* ?)+$/.test(copied.result.value[0]), "copied diagnostic contains counters/langs/masked samples only even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.0\.3 \(manifest 0\.0\.3\)\n(?:\w+=[\w%|.:-]* ?)+$/.test(copied.result.value[0]), "copied diagnostic contains counters/langs/masked samples only even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
@@ -348,7 +493,7 @@ async function main() {
     for (const leak of ["Arrives", "UTC", "placeholder body"]) {
       assert(!broken.diag.includes(leak), `selectors-broken: diag leaked "${leak}": ${broken.diag}`);
     }
-    await page.screenshot({ path: join(DOCS, "gate0.1-selectors-broken.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.2-selectors-broken.png") });
     console.log("  ✓ selectors-broken: mounted, 0 rows, masked samples only");
 
     // ── 0.1: X's SPA redraw removes the host → the probe must re-mount it ──────
@@ -416,13 +561,13 @@ async function main() {
     const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
     const skeleton = skeletonCopies.result.value[0];
-    assert(/^xsched-skeleton v0\.0\.2 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(/^xsched-skeleton v0\.0\.3 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
     for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
     }
-    writeFileSync(join(DOCS, "gate0.1-skeleton-sample.txt"), skeleton + "\n");
-    await page.screenshot({ path: join(DOCS, "gate0.1-skeleton-copied.png") });
+    writeFileSync(join(DOCS, "gate0.2-skeleton-sample.txt"), skeleton + "\n");
+    await page.screenshot({ path: join(DOCS, "gate0.2-skeleton-copied.png") });
     // The clipboard may be denied; then the overlay must offer the readonly textarea.
     await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: `
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() { return Promise.reject(new Error('denied')); } } });
@@ -434,7 +579,7 @@ async function main() {
       const s = await probeState(page);
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
-    assert(/^xsched-skeleton v0\.0\.2 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    assert(/^xsched-skeleton v0\.0\.3 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
     const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
     await select.asElement().click();
     await select.dispose();
@@ -443,7 +588,7 @@ async function main() {
       return area.selectionStart === 0 && area.selectionEnd === area.value.length;
     });
     assert(selected, 'fallback: user can select the entire skeleton');
-    await page.screenshot({ path: join(DOCS, "gate0.1-skeleton-fallback.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.2-skeleton-fallback.png") });
     console.log("  ✓ skeleton: content-free map copied; textarea fallback when clipboard is denied");
 
     // ── virtualized list: the TEST scrolls, the probe only accumulates ──────────
@@ -455,7 +600,7 @@ async function main() {
     assert(before.scrolled === "0", "virtual: probe must not have scrolled on its own");
     assert(before.diag.includes("virtualized=1"), `virtual: expected virtualized=1: ${before.diag}`);
     assert(before.hint.includes("請自己往下捲"), `virtual: expected the do-not-auto-scroll hint: ${before.hint}`);
-    await page.screenshot({ path: join(DOCS, "gate0.1-virtual-before.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.2-virtual-before.png") });
 
     await page.evaluate(() => {
       const list = document.getElementById("sched-list");
@@ -476,7 +621,7 @@ async function main() {
     ]) {
       assert(after.times.includes(want), `virtual: missing accumulated time "${want}"`);
     }
-    await page.screenshot({ path: join(DOCS, "gate0.1-virtual-after.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.2-virtual-after.png") });
     console.log("  ✓ virtual: 3 → 6 rows after a test-driven scroll");
 
     await page.evaluate(() => {
@@ -566,8 +711,8 @@ async function main() {
     const homeState = await probeState(page);
     assert(homeState.present && homeState.mode === "other" && homeState.count === 0, `home: overlay should be a 0-row capsule, got ${JSON.stringify(homeState)}`);
     assert(homeState.countText === "xsched 探針：非 Scheduled 頁", `home: capsule text was "${homeState.countText}"`);
-    await page.screenshot({ path: join(DOCS, "gate0.1-not-scheduled.png") });
-    console.log("  ✓ home: 0 rows (capsule stays mounted off the Scheduled page)");
+    await page.screenshot({ path: join(DOCS, "gate0.2-not-scheduled.png") });
+    console.log("  ✓ home: 0 rows (shortcut stays mounted off the Scheduled page)");
 
     for (const subpath of ["/home", "/compose/post/unsent/drafts", "/compose/post/schedule"]) {
       await open("en", subpath); // intentionally contains a selected Scheduled tab
@@ -580,7 +725,7 @@ async function main() {
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);
     for (const event of requests) {
-      assert(allowedRequest({ url: event.request.url, type: event.type, navigation: event.type === "Document", extensionInitiator: hasExtensionInitiator(event.initiator) }, navigations), `unexpected request or extension initiator: ${event.type} ${event.request.url}`);
+      assert(allowedRequest({ url: event.request.url, type: event.type, navigation: event.type === "Document", extensionInitiator: hasExtensionInitiator(event.initiator), userNavigation: userNavigations.has(event.request.url) }, navigations), `unexpected request or extension initiator: ${event.type} ${event.request.url}`);
     }
     // The overlay only exists if the content script ran, which only happens if the
     // extension was loaded from probe/.

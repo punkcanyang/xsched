@@ -13,7 +13,7 @@
 
 ## 工具與 session
 
-- 規劃＋寫碼：Codex 0.162.0 `-m gpt-6.1-sol` reasoning high（非 Fast），寫碼 session：（待填）
+- 規劃＋寫碼：Codex 0.162.0 `-m gpt-6.1-sol` reasoning high（非 Fast），寫碼 session：`01a1212e-3e31-74f3-ba55-1c3c643723cb`（`codex exec resume 01a1212e-3e31-74f3-ba55-1c3c643723cb "..." </dev/null`）
 - 複審：Codex gpt-6.1-sol high，另一 session：接回 `01a12013-6780-77c1-9466-bb1e9f78097f`
 - CodeWhale 暫停，不用來寫碼。
 
@@ -24,3 +24,11 @@
 - [ ] PR
 - [ ] Codex 複審
 - [ ] merge --no-ff 到 main、push
+
+## 寫碼計畫（本 Codex session）
+
+1. 集中 reader 的既有選擇器、標籤、路徑與時間格式，不改解析／讀取行為；建立真骨架 fixture 說明與自動發現測試。
+2. 加入九語快捷鈕字串與 DOM SVG Dagaz；44px 按鈕、預設 bottom 112px、矩形避讓可見原生控制項，浮層向上展開；保留手動開關與有限重掛。
+3. 升 0.0.3；診斷／浮層顯示 script 與 manifest 版本，捕捉 runtime invalidated。舊 script 保留連線於隱藏容器避免其輪詢互搶，新 session 可清理自己的 observer。
+4. 守門不放寬：既有規則禁止 href 寫入，使用固定目標 location.assign 按鈕；e2e 驗證目標與實際導覽、桌面／窄版原生鈕可點、版本、接手及 0 請求。
+5. 分塊 commit；實跑 npm test / verify / e2e、只產生 gate0.2 截圖，更新文件與結果。另一個 Codex session 複審；本 session 不 push、不開 PR、不改 main、不打包 zip。

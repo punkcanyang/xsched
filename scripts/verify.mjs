@@ -171,6 +171,8 @@ export function checkLogoDir(dir = DOCS) {
 
 // Things the probe must never contain. (Whole probe/ tree, any file type.)
 const BANNED = [
+  { name: "namespaced resource attribute", re: /\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
+  { name: "markup parsing", re: /\b(?:createContextualFragment|parseFromString)\b/ },
   { name: "fetch(", re: /\bfetch\s*\(/ },
   { name: "XMLHttpRequest", re: /XMLHttpRequest/ },
   { name: "WebSocket", re: /\bWebSocket\b/ },
@@ -433,6 +435,8 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
 
 function selfTest() {
   const violations = [
+    'a.setAttributeNS(null, "href", "https://evil.example/")',
+    'range.createContextualFragment("<img>")', 'parser.parseFromString("<img>", "text/html")',
     "fetch/*comment*/('x')", "globalThis.fetch", 'window["fe"+"tch"]("x")',
     'navigator["sendBeacon"]("x")', 'window["XML" + "HttpRequest"]',
     'window["Web" + "Socket"]', 'globalThis["Event" + "Source"]',

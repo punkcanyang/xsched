@@ -23,7 +23,7 @@
 (() => {
 "use strict";
 
-const PROBE_VERSION = "0.0.2";
+const PROBE_VERSION = "0.0.3";
 
 // Tab labels that mean "Scheduled". en / ja are from public sources; zh-Hant, zh-Hans
 // and ko are *guesses* (no public source found) and are marked as such in GATE0.md.
@@ -136,6 +136,39 @@ const SEND_VERB_RE = /will send on|に送信されます|將於|将于|전송됩
 // Any 4-digit year in an element that we could not parse → format drift signal.
 const YEAR_RE = /\b20\d{2}\b|\d{4}\s*年|\d{4}\s*년/;
 
+// Gate 0.2 configuration: values copied verbatim from 0.0.2, no new reader clues.
+// Sources and inference status: notes/GATE0.md gate 0 §1–2. Real DOM still pending.
+const READ_CONFIG = Object.freeze({
+  selectors: Object.freeze({
+    // cell: public generic X cell (§1 #5); namedRow/roles: Japanese a11y clue (#3).
+    // tweet, scope, exclusion, wildcard and layout selectors: existing heuristics (§2).
+    namedRow: "[role=\"button\"][aria-label], [role=\"listitem\"][aria-label]",
+    tweet: "[data-testid=\"tweetText\"]",
+    rowEvidence: "[data-testid=\"cellInnerDiv\"], [role=\"listitem\"]",
+    tab: "[role=\"tab\"]",
+    dialog: "[role=\"dialog\"]",
+    column: "[data-testid=\"primaryColumn\"]",
+    region: "[role=\"region\"]",
+    styled: "[style]",
+    all: "*",
+    cell: "[data-testid=\"cellInnerDiv\"]",
+    button: "[role=\"button\"]",
+    listitem: "[role=\"listitem\"]",
+    link: "[role=\"link\"]",
+    composer: 'form, [contenteditable="true"], [data-testid="tweetTextarea_0"], [data-testid="scheduledDateField"], [data-testid="scheduledTimeField"], [data-testid="scheduleConfirm"], [data-testid="scheduleOption"], [data-testid="scheduleChip"]',
+  }),
+  paths: Object.freeze({
+    picker: /^\/compose\/(?:post|tweet)\/schedule(?:\/|$)/,
+    scheduled: /^\/compose\/(?:post|tweet)\/unsent\/scheduled(?:\/|$)/,
+    drafts: /^\/compose\/(?:post|tweet)\/unsent\/drafts?(?:\/|$)/,
+    unsent: /^\/compose\/(?:post|tweet)\/unsent(?:\/|$)/,
+  }),
+  // en/ja public clues; zh-Hant/zh-Hans/ko guessed, unchanged from gate 0.
+  labels: SCHEDULED_LABELS,
+  // English tolerance, Japanese public phrase, Chinese/Korean inferred formats.
+  time: Object.freeze({ strict: STRICT, loose: LOOSE, sendVerb: SEND_VERB_RE, year: YEAR_RE, months: MONTH_INDEX, monthPattern: MONTH, weekdayPrefix: WEEKDAY_PREFIX }),
+});
+
 function monthKey(raw) {
   return String(raw || "").toLowerCase().replace(/\./g, "").slice(0, 3);
 }
@@ -209,10 +242,10 @@ function dedupStrings(values) {
 
 function classifyPath(pathname) {
   const path = pathname || "";
-  if (/^\/compose\/(?:post|tweet)\/schedule(?:\/|$)/.test(path)) return "picker";
-  if (/^\/compose\/(?:post|tweet)\/unsent\/scheduled(?:\/|$)/.test(path)) return "scheduled";
-  if (/^\/compose\/(?:post|tweet)\/unsent\/drafts?(?:\/|$)/.test(path)) return "drafts";
-  if (/^\/compose\/(?:post|tweet)\/unsent(?:\/|$)/.test(path)) return "unsent";
+  if (READ_CONFIG.paths.picker.test(path)) return "picker";
+  if (READ_CONFIG.paths.scheduled.test(path)) return "scheduled";
+  if (READ_CONFIG.paths.drafts.test(path)) return "drafts";
+  if (READ_CONFIG.paths.unsent.test(path)) return "unsent";
   return "other";
 }
 
@@ -261,7 +294,7 @@ function toDate(parts) {
 function parseSchedule(raw, { allowLoose = true } = {}) {
   const text = normalize(raw);
   if (!text) return null;
-  for (const pattern of STRICT) {
+  for (const pattern of READ_CONFIG.time.strict) {
     const m = pattern.re.exec(text);
     if (!m) continue;
     const time = normalize(m[1]);
@@ -273,7 +306,7 @@ function parseSchedule(raw, { allowLoose = true } = {}) {
     return { lang: pattern.lang, tier: "strict", time, body, at, unparsed: at === null };
   }
   if (!allowLoose) return null;
-  for (const pattern of LOOSE) {
+  for (const pattern of READ_CONFIG.time.loose) {
     const m = pattern.re.exec(text);
     if (!m) continue;
     const time = normalize(m[1]);
@@ -322,7 +355,7 @@ function deepest(elements) {
 }
 
 // Composer chips and editor bodies are never list rows, even inside the unsent dialog.
-const COMPOSER = 'form, [contenteditable="true"], [data-testid="tweetTextarea_0"], [data-testid="scheduledDateField"], [data-testid="scheduledTimeField"], [data-testid="scheduleConfirm"], [data-testid="scheduleOption"], [data-testid="scheduleChip"]';
+const COMPOSER = READ_CONFIG.selectors.composer;
 function readable(el, scope) {
   for (let node = el; node; node = node.parentElement) {
     if (node.id === "xsched-probe-root" || node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true" || node.matches(COMPOSER)) return false;
@@ -333,14 +366,14 @@ function readable(el, scope) {
 }
 
 function parseElement(el, allowLoose) {
-  const named = el.querySelector && el.querySelector('[role="button"][aria-label], [role="listitem"][aria-label]');
+  const named = el.querySelector && el.querySelector(READ_CONFIG.selectors.namedRow);
   const aria = (el.getAttribute && el.getAttribute("aria-label")) || (named && named.getAttribute("aria-label")) || "";
   const fromAria = aria ? parseSchedule(aria, { allowLoose }) : null;
   const fromText = parseSchedule(el.textContent, { allowLoose });
   let parsed = fromAria || fromText;
   if (!parsed) return null;
   {
-    const tweet = el.querySelector && el.querySelector('[data-testid="tweetText"]');
+    const tweet = el.querySelector && el.querySelector(READ_CONFIG.selectors.tweet);
     const body = normalize(tweet ? tweet.textContent : "");
     if (body) parsed = { ...parsed, body };
   }
@@ -351,12 +384,12 @@ function parseElement(el, allowLoose) {
     if (body) parsed = { ...parsed, body };
   }
   // A standalone time-only button is a composer chip, not sufficient list evidence.
-  if (!parsed.body && !el.closest('[data-testid="cellInnerDiv"], [role="listitem"]')) return null;
+  if (!parsed.body && !el.closest(READ_CONFIG.selectors.rowEvidence)) return null;
   return toItem(parsed);
 }
 
 function textFallback(scope) {
-  const all = [...scope.querySelectorAll("*")].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER) && parseSchedule(el.textContent, { allowLoose: false }));
+  const all = [...scope.querySelectorAll(READ_CONFIG.selectors.all)].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER) && parseSchedule(el.textContent, { allowLoose: false }));
   const leaves = deepest(all);
   const items = [];
   for (const el of leaves) {
@@ -372,13 +405,13 @@ function textFallback(scope) {
 }
 
 function countDeep(scope, re) {
-  const all = [...scope.querySelectorAll("*")].filter((el) => readable(el, scope) && re.test(normalize(el.textContent)));
+  const all = [...scope.querySelectorAll(READ_CONFIG.selectors.all)].filter((el) => readable(el, scope) && re.test(normalize(el.textContent)));
   return deepest(all).length;
 }
 
 function findScheduledTab(doc) {
-  const tabs = [...doc.querySelectorAll('[role="tab"]')];
-  const scheduled = tabs.filter((el) => readable(el, el.closest('[role="dialog"]') || doc.body) && isScheduledLabel(labelOf(el)));
+  const tabs = [...doc.querySelectorAll(READ_CONFIG.selectors.tab)];
+  const scheduled = tabs.filter((el) => readable(el, el.closest(READ_CONFIG.selectors.dialog) || doc.body) && isScheduledLabel(labelOf(el)));
   return scheduled.find(tabIsSelected) || scheduled[0] || null;
 }
 
@@ -395,11 +428,11 @@ function findScope(doc, tab) {
       if (panel) return { el: panel, name: "panel" };
     }
   }
-  const dialog = (tab && tab.closest('[role="dialog"]')) || doc.querySelector('[role="dialog"]');
+  const dialog = (tab && tab.closest(READ_CONFIG.selectors.dialog)) || doc.querySelector(READ_CONFIG.selectors.dialog);
   if (dialog) return { el: dialog, name: "dialog" };
-  const column = doc.querySelector('[data-testid="primaryColumn"]');
+  const column = doc.querySelector(READ_CONFIG.selectors.column);
   if (column) return { el: column, name: "column" };
-  const region = doc.querySelector('[role="region"]');
+  const region = doc.querySelector(READ_CONFIG.selectors.region);
   if (region) return { el: region, name: "region" };
   return doc.body ? { el: doc.body, name: "body" } : null;
 }
@@ -419,7 +452,7 @@ function computedOverflow(doc, el) {
 // `needsScroll` = something in the scope can scroll, so the overlay must warn that the
 // count grows only as the user scrolls (we never scroll for them).
 function detectLayout(scope, doc) {
-  const inlineStyled = [scope, ...scope.querySelectorAll("[style]")].slice(0, 200);
+  const inlineStyled = [scope, ...scope.querySelectorAll(READ_CONFIG.selectors.styled)].slice(0, 200);
   let virtualized = 0;
   let overflow = 0;
   for (const el of inlineStyled) {
@@ -483,10 +516,10 @@ function readSnapshot(doc, { pathname = "" } = {}) {
   const scope = found.el;
   const candidates = (selector) => [...scope.querySelectorAll(selector)].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER));
 
-  const cells = outermost(candidates('[data-testid="cellInnerDiv"]'));
-  const buttons = outermost(candidates('[role="button"]'));
-  const listitems = outermost(candidates('[role="listitem"]'));
-  const links = outermost(candidates('[role="link"]'));
+  const cells = outermost(candidates(READ_CONFIG.selectors.cell));
+  const buttons = outermost(candidates(READ_CONFIG.selectors.button));
+  const listitems = outermost(candidates(READ_CONFIG.selectors.listitem));
+  const links = outermost(candidates(READ_CONFIG.selectors.link));
 
   const fromCells = dedup(cells.map((el) => parseElement(el, true)).filter(Boolean));
   const fromA11y = dedup(outermost([...listitems, ...links, ...buttons]).map((el) => parseElement(el, true)).filter(Boolean));
@@ -509,17 +542,17 @@ function readSnapshot(doc, { pathname = "" } = {}) {
   let timeFail = 0;
   for (const el of pool) {
     const text = normalize(`${(el.getAttribute && el.getAttribute("aria-label")) || ""} ${el.textContent || ""}`);
-    if (!YEAR_RE.test(text)) continue;
+    if (!READ_CONFIG.time.year.test(text)) continue;
     if (!parseSchedule(text, { allowLoose: true })) timeFail += 1;
   }
 
   // Sample only a recognized time phrase in an isolated leaf, never an aggregate
   // row or tweetText subtree. A year alone is not evidence of a time label.
   const sampleRows = new Set(pool);
-  const failNodes = [...scope.querySelectorAll("*")].filter((el) => {
-    if (!readable(el, scope) || el.children.length || sampleRows.has(el) || el.tagName === "BUTTON" || el.closest('[data-testid="tweetText"]')) return false;
+  const failNodes = [...scope.querySelectorAll(READ_CONFIG.selectors.all)].filter((el) => {
+    if (!readable(el, scope) || el.children.length || sampleRows.has(el) || el.tagName === "BUTTON" || el.closest(READ_CONFIG.selectors.tweet)) return false;
     const text = el.textContent;
-    if (!YEAR_RE.test(normalize(text || "")) || !SEND_VERB_RE.test(text || "")) return false;
+    if (!READ_CONFIG.time.year.test(normalize(text || "")) || !READ_CONFIG.time.sendVerb.test(text || "")) return false;
     const parsed = parseSchedule(text, { allowLoose: true });
     return !parsed || parsed.unparsed === true;
   });
@@ -538,8 +571,8 @@ function readSnapshot(doc, { pathname = "" } = {}) {
     button: buttons.length,
     listitem: listitems.length,
     link: links.length,
-    tweetText: scope.querySelectorAll('[data-testid="tweetText"]').length,
-    phrase: countDeep(scope, SEND_VERB_RE),
+    tweetText: scope.querySelectorAll(READ_CONFIG.selectors.tweet).length,
+    phrase: countDeep(scope, READ_CONFIG.time.sendVerb),
     l1: fromCells.length,
     l2: fromA11y.length,
     l3: fromText.length,
@@ -586,6 +619,15 @@ function sampleField(samples) {
 
 // Diagnostic string: counters / booleans / language tags / masked samples / version only.
 // Never a tweet body, account, URL, or unmasked schedule-time string.
+// Manifest data is trusted only after validating a short numeric version. Never echo
+// exception messages: an invalidated extension can throw arbitrary strings.
+function versionLine(manifestVersion, runtimeInvalidated = false) {
+  const version = typeof manifestVersion === "string" && /^\d{1,5}\.\d{1,5}\.\d{1,5}(?:\.\d{1,5})?$/.test(manifestVersion) ? manifestVersion : "unknown";
+  if (runtimeInvalidated) return `xsched probe v${PROBE_VERSION} — 擴充已重新載入，請重新整理頁面`;
+  if (version !== "unknown" && version !== PROBE_VERSION) return `xsched probe v${PROBE_VERSION} ⚠ 版本不符：script ${PROBE_VERSION} / manifest ${version}，請重新整理頁面`;
+  return `xsched probe v${PROBE_VERSION} (manifest ${version})`;
+}
+
 function buildDiagnostic(report) {
   const scopeCode = { none: 0, panel: 1, dialog: 2, column: 3, region: 4, body: 5 };
   const layerCode = { none: 0, cell: 1, a11y: 2, text: 3, loose: 4 };
@@ -598,7 +640,7 @@ function buildDiagnostic(report) {
     const value = report[key];
     return `${key}=${typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0}`;
   });
-  return `xsched-gate0 v${PROBE_VERSION} ${parts.join(" ")} lang=${sanitizeLang(report.lang)} doclang=${sanitizeLang(report.doclang)} samples=${sampleField(report.samples)}`;
+  return `${versionLine(report.manifestVersion, report.runtimeInvalidated === true)}\n${parts.join(" ")} lang=${sanitizeLang(report.lang)} doclang=${sanitizeLang(report.doclang)} samples=${sampleField(report.samples)}`;
 }
 
 // Shared API. `globalThis` so a classic content script loaded right after this file (same
@@ -606,6 +648,8 @@ function buildDiagnostic(report) {
 // and read `globalThis.XSCHED_READER`.
 globalThis.XSCHED_READER = {
   PROBE_VERSION,
+  READ_CONFIG,
+  versionLine,
   SCHEDULED_LABELS,
   normalize,
   previewText,

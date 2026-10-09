@@ -12,6 +12,11 @@
   [data-testid="cellInnerDiv"] { padding:10px 4px; border-top:1px solid #2f3336; }
   .name { color:#8b98a5; font-size:13px; }
   .body { margin-top:2px; }
+
+  .native-post { position:fixed; left:16px; bottom:80px; width:160px; height:48px; background:#1d9bf0; color:white; border:0; border-radius:24px; }
+  .native-fab { display:none; position:fixed; right:20px; bottom:88px; width:56px; height:56px; background:#1d9bf0; color:white; border:0; border-radius:50%; }
+  .native-drawer { position:fixed; right:0; bottom:0; width:300px; height:48px; background:#202327; color:white; border:1px solid #536471; }
+  @media (max-width:600px) { .native-post { display:none; } .native-fab { display:block; } .native-drawer { width:190px; } }
 </style>
 </head>
 <body>
@@ -30,5 +35,10 @@
     <div class="body" data-testid="tweetText">Just landed. Will post tomorrow at 8:00 AM local time.</div>
   </div>
 </div>
+
+<!-- Mock control positions only: task-supplied Post/FAB testids, not live X DOM evidence. -->
+<button class="native-post" data-testid="SideNav_NewTweet_Button" onclick="window.fixturePostClicks=(window.fixturePostClicks||0)+1">Post (fixture)</button>
+<button class="native-fab" data-testid="FloatingActionButtons_Tweet_Button" onclick="window.fixturePostClicks=(window.fixturePostClicks||0)+1" aria-label="Post (fixture)">＋</button>
+<button class="native-drawer" onclick="window.fixtureDrawerClicks=(window.fixtureDrawerClicks||0)+1">Messages / Grok (fixture)</button>
 </body>
 </html>
