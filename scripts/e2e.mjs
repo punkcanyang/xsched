@@ -244,7 +244,7 @@ async function main() {
       await open(testCase.fixture);
       const state = await until(async () => {
         const s = await probeState(page);
-        if (!s.present) return null;
+        if (!s.present || s.mode === "") return null; // mode is only written by a real render
         return s.count === testCase.count ? s : null;
       }, `${testCase.fixture}: overlay count=${testCase.count}`);
 

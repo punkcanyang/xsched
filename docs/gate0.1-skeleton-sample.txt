@@ -1,0 +1,22 @@
+xsched-skeleton v0.0.2 path=scheduled nodes=21
+p c=1 class=[banner]
+  #text(31)
+div c=5 role=dialog aria-label=x
+  div c=5 role=tablist
+    div c=1 role=tab aria-selected=false
+      #text(6)
+    div c=1 role=tab aria-selected=true
+      #text(9)
+  div c=5 id=x
+    div c=3 data-testid=cellInnerDiv
+      div c=5 role=button aria-label=x
+        div c=1 class=[when]
+          #text(41)
+        div c=1 class=[body] data-testid=tweetText
+          #text(34)
+    div c=3 data-testid=cellInnerDiv
+      div c=5 role=button aria-label=x
+        div c=1 class=[when]
+          #text(40)
+        div c=1 class=[body] data-testid=tweetText
+          #text(34)
