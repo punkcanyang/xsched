@@ -39,9 +39,9 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 - **複審**：由**不同的 session／模型**審，Opus 5.5 有額度就用，沒有就 Grok 4.7 high（非 Fast）另開 session。PR 說明寫明是誰審的。
 - 測試：建好 `package.json` 後至少要有 `npm run verify`（權限與網路請求守門）和 fixture 測試（模擬 X 的 Scheduled 列表與排程視窗）。PR 前全部要過，名字寫進這份文件。
 - **本 repo 的測試（PR 前三個都要在最新分支上跑過）**：
-  - `npm test`：`node --test` + linkedom，測 `probe/reader.js`（五語系解析、各層備援、去重累加、空列表、非 Scheduled 0 命中、診斷不含內容）。
-  - `npm run verify`：`scripts/verify.mjs`，掃 `probe/` 擋網路 API／`innerHTML`／`eval` 等，並檢查 manifest 權限最小（含會抓違規的 self-test）。
-  - `npm run e2e`：`scripts/e2e.mjs`，用 Chrome for Testing 載入真 `probe/`，本機 HTTPS fixture server ＋ `--host-resolver-rules` 把 x.com 指到 127.0.0.1，驗證浮層計數／時間、虛擬化累加、非排程頁 0 命中、擴充無額外網路請求，並產生 `docs/gate0-*.png`。需要 Xvfb（`DISPLAY` 空時自動 `xvfb-run`）與 `CHROME_PATH`（預設 `/tmp/cft/.../chrome`）。
+  - `npm test`：`node --test` + linkedom，測 `probe/reader.js`（五語系解析、各層備援、去重累加、空列表、非 Scheduled 0 命中、診斷不含內容、時間樣本遮罩、`lang`／`doclang` 過濾、`mounted` 真實狀態）與 `probe/skeleton.js`（屬性遮罩、class 前綴／雜湊、`×N` 收合、shadow、同源／跨源 iframe、截斷）。
+  - `npm run verify`：`scripts/verify.mjs`，掃 `probe/` 擋網路 API／`innerHTML`／`eval` 等，並檢查 manifest 權限最小（含會抓違規的 self-test，以及用含網址／uuid／email／handle／內文／長屬性值的攻擊樣本頁驗證 skeleton 與時間遮罩不洩漏）。
+  - `npm run e2e`：`scripts/e2e.mjs`，用 Chrome for Testing 載入真 `probe/`，本機 HTTPS fixture server ＋ `--host-resolver-rules` 把 x.com 指到 127.0.0.1，驗證浮層計數／時間、虛擬化累加、非排程頁 0 命中、選擇器全失效仍掛載並顯示「讀到 0 則」、host 被移除自動重掛、骨架複製與 textarea 備援、擴充無額外網路請求，並產生 `docs/gate0.1-*.png`（舊 `docs/gate0-*.png` 保留）與範例骨架 `docs/gate0.1-skeleton-sample.txt`。需要 Xvfb（`DISPLAY` 空時自動 `xvfb-run`）與 `CHROME_PATH`（預設 `/tmp/cft/.../chrome`）。
 
 ## READY 的標準（PR 說明裡要有）
 

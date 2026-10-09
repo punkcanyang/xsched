@@ -1,6 +1,6 @@
 # HANDOFF：閘 0（可行性）
 
-更新：2026-10-09（UTC+8），產品開發（CodeWhale，deepseek-flash）。分支：`gate0/scheduled-read`。
+更新：2026-10-09（UTC+8），產品開發（CodeWhale，deepseek-flash）。分支：`gate0/scheduled-read`；閘 0.1 在 `gate0.1/probe-fixes`（見文末）。
 
 ## 現況
 
@@ -31,7 +31,31 @@
 3. **老闆真帳號實測**（在他的 Chrome，`AGENTS.md` 規矩 7）：照 `notes/GATE0.md` §6 的 ≤5 步；回報「複製診斷」與語系。**在真頁驗證前，結論只能是「有條件可行」。**
 4. **Logo B（Dagaz）接續複審**：產品開發已推送首輪複審 `abd42d8`，並新增 Logo commit `587aca2`。SVG 在 `docs/xsched-logo-B*.svg`；16／32／48／128 PNG 在 `probe/icons/`，與指定來源逐位元相同。manifest 只加 icons，沒有 action／額外權限／web_accessible_resources。Codex 在同一複審 session 補嚴格圖示／SVG 守門及 Chrome 資源讀取測試；本輪仍只在本機 commit，不 push／merge，測試數字見 `notes/GATE0.md`。
 
-## 下一步
+## 閘 0.1：真機浮層修正（probe v0.0.2，分支 `gate0.1/probe-fixes`）
+
+老闆真機載入 0.0.1 **看不到任何浮層**，但貼得回「複製診斷」（＝浮層其實掛過）。詳見 `notes/GATE0.md`「閘 0.1」一節。
+
+### 已完成（已 commit 並 push）
+
+1. **無條件掛載**：任何 x.com 頁都掛浮層；非 Scheduled 收成膠囊「xsched 探針：非 Scheduled 頁」（仍可展開看診斷／按鈕）；Scheduled 讀到 0 則也顯示「讀到 0 則」＋診斷。host 掛 `document.body`（無 body 才 `documentElement`），inline `all:initial;position:fixed;z-index:2147483647;display:block`＋`!important` 防覆蓋；`MutationObserver` 偵測 host 被移除即重掛（節流）。
+2. **`mounted` 修正**：改成真實掛載狀態（`isConnected` 且有尺寸 >0）；新增 `remounts=`（重掛次數）、`items=`（則數）；診斷加 `lang=`（`navigator.language`）、`doclang=`（`documentElement.lang`，皆經 `sanitizeLang`）；`timeFail>0` 加 `samples=` 遮罩樣本（≤3 個、每個 ≤60 code point，只取時間樣本最小節點，數字保留、其餘換 `x`）。
+3. **新鈕「複製頁面結構」**：純模組 `probe/skeleton.js`（node 可測）；屬性／class／aria／data-* 全部遮罩，只留短列舉值；涵蓋 shadow／同源與跨源 iframe；同構兄弟收 `×N`；上限 6000 節點／深度 60。
+4. **測試**：`npm test` 57 過；`npm run verify` 加攻擊樣本 self-test（12 leak self-tests，有牙）；`npm run e2e` OK 211 斷言（新增 selectors-broken／remount／skeleton 三情境，維持擴充 0 網路請求）。
+5. **fixture**：`fixtures/selectors-broken.html`（Scheduled 頁但結構不同＋陌生時間格式）。**截圖**：`docs/gate0.1-*.png`、範例骨架 `docs/gate0.1-skeleton-sample.txt`（舊 `docs/gate0-*.png` 保留）。
+
+### 未完成／下一步
+
+1. **不改讀法選擇器、不猜新選擇器**（依指示）；真機 `cell=0`／`l1=l2=l3=0` 的問題要等老闆貼回「複製頁面結構」再修。
+2. 請老闆照 `notes/GATE0.md`「閘 0.1」的 ≤5 步重測：載入 0.0.2 → 開 Scheduled 頁 → 確認右下有浮層（「讀到 N 則」）→ 按「複製頁面結構」＋「複製診斷」貼回 → 若仍無浮層回報 `chrome://extensions` 有無錯誤。
+3. 視貼回的骨架修選擇器／標籤／時間格式；真頁通了才進 1.0。
+4. 本分支**未開 PR、未 merge、未改 main**；是否開 PR 交产品开发／商務拓展決定。
+
+### 已知限制
+
+- **真頁未驗證**（不能登入 X）；「浮層看不到」的單一確因未證實，本文只寫「最可能原因＋已防護的所有可能」。
+- 時間樣本遮罩後只剩數字骨架，格式判讀仍需老闆貼回的樣本與語系。
+
+## 下一步（閘 0 原線）
 
 1. 产品开发推送本機複審 commits 到 PR #2，PR 說明更新 reviewer、最新測試數字／截图與已知限制；交商務拓展。
 2. 請老闆照 `notes/GATE0.md` 的五步在自己的 Chrome 實測並貼回「複製診斷」。
