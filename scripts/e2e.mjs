@@ -535,7 +535,9 @@ async function main() {
     assert(broken.countText === "讀到 0 則", `selectors-broken: count text "${broken.countText}"`);
     const failMatch = /timeFail=(\d+)/.exec(broken.diag);
     assert(failMatch && Number(failMatch[1]) > 0, `selectors-broken: expected timeFail>0: ${broken.diag}`);
-    const sampleMatch = /samples=([^ ]*)/.exec(broken.diag);
+    // samples is a percent-encoded token on the counter line; fmt is a separate
+    // readable line. Stop at every whitespace boundary, including LF/CRLF.
+    const sampleMatch = /(?:^|[ \t])samples=([^\s]+)/m.exec(broken.diag);
     assert(sampleMatch && sampleMatch[1] !== "none", `selectors-broken: expected masked samples: ${broken.diag}`);
     for (const encoded of sampleMatch[1].split("|")) {
       const sample = decodeURIComponent(encoded);

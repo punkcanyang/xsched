@@ -356,3 +356,44 @@ content.js 改 IIFE，避免與 0.0.2 的頂層 const 衝突；新 session 提�
 > 請拉最新 main，在 chrome://extensions 重新載入 probe/ 確認 0.0.3，接著重新整理你的 x.com Scheduled 頁。先逐則對照浮層的日期＋時分是否和 X 一樣；按「複製診斷」立即貼到回覆草稿，再按「複製頁面結構」貼在後面，把兩份一起貼回，並說明 X 的語系。需要診斷中含 fmt=／samples= 的整行；若它們都是 none，請另外只貼一則 X 顯示的安排時間短句（保留日期／時分／上午下午，不貼本文、帳號或完整網址）。
 
 保留限制：只讀當時 DOM／自己捲過的列；無唯一 ID 的同時間同本文仍可能去重；同 scope 刪除／編輯的虛擬窗口累加不能當即時權威總數。article 安全排除亦可能漏掉未來改版把真正排程放進 article 的布局；新骨架來了再據證據修。五語系合成例子已過，其他語系時間格式尚未承諾；本地時區與無年份的列表順序假設都需真機逐則核對。
+
+---
+
+# 閘 0.2 Codex 複審
+
+2026-10-10；獨立 Codex 複審 session，與寫碼 session `01a1212e` 不同。審查 [PR #5](https://github.com/punkcanyang/xsched/pull/5) 的 `git diff d875959...HEAD`，接續到 `9545dc7`。本節是最新複審結果；前面的首輪測試與「尚未複審」描述保留為歷史。原骨架只在 repo 外親讀，沒有複製或提交。
+
+## 發現與修正
+
+| 嚴重度 | 檔案 | 問題與修正 |
+|---|---|---|
+| 高：隱私 | `probe/reader.js` | 日期先從 URL／email／handle 抽出會失去敏感來源，繞過整段遮罩。改為先遮罩完整身份字串再解析／提取；包含中日韓日期、protocol-relative URL、帶空格的引號 email。結構列仍保留則數，敏感時間標為未解析，fmt／samples／calendar 不匯出。 |
+| 高：隱私 | `probe/reader.js` | 舊 cell／文字備援的 item.time 可能來自像日期的 tweetText。移除 fmt／samples 對 item.time 的後備匯出，只接受認證的獨立時間節點；失敗樣本也必須符合隔離檢查。舊讀取則數規則保留。 |
+| 中：使用者觸發 | `probe/content.js` | 固定導覽原先接受頁面合成 click；改為 event.isTrusted 才執行固定 Scheduled location.assign，並停止冒泡。單元及 Chrome 測試加入合成點擊不得導覽；真物理點擊仍須導覽。 |
+| 低：可讀性 | `probe/reader.js` | fmt 的 percent encoding 不便老闆核對；改為獨立第三行的可讀遮罩字串，先正規化空白，仍最多 60 code points。samples 保留既有 encoded token／pipe 格式，避免樣本中的空白與標點混淆欄位。 |
+| 中：測試失敗 | `scripts/e2e.mjs` | 上一輪 fmt 換行後漏更新 samples 的解析；舊 `[^ ]*` 把下一行 fmt 吃進最後一筆。改成遇任何空白即停止，實際解析式以 selectors-broken 真 reader 輸出驗證 LF／CRLF 均只取到兩筆時間樣本。核對了版本首行、clipboard 三行格式、fmt、未知時間與跨年等其餘診斷斷言。 |
+
+前三項與 fmt 修正已由使用者外部提交為 `1f784f7`，另含單元回歸與 verify 攻擊自測；本次續作只改 `scripts/e2e.mjs` 與本文件，commit／e2e 由外部執行。
+
+## 完整核對結果
+
+- **親讀骨架** L36／L42／L93／L108／L117／L122，支持最近 modal、選中 tab、唯一 button＋獨立 span＋tweetText；L126 起背景與 article/time 必須排除。`aria-current=page` 是沿用備援，不是本骨架證據；真時間格式、語系、時區仍未知，沒有據遮罩長度猜回文字。
+- **實跑離線重建**：原檔 340748 bytes，SHA-256 與上述記錄一致；兩份 real HTML 均與轉換腳本逐字輸出一致且隱私掃描通過。HTML／JSON 清楚標示全部時間／本文是假值；跨年第二列是合成情境。檢視既有真結構與窄版假資料截圖，沒有將其當真頁驗證。
+- **程式與測試核對**：manifest 只升版／加入本機 ui.js，無新增權限／host／action／web_accessible_resources；UI 在 shadow root，以 DOM／CSSOM／textContent 建立；不載入圖檔，不新增請求／儲存／背景操作。verify 原 API／注入／權限規則均保留；日曆詞例外依本輪明確規格，本文／身份資料的攻擊仍須失敗，新增先抽日期繞過及舊備援來源攻擊。
+- **快捷鈕與生命週期**：九語、手動開關跨 SPA／重掛、60ms 節流、3 秒最多 3 次建立、400ms 恢復輪詢、dispose／pagehide 清理均核對；舊 0.0.2 採隱藏連線停放，不能宣稱已停止其 observer。矩形避讓及版本警告有單元／Chrome 情境；真頁避讓仍為啟發式，滿版覆蓋／極小視窗可能無處放置。
+- **時間與背景**：五語合成例子、12 AM/PM／上午下午／午前午後／오전오후、24h、非法日期／DST 空洞、無年份與 12/31→1/1、標準時間重畫、未知列保留、背景可見仍排除均有通過的單元斷言。無年份推年依賴本地日期與列表順序；虛擬累加／同時間同本文去重限制保留，不能當即時權威總數。
+
+## 實跑結果與外部續跑
+
+- `npm test`：退出 0，8 個測試檔全部通過；補充同程序 reporter：**105 過／0 敗／0 跳過**。
+- `npm run verify`：退出 0；**9 probe 檔、4 Logo SVG；30 API bypass、14 icon、9 SVG、32 leak self-test** 全過。故意洩漏的變體會令 self-test 失敗。
+- `node --check scripts/e2e.mjs`、`git diff --check` 通過；實際 e2e 樣本解析式的 LF／CRLF 離線回歸通過。
+- **外部回報，非本 session 實跑**：`793e370` 的 Chrome e2e 322 斷言通過；`1f784f7` 的 test 105／verify 32 通過，但 e2e 在上述 samples 換行解析處失敗。不能將先前 322 沿用為本次通過；本沙箱 listen 被擋，最新 Chrome 斷言與 0 請求證據仍待外部重跑。
+
+外部請在含本次修正的工作樹跑 `npm test`、`npm run verify`、`npm run e2e` 全過再提交／合併。e2e 應保留所有隱私與網路斷言，更新 gate0.2 假資料截圖（含可讀 fmt）；資源／背景請求仍必須 0，只接受一次可信使用者點擊的固定頂層導覽。不得改連真 X 或用 API 驗證。
+
+## 結論與老闆實測
+
+**VERDICT: APPROVE（程式複審；合併前仍須外部最新 e2e 全過）。** 已修正的阻擋問題有回歸證據，沒有發現其他程式阻擋；這不代表真頁時間驗收或 STATUS READY。產品結論維持：**則數依骨架可讀、時間格式待老闆診斷確認**。
+
+老闆實測沿用上節 **5 步**：取得 main → reload 擴充 → refresh X → Scheduled 逐則對照日期＋時分／則數 → 先複製診斷貼草稿，再在 Scheduled 頁按一下「複製頁面結構」，把結果與新診斷一起貼回（附語系）。fmt 現在可直接讀；samples 仍 encoded，可連同整份診斷貼回，不需老闆手工解碼。兩欄皆 none 時另提供一則不含本文／帳號／網址的安排時間短句。
