@@ -62,6 +62,37 @@ test('legacy cell, role and text fallbacks cannot parse a weekday date from twee
     }
   }
 });
+test('en snapshot distinguishes stale accessible time from body borrowing after both metadata sources change', () => {
+  const { document } = parseHTML(readFileSync(new URL('../fixtures/en.html', import.meta.url), 'utf8'));
+  const initial = snap(document);
+  assert.equal(initial.items.length, 2);
+  const cell = document.querySelector('[data-testid="cellInnerDiv"]');
+  const body = '將於 2026年11月3日 週二 下午11:19 發送';
+  assert.equal(R.formatTime(R.parseSchedule(body).at), '2026-11-03 23:19 (Tue)', 'decoy body must itself be parseable');
+  cell.querySelector('.when').textContent = 'Will send on 2027-01-01 23:59 UTC';
+  cell.querySelector('[data-testid="tweetText"]').textContent = body;
+  const accessible = snap(document);
+  assert.equal(accessible.items.length, 2, 'unchanged external aria-label still legitimately supplies 09:00');
+  assert.equal(R.formatTime(accessible.items[0].at), '2026-10-10 09:00 (Sat)');
+  assert.equal(accessible.l1, 2);
+  assert.equal(accessible.l2, 2);
+  assert.equal(accessible.timeOk, 2);
+  assert.equal(accessible.timeFail, 1, 'visible unknown metadata can fail while accessible metadata parses');
+  cell.querySelector('[role="button"]').setAttribute('aria-label', cell.querySelector('.when').textContent);
+  const current = snap(document);
+  assert.equal(current.scopeElement, initial.scopeElement);
+  assert.deepEqual(current.items.map(item => R.formatTime(item.at)), ['2026-11-09 20:05 (Mon)']);
+  assert.equal(current.l1, 1);
+  assert.equal(current.l2, 1);
+  assert.equal(current.timeOk, 1);
+  assert.equal(current.timeFail, 1);
+  assert.equal(R.isIsolatedTimeElement(cell.querySelector('.when')), false, 'legacy div is not an authenticated sample span');
+  assert.deepEqual(current.samples, []);
+  assert.equal(current.fmt, '');
+  const diag = decodeURIComponent(R.buildDiagnostic({ ...current, items: current.items.length }));
+  assert.match(diag, /\bsamples=none\nfmt=none$/);
+  for (const leak of ['將於', '11月3日', '23:19', '2026-11-03']) assert.ok(!diag.includes(leak), leak);
+});
 test('legacy separate time label still reads correctly when the post contains another schedule', () => {
   for (const attr of ['data-testid="cellInnerDiv"', 'role="listitem"', 'role="button"', '']) {
     const {document} = parseHTML(`<html><body><section role="dialog"><div ${attr}><span>將於 2026年11月3日 週二 上午12:19 發送</span><div data-testid="tweetText">將於 2026年12月1日 週二 下午11:19 發送</div></div></section></body></html>`);

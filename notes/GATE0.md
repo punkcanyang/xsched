@@ -527,3 +527,50 @@ verify 原網路 API／資源 sink／HTML 注入／權限／固定導覽規則�
 **VERDICT: APPROVE（程式複審；合併前須外部最新三項測試全過）。** 阻擋問題已修且有回歸證據，未發現其他阻擋；不代表閘0真機驗收已完成。繁中格式已確認，0.0.4的逐則時間／布局仍待老闆自己的Chrome實测；簡中只確認對應假資料。
 
 老闆步驟保留 **≤5步**：pull main → reload確認0.0.4 → refresh X確認捲動／縮小／避讓 → Scheduled逐則對照日期＋時分 → 回傳浮層與失敗樣本截图及診斷。真機資料不提交公開repo。剩餘限制為有限幾何取樣、closed shadow／極小視窗、本地時區及無年份順序假設、DOM可見窗口累加與同時間同本文去重，不能把探針數字當即時權威總數。
+
+# 閘 0.3 e2e 紅燈分析
+
+本節先分析再修測試。分析基準 HEAD `ef63bd3`，已含 `fa87c62` 複審修正；`git status --short` 為空。未改 production／測試碼前，用 linkedom 與真 content.js VM 做離線重現；沒有登入 X、listen 或執行 Chrome。
+
+## 結論與程式證據（修正前行號）
+
+**目前未重現新的 reader bug；紅燈是測試前置 DOM／實跑版本待核對，不能把日誌直接歸因於累加。** 現有 `scripts/e2e.mjs:535–544` 已同步改 `.when`／aria-label，並替換完整 dialog；照這份 HEAD 重現，單次讀取與真 content 都剩1則。外部回報的 l1=2／l2=2 與此不同，反而吻合只改可見標籤／本文、保留原 aria-label 的 DOM。離線不能斷言外部究竟用了哪份檔案或 DOM；Chrome 實跑仍須外部驗證。
+
+- `reader.js:493–497` 優先採用可解析 aria-label；只改 `.when`，原 aria-label 的09:00仍是合法外部 metadata。`reader.js:469–477`／`480–481` 已排除 tweetText 的文字及內層 role。內文的繁中短句不能救回未辨識 metadata。
+- `reader.js:558–570` 回傳 tab 最近 dialog 的物件；`content.js:419–427` 在 scope 物件改變時清空累加。相同scope、needsScroll或virtualized時才保留舊列；非可捲／非virtual則整份replace。`reader.js:746–748` 累加按time＋body鍵去重，不追蹤列編輯／刪除身份。這是探針保留已見虛擬窗口的既有設計與限制，不代表当前列表的權威即時總數。
+- 因此若只改可見標籤但保留aria，期待count=1不合理；若兩個metadata都改了、仍同scope且可捲，count也可因累加維持2，但此時單次掃描 **l1=l2=1**。改成新scope後期待count=1合理，不能把預期放寬為2。
+- `reader.js:688–709` 的timeFail是本次掃描中帶年份但無法解析的候選／未解析列；`content.js:298–310` 的items、timeOk、unparsed來自浮層累加集合，timeFail、fmt、samples沿用最新report。這些不是同一集合的互斥桶，timeOk＋timeFail不必等於items。甚至未累加時，aria成功、可見文字失敗也可同時timeOk=2／timeFail=1。
+- samples比timeFail更嚴格：`reader.js:170–171` 只認骨架證明的span；`297–302` 要獨立葉節點且不在tweetText／composer／timeline；`699–709` 才收集。en fixture的`.when`是div，故timeFail=1但samples=none正確；不能為了有sample猜新選擇器。fmt只取認證結構樣本（`730–732`），legacy的fmt=none也正確。本文日曆詞即使可遮罩也不得進診斷。
+
+## 實跑指令與輸出
+
+`node /tmp/xsched-gate03-red-analysis.mjs`：讀取 `fixtures/en.html` → 同DOM改第一cell可見標籤為假未知格式 `Will send on 2027-01-01 23:59 UTC`、本文為假繁中日期 → 再讀；接著同步改aria，另以全新DOM重現現有e2e的clone／替換dialog。
+
+| 步驟 | snapshot則數／時間 | l1／l2 | timeOk／timeFail | samples／fmt | scope |
+|---|---|---|---|---|---|
+| 初始en | 2：09:00、11/9 20:05 | 2／2 | 2／0 | []／空 | dialog |
+| 同DOM，只改.when＋本文 | 2：仍09:00、11/9 20:05 | 2／2 | 2／1 | []／空 | 同一物件 |
+| 再改aria-label | 1：11/9 20:05 | 1／1 | 1／1 | []／空 | 同一物件 |
+| 現有e2e：改兩metadata＋換dialog | 1：11/9 20:05 | 1／1 | 1／1 | []／空 | 不同物件 |
+
+獨立節點輸出：`{"tag":"DIV","isolated":false,"unknownParsed":null,"bodyParsed":"2026-11-03 23:19 (Tue)"}`。本文日期本身可以被通用字串parser解析，卻必須在DOM reader入口被排除，這是要保護的安全邊界。
+
+`node /tmp/xsched-gate03-content-analysis.mjs`：沿用content測試的VM／linkedom裝置，實際觸發外部childList mutation callback、不改route；一組原snapshot，一組測試裝置將layout flag設成virtualized=1／needsScroll=1以驗證累加分支。這不是production hook，亦非真Chrome幾何證據。
+
+```text
+非virtual，同scope改兩metadata：count=1 l1=1 l2=1 timeOk=1 timeFail=1 samples=none fmt=none
+強制virtual，同scope改兩metadata：count=2 l1=1 l2=1 timeOk=2 timeFail=1 samples=none fmt=none
+兩組換scope後：count=1 times=["2026-11-09 20:05 (Mon)"]
+```
+
+可靠測試須先等初始probe完成、驗證兩個metadata確實都改成未知格式／本文仍存在且scope已替換，再直接檢查擴充isolated world的單次snapshot，最後驗證浮層只剩第二則、l1=l2=1、timeFail=1、fmt／samples均none，整份解碼診斷及顯示時間都不含本文日期。另用真content單元回歸覆蓋非virtual replace、virtual同scope保留與換scope清空，避免拿UI累加則數代替reader安全證據。保留複審的reader／verify修正及所有舊虛擬累加測試，不放寬count=1。
+
+## 第二步：測試修正與驗證
+
+production reader／content、verify與權限保持原狀。`scripts/e2e.mjs:535–581` 增加初始讀取完成的等待、三項DOM前置斷言、isolated world本次snapshot的則數／l1／l2／timeOk／timeFail／時間／samples／fmt驗證；再等真浮層scope重置為1則，保留原timeFail／none斷言，並檢查兩份解碼後診斷均無本文日期／時鐘。沒有刪除日期形狀的本文，也没有接受count=2。
+
+`test/calendar.test.mjs:65` 新增同DOM兩次讀取回歸：舊aria仍可解析時保留09:00，aria與.when都未知後僅第二列；本文短句本身可解析，但DOM reader不借用。`test/content.test.mjs:118` 新增真content／observer callback回歸，驗證非virtual替換、virtual累加保持09:00、換scope清空；正文含假的handle／email／URL誘餌，解碼診斷無日期及身份。virtual flag僅由測試裝置設定，production未加hook。
+
+實跑 `npm test`退出0（8檔）；`node --test --test-isolation=none test/` **119過／0敗／0跳過**；`npm run verify`退出0：**30 API bypass／14 icon／9 SVG／38 leak**，9 probe檔／4 Logo SVG。`node --check scripts/e2e.mjs`、`git diff --check`通過。共修改5檔：e2e、calendar／content測試、GATE0與HANDOFF；未commit／push／生成截圖。
+
+本輪Chrome e2e因既有listen限制仍由外部執行，**外部原紅燈的實跑版本／DOM落差尚未確認，不能宣稱已在Chrome修好**。新的前置與snapshot斷言會在落差發生的步驟給出證據，避免只剩count等待逾時。外部請確認同一repo工作樹含本次修改，跑 `npm test` → `npm run verify` → `npm run e2e`；若仍紅，回傳第一個失敗斷言與scan結果，不放寬或跳過。全部通過後仍需獨立複審，不能沿用修正前453斷言作最新驗收。

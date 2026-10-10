@@ -127,3 +127,30 @@ e2e保留舊情境，全部產物改gate0.3前綴，舊gate0／0.1／0.2圖與�
 - 09:04 第一次呼叫（`grok -p … -m grok-4.7 --reasoning-effort high --always-approve --output-format json`）即回 **`API error (status 402 Payment Required): Grok Build usage balance exhausted`**，沒有建立可續的 session、沒有讀檔或改檔。依指示立即停、不換工具。分析提示存 `/workspace/bd-punkcan/xsched-gate0.3-grok-write-1.txt`。
 - 紅燈結論：**未定**（無工具可分析）。main 仍 `fdc8096`（0.0.3），PR #8 未合。
 - **待辦：10/14 12:50（UTC+8）Codex 額度恢復後，要補一次 Codex 複審**（session `01a12013`，提示 `/workspace/bd-punkcan/xsched-gate0.3-review-prompt2.txt`）；若屆時已由 Grok 複審合併，仍要補這次 Codex 複審。
+
+## 同一 Codex 寫碼 session 續作：legacy-body 紅燈分析與測試補強
+
+使用者新指示授權回到原寫碼session；基準HEAD `ef63bd3`（已含複審 `fa87c62`），先在/tmp重現、寫GATE0分析後才改測試。沒有呼叫Grok、外部服務、登入X或付費。
+
+**結論：目前未重現新reader bug；測試前置DOM／實跑版本存在待核對落差。** 只改.when／本文而留下舊aria時，單次reader恰好重現外部回報的count2、09:00、l1=l2=2、timeFail1、samples／fmt none；09:00是合法aria metadata，不是借本文日期。同步改aria後，snapshot僅1則；同scope若virtual，真content仍可累加2則，但此時l1=l2=1。換dialog scope後兩種layout均只剩1則。當前HEAD e2e已含「改兩個metadata＋换dialog」；離線按其步驟只得到1，不能宣稱外部紅燈只是累加，也不能無Chrome證據斷言外部使用了哪份檔案。
+
+timeOk／items是UI累加集合，timeFail是本次掃描格式失敗，非互斥桶；samples只收認證獨立span，en的.when為div不合資格，因此timeFail1但samplesnone符合隱私規則。fmt也不得從legacy本文／item.time取備援。完整行號、命令及输出見GATE0新節「閘 0.3 e2e 紅燈分析」；暫時重現腳本 `/tmp/xsched-gate03-{red,content}-analysis.mjs` 留repo外。
+
+改動5檔：
+
+- `scripts/e2e.mjs`：等初始讀取完成；嚴格驗證两個label確實未知、本文日期仍存在、dialog確實換物件；直接透過既有CDP機制讀擴充isolated world snapshot，要求1則／l1=l2=1／timeOk1／timeFail1、僅11/9第二列、samples／fmt空；再驗證浮層1則與解碼後兩份診斷無本文日期。不放寬原count=1／隱私／網路斷言。
+- `test/calendar.test.mjs`：新增同DOM可見／aria標籤分開改寫的reader回歸，確定本文自身可解析卻不能被借作metadata。
+- `test/content.test.mjs`：新增真content mutation／非virtual replace／virtual累加／換scope清空回歸，含假身份誘餌；裝置增加observer callback與可替換reader，production沒有hook。
+- `notes/GATE0.md`、本HANDOFF：記分析、證據、修正、限制及外部續跑。
+
+實跑 `npm test`退出0（8檔），细項 **119/119、0敗、0跳過**；`npm run verify`退出0（**30 API bypass／14 icon／9 SVG／38 leak**；9 probe檔／4 Logo SVG）；e2e語法及diff檢查通過。保留複審reader／verify修正，production零改動，probe仍0.0.4。未commit／push／修改截圖，Chrome e2e未在本沙箱重跑；目前不能宣稱外部紅燈已消失或最新0網路驗收通過。
+
+外部請確認同一工作樹含本次修改，依序執行：
+
+```sh
+npm test
+npm run verify
+npm run e2e
+```
+
+若仍紅，回傳第一個失敗斷言（DOM前置、isolated snapshot或浮層scope重置）與scan結果；不用真頁資料，不跳過情境或改期待值。全過後外部提交／push，另session再複審；尚未READY／未合main，原補複審待辦保留。

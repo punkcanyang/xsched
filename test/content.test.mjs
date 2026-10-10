@@ -8,7 +8,7 @@ await import('../probe/reader.js');
 await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
-function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI) {
+function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER) {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
   document.documentElement.lang = lang;
   const timers = new Map();
@@ -17,6 +17,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   let manifest = '0.0.4';
   let invalidated = false;
   const navigated = [];
+  let mutationCallback;
   const location = { pathname, search: '', assign(target) { navigated.push(target); } };
   const window = {
     setTimeout(fn) { timers.set(++id, fn); return id; }, clearTimeout(key) { timers.delete(key); },
@@ -32,12 +33,12 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const create = document.createElement.bind(document);
   document.createElement = (...args) => { const el = create(...args); el.getBoundingClientRect = rect; return el; };
   const context = vm.createContext({
-    XSCHED_READER: clock ? { ...globalThis.XSCHED_READER, readSnapshot(doc, options) { return globalThis.XSCHED_READER.readSnapshot(doc, { ...options, now: clock() }); } } : globalThis.XSCHED_READER,
+    XSCHED_READER: clock ? { ...reader, readSnapshot(doc, options) { return reader.readSnapshot(doc, { ...options, now: clock() }); } } : reader,
     XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: ui,
     document, window, navigator: { language: 'en-US' }, location, innerWidth: 1100, innerHeight: 820,
     chrome: { runtime: { id: 'local-test', getManifest() { if (invalidated) throw new Error('private exception'); return { version: manifest }; } } },
     getComputedStyle() { return { position: 'static' }; },
-    MutationObserver: class { observe() {} disconnect() {} },
+    MutationObserver: class { constructor(callback) { mutationCallback = callback; } observe() {} disconnect() {} },
   });
   function flush() { for (let n = 0; timers.size && n < 10; n++) { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()); } }
   function poll() { [...polls.values()].forEach((fn) => fn()); flush(); }
@@ -51,6 +52,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
     shadow().querySelector(selector).dispatchEvent(event);
   };
   return { document, host, shadow, click, location, navigated, poll, flush, context,
+    mutate(records) { mutationCallback(records); flush(); },
     setManifest(value) { manifest = value; }, invalidate() { invalidated = true; } };
 }
 test('real content script mounts shadow Dagaz, toggles Scheduled and preserves choice across SPA/remount', () => {
@@ -112,6 +114,36 @@ test('no-space hiding reports mounted zero, retries placement and preserves exte
   assert.equal(f.host().dataset.xschedMounted, '1');
   assert.equal(f.shadow().querySelector('section').style.display, 'flex');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'), 'true');
+});
+test('legacy body dates never rescue rewritten metadata, including virtual accumulation and scope reset', () => {
+  for (const virtual of [false, true]) {
+    const readSnapshot = (doc, options) => {
+      const report = globalThis.XSCHED_READER.readSnapshot(doc, options);
+      return virtual ? { ...report, virtualized: 1, needsScroll: 1 } : report;
+    };
+    const f = fixture(undefined, undefined, undefined, null, undefined, { ...globalThis.XSCHED_READER, readSnapshot });
+    assert.equal(f.host().dataset.xschedCount, '2');
+    const cell = f.document.querySelector('[data-testid="cellInnerDiv"]');
+    const label = cell.querySelector('.when');
+    label.textContent = 'Will send on 2027-01-01 23:59 UTC';
+    cell.querySelector('[role="button"]').setAttribute('aria-label', label.textContent);
+    cell.querySelector('[data-testid="tweetText"]').textContent = '將於 2026年11月3日 週二 下午11:19 發送 @decoy_handle decoy@example.invalid https://fake.invalid/';
+    f.mutate([{ type: 'childList', target: label, addedNodes: [...label.childNodes], removedNodes: [] }]);
+    assert.equal(f.host().dataset.xschedCount, virtual ? '2' : '1');
+    assert.match(f.host().dataset.xschedDiag, /\bl1=1 l2=1\b/);
+    assert.match(f.host().dataset.xschedDiag, /\btimeFail=1\b/);
+    assert.ok(f.host().dataset.xschedDiag.includes(`timeOk=${virtual ? 2 : 1} `));
+    const scope = f.document.querySelector('[role="dialog"]');
+    const replacement = scope.cloneNode(true); scope.replaceWith(replacement);
+    f.mutate([{ type: 'childList', target: replacement.parentElement, addedNodes: [replacement], removedNodes: [scope] }]);
+    assert.equal(f.host().dataset.xschedCount, '1', 'new scope clears even virtual accumulated 09:00');
+    assert.deepEqual([...f.shadow().querySelectorAll('.time')].map(el => el.textContent), ['2026-11-09 20:05 (Mon)']);
+    assert.match(f.host().dataset.xschedDiag, /\btimeOk=1 timeFail=1 unparsed=0\b/);
+    assert.match(f.host().dataset.xschedDiag, /\bsamples=none\nfmt=none$/);
+    for (const leak of ['將於', '11月3日', '23:19', 'decoy_handle', 'example.invalid', 'fake.invalid', 'http', '@']) {
+      assert.ok(!decodeURIComponent(f.host().dataset.xschedDiag).includes(leak), `${virtual}: ${leak}`);
+    }
+  }
 });
 test('home has only closed shortcut; localized goto navigates fixed target despite dataset tampering', () => {
   const f = fixture('/home', 'zh-Hant');

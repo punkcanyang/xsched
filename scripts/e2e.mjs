@@ -533,7 +533,11 @@ async function main() {
     // retain the initial fixture rows. Update both visible and accessible time
     // labels so an unchanged aria-label cannot legitimately preserve 09:00.
     await open('en');
-    await page.evaluate(() => {
+    await until(async () => {
+      const state = await probeState(page);
+      return state.count === 2 && state.times.includes('2026-10-10 09:00 (Sat)');
+    }, 'legacy body: initial fixture read completed');
+    const bodySetup = await page.evaluate(() => {
       const scope = document.querySelector('[role="dialog"]');
       const replacement = scope.cloneNode(true);
       const cell = replacement.querySelector('[data-testid="cellInnerDiv"]');
@@ -542,14 +546,39 @@ async function main() {
       cell.querySelector('[role="button"]').setAttribute('aria-label', unknownTime);
       cell.querySelector('[data-testid="tweetText"]').textContent = '將於 2026年11月3日 週二 下午11:19 發送';
       scope.replaceWith(replacement);
+      return {
+        freshScope: !scope.isConnected && replacement.isConnected,
+        labelsChanged: cell.querySelector('.when').textContent === unknownTime && cell.querySelector('[role="button"]').getAttribute('aria-label') === unknownTime,
+        bodyPresent: cell.querySelector('[data-testid="tweetText"]').textContent === '將於 2026年11月3日 週二 下午11:19 發送',
+      };
     });
+    assert(bodySetup.freshScope, 'legacy body: replaced dialog must be a new connected scope');
+    assert(bodySetup.labelsChanged, 'legacy body: both visible and accessible metadata must be unknown, with no stale 09:00');
+    assert(bodySetup.bodyPresent, 'legacy body: the parseable body date must remain in the test DOM');
+    // Check this scan directly, independently of content's virtual accumulation.
+    const bodyContext = await until(findExtensionContext, 'legacy body: extension isolated context');
+    const bodyScan = await network.send('Runtime.evaluate', { contextId: bodyContext, returnByValue: true, expression: `
+      (() => {
+        const report = XSCHED_READER.readSnapshot(document, { pathname: location.pathname });
+        return { count: report.items.length, times: report.items.map(item => XSCHED_READER.formatTime(item.at)), l1: report.l1, l2: report.l2, timeOk: report.timeOk, timeFail: report.timeFail, samples: report.samples, fmt: report.fmt,
+          diag: XSCHED_READER.buildDiagnostic({ ...report, items: report.items.length }) };
+      })()
+    ` });
+    assert(!bodyScan.exceptionDetails && Boolean(bodyScan.result.value), 'legacy body: isolated reader scan must succeed');
+    const scannedBody = bodyScan.result.value;
+    assert(scannedBody.count === 1 && scannedBody.l1 === 1 && scannedBody.l2 === 1 && scannedBody.timeOk === 1 && scannedBody.timeFail === 1, `legacy body: current scan must exclude the rewritten row: ${JSON.stringify(scannedBody)}`);
+    assert(scannedBody.times.length === 1 && scannedBody.times[0] === '2026-11-09 20:05 (Mon)', 'legacy body: the rewritten row must not borrow its body time');
+    assert(scannedBody.samples.length === 0 && scannedBody.fmt === '', 'legacy body: body and uncertified div labels cannot become samples/fmt');
     const bodyTime = await until(async () => {
       const state = await probeState(page);
-      return state.count === 1 ? state : null;
+      return state.count === 1 && /\bl1=1 l2=1\b/.test(state.diag) && /\btimeFail=1\b/.test(state.diag) ? state : null;
     }, 'legacy body schedule phrase cannot become a second row');
     assert(bodyTime.times.length === 1 && bodyTime.times[0] === '2026-11-09 20:05 (Mon)', 'legacy fallback reads only the separate recognized time label');
     assert(/\btimeFail=1\b/.test(bodyTime.diag) && /\bsamples=none\nfmt=none$/.test(bodyTime.diag), 'legacy unknown metadata counts as a failure without exporting an uncertified sample');
-    assert(!bodyTime.diag.includes('11月3日'), 'legacy body time never enters diagnostic');
+    for (const leak of ['將於', '2026年11月3日', '11月3日', '23:19', '2026-11-03']) {
+      assert(!decodeURIComponent(scannedBody.diag).includes(leak), 'legacy body date cannot enter decoded snapshot diagnostic: ' + leak);
+      assert(!decodeURIComponent(bodyTime.diag).includes(leak), 'legacy body date cannot enter decoded content diagnostic: ' + leak);
+    }
 
     await open('cross-year');
     await until(async () => (await probeState(page)).count === 2, 'cross-year structural rows');
