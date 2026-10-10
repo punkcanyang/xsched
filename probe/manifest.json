@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "xsched gate0 probe",
-  "version": "0.0.4",
-  "description": "Read-only probe for X's Scheduled list. No permissions, no network, no storage.",
+  "version": "0.0.5",
+  "description": "Read-only X Scheduled probe. No permissions or network; only button position saved locally on x.com.",
   "content_scripts": [
     {
       "matches": [
@@ -13,6 +13,7 @@
         "reader.js",
         "skeleton.js",
         "ui.js",
+        "position.js",
         "content.js"
       ],
       "run_at": "document_idle"

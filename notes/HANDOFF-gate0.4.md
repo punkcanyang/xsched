@@ -29,3 +29,13 @@
 - [ ] PR
 - [ ] 複審
 - [ ] merge --no-ff main
+
+## 寫碼計畫（同一Codex session）
+
+1. 先以0.0.4原定位函式VM重現開關位移，記程式行號與輸出；掛載點與modal障礙分開判定。
+2. 固定快捷鈕錨點與浮層定位分離；只在初始化／拖動結束／重設／resize自動避讓，排除dialog，保留重掛錨點。
+3. 集中position模組存x.com固定xsched key的有限數字；verify對模組採精確審核來源白名單，其餘storage禁令保留並新增攻擊自測。
+4. pointer拖動門檻／capture／取消、九語重設、原生title；浮層多方向避讓並保留固定操作區與60vh。
+5. 升0.0.5，補unit／e2e拖动重載、其他擴充、modal前後位置完全相同及舊情境；文件與外部實跑指令。
+
+環境差異：本輪node_modules不存在；`npm ci --offline --ignore-scripts`退出1 ENOTCACHED（zod），`npm ci --ignore-scripts --cache /tmp/xsched-npm-cache --fetch-retries=0 --fetch-timeout=15000`因registry.npmjs.org的EAI_AGAIN失敗。可用runtime metadata工具沒有environment_status，網路政策檔亦不存在；不嘗試繞過DNS／沙箱。先以無依賴VM完成根因證據，完整linkedom測試需要依賴恢復；不可宣稱未跑的測試通過。

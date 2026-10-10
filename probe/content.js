@@ -1,11 +1,13 @@
-// xsched gate 0.3 — read-only panel, DOM SVG shortcut, local diagnostics.
+// xsched gate 0.4 — stable draggable shortcut, read-only panel, local diagnostics.
 // All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
 (() => {
 "use strict";
+if (location.hostname !== "x.com") return;
 const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted, versionLine, formatTime, maskSample } = globalThis.XSCHED_READER;
 const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 
-const { stringsFor, placement, collectObstacles } = globalThis.XSCHED_UI;
+const { stringsFor, placement, collectObstacles, clampPosition, panelPlacement } = globalThis.XSCHED_UI;
+const positionStore = globalThis.XSCHED_POSITION;
 
 const HOST_ID = "xsched-probe-root";
 const POLL_MS = 400;
@@ -35,6 +37,10 @@ let copyTimer = 0;
 let lastDiag = "";
 let lastReport = null;
 let lastItems = [];
+let savedPosition = positionStore.load();
+let anchor = null;
+let drag = null;
+let suppressClick = false;
 
 // Set styles through CSSOM (never a <style> element or style attribute string), so a
 // strict page CSP cannot strip them. !important fends off X's own element styles.
@@ -84,6 +90,7 @@ function ensureHost() {
   if (retired) return null;
   for (const old of document.querySelectorAll("#xsched-probe-root")) if (old !== host) retireLegacy(old);
   if (host && host.isConnected) return host;
+  if (drag) { anchor = drag.origin; drag = null; suppressClick = true; }
   const now = Date.now();
   if (now - remountWindowStart >= REMOUNT_WINDOW_MS) {
     remountWindowStart = now;
@@ -139,7 +146,7 @@ function ensureHost() {
   panel.id = "xsched-panel";
   const shortcut = makeButton("", "xschedToggle");
   shortcut.className = "shortcut";
-  css(shortcut, { position: "relative", width: "44px", height: "44px", padding: "8px", display: "grid", "place-items": "center", "pointer-events": "auto", "box-shadow": "0 4px 16px #0008" });
+  css(shortcut, { position: "relative", width: "44px", height: "44px", "box-sizing":"border-box", padding: "8px", display: "grid", "place-items": "center", "pointer-events": "auto", "box-shadow": "0 4px 16px #0008", "touch-action":"none", "user-select":"none", cursor:"grab" });
   shortcut.setAttribute("aria-controls", panel.id);
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 64 64");
@@ -159,12 +166,50 @@ function ensureHost() {
   shortcut.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (suppressClick && event.detail !== 0) { suppressClick = false; return; }
     if (!lastReport) return;
     collapsed = !(collapsed === null ? !lastReport.onScheduled : collapsed);
     render(lastReport, lastItems);
   });
+  shortcut.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+    suppressClick = false;
+    drag = { id:event.pointerId, startX:event.clientX, startY:event.clientY, origin:{...anchor}, moved:false };
+    try { shortcut.setPointerCapture(event.pointerId); } catch { /* mouse-only DOM fixtures */ }
+  });
+  shortcut.addEventListener('pointermove', event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const dx = event.clientX-drag.startX, dy = event.clientY-drag.startY;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!drag.moved && Math.hypot(dx,dy)<6)) return;
+    drag.moved = true;
+    event.preventDefault();
+    anchor = { ...clampPosition({x:drag.origin.x+dx,y:drag.origin.y+dy},innerWidth,innerHeight), clear:true };
+    applyAnchor(false);
+    positionUI();
+  });
+  shortcut.addEventListener('pointerup', event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const moved = drag.moved;
+    drag = null;
+    if (moved) {
+      suppressClick = true;
+      savedPosition = {x:anchor.x,y:anchor.y};
+      positionStore.save(savedPosition);
+      applyAnchor(true);
+      positionUI();
+    }
+    try { shortcut.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+  });
+  const cancel = event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    anchor = drag.origin; drag = null; suppressClick = true;
+    applyAnchor(false); positionUI();
+  };
+  shortcut.addEventListener('pointercancel', cancel);
+  shortcut.addEventListener('lostpointercapture', cancel);
   shadow.append(panel, shortcut);
   (document.body || document.documentElement).append(host);
+  applyAnchor(false);
   // A fresh host has no panel content: force the next render to build it.
   lastRender = "";
   return host;
@@ -249,41 +294,38 @@ function makeButton(label, datasetKey) {
   return button;
 }
 
+// This is the only writer of button coordinates. Remount reuses the same anchor.
+// Automatic avoidance runs on initialization/reset/resize; a manual position wins.
+function applyAnchor(recompute) {
+  if (!host?.isConnected) return;
+  if (!anchor || recompute) {
+    if (savedPosition) anchor = { ...clampPosition(savedPosition,innerWidth,innerHeight), clear:true };
+    else {
+      const obstacles = collectObstacles(document, element => getComputedStyle(element),innerWidth,innerHeight);
+      const chosen = placement(innerWidth,innerHeight,obstacles);
+      anchor = { ...clampPosition({x:innerWidth-chosen.right-44,y:innerHeight-chosen.bottom-44},innerWidth,innerHeight), clear:chosen.clear };
+    }
+  }
+  css(host, { left:`${anchor.x}px`, top:`${anchor.y}px`, right:'auto', bottom:'auto', visibility:anchor.clear?'visible':'hidden' });
+}
+
+// Panel-only placement. Clicks, polls and page mutations never move the button.
 function positionUI() {
   if (!host?.isConnected) return;
   const panel = host.shadowRoot.querySelector("section");
   const shortcut = host.shadowRoot.querySelector(".shortcut");
   const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
-  const cap = Math.max(0, Math.min(Math.floor(innerHeight * .6), innerHeight - 88));
-  css(panel, { display:wantsOpen ? "flex" : "none", "max-height":`${cap}px` });
-  const obstacles = collectObstacles(document, element => getComputedStyle(element), innerWidth, innerHeight);
+  const cap = Math.max(0, Math.min(Math.floor(innerHeight * .6), innerHeight - 32));
+  css(panel, { position:'fixed', right:'auto', bottom:'auto', width:`${Math.max(0,Math.min(344,innerWidth-32))}px`, display:wantsOpen ? "flex" : "none", "max-height":`${cap}px` });
+  if (!wantsOpen) { shortcut.setAttribute('aria-expanded','false'); return; }
   const chromeHeight = (panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
     + (panel.querySelector('.panel-actions')?.getBoundingClientRect().height || 0) + 40;
   const minimum = chromeHeight + 32;
-  let shown = wantsOpen && cap >= minimum;
-  let position = shown ? placement(innerWidth, innerHeight, obstacles, panel.getBoundingClientRect().height) : { clear:false };
-  if (!position.clear && shown) {
-    // Keep controls outside the scroll area; shorten only the available content.
-    const caps = [];
-    for (let next=cap-32; next>=minimum && caps.length<12; next-=32) caps.push(next);
-    caps.push(minimum);
-    for (const next of caps) {
-      css(panel, { "max-height":`${next}px` });
-      position = placement(innerWidth, innerHeight, obstacles, panel.getBoundingClientRect().height);
-      if (position.clear) break;
-    }
-  }
-  if (!position.clear) {
-    shown = false;
-    css(panel, { display:"none" });
-    position = placement(innerWidth, innerHeight, obstacles);
-  }
-  shortcut.setAttribute('aria-expanded', String(shown));
-  // No free space: hide our UI instead of covering a detected native control.
-  // The user's open/closed choice is retained; the poll retries after layout changes.
-  // Visibility keeps geometry measurable for retries without overriding an
-  // externally hidden host's display (mounted must still reflect that state).
-  css(host, { visibility:position.clear ? "visible" : "hidden", right:`${position.right}px`, bottom:`${position.bottom}px` });
+  const obstacles = collectObstacles(document, element => getComputedStyle(element), innerWidth, innerHeight);
+  const position = panelPlacement(innerWidth,innerHeight,anchor,obstacles,panel.getBoundingClientRect().height,minimum);
+  shortcut.setAttribute('aria-expanded', String(position.clear));
+  if (position.clear) css(panel, { left:`${position.left}px`, top:`${position.top}px`, "max-height":`${position.maxHeight}px` });
+  else css(panel, { display:'none' });
 }
 
 function render(report, items) {
@@ -405,6 +447,15 @@ function render(report, items) {
       writeClipboard(text, skeleton, "複製頁面結構", () => showFallbackText(text));
     });
     controls.append(copy, skeleton);
+    const reset = makeButton(strings.reset, 'xschedResetPosition');
+    reset.title = strings.reset;
+    reset.setAttribute('aria-label', strings.reset);
+    reset.addEventListener('click', event => {
+      event.preventDefault(); event.stopPropagation();
+      positionStore.reset(); savedPosition = null;
+      drag = null; applyAnchor(true); positionUI();
+    });
+    controls.append(reset);
     body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
   }
 
@@ -461,6 +512,11 @@ function pollLocation() {
   else if (hostMounted(host) !== Boolean(mounted)) schedule();
 }
 
+function onResize() {
+  if (drag) { anchor = drag.origin; drag = null; suppressClick = true; }
+  applyAnchor(true); positionUI(); schedule();
+}
+
 function start() {
   if (observer) return;
   document.addEventListener("scroll", onScroll, true);
@@ -491,7 +547,7 @@ function start() {
     attributeFilter: ["aria-selected", "aria-current", "aria-controls", "aria-label", "hidden", "aria-hidden", "data-testid"],
   });
   window.addEventListener("popstate", schedule);
-  window.addEventListener("resize", schedule);
+  window.addEventListener("resize", onResize);
   pollId = window.setInterval(pollLocation, POLL_MS);
   lastLocation = `${location.pathname || ""}${location.search || ""}`;
   ensureHost();
@@ -499,6 +555,7 @@ function start() {
 }
 
 function stop() {
+  if (drag) { anchor = drag.origin; drag = null; suppressClick = true; applyAnchor(false); }
   observer?.disconnect();
   observer = null;
   window.clearInterval(pollId);
@@ -508,7 +565,7 @@ function stop() {
   timer = 0;
   document.removeEventListener("scroll", onScroll, true);
   window.removeEventListener("popstate", schedule);
-  window.removeEventListener("resize", schedule);
+  window.removeEventListener("resize", onResize);
   accumulated = [];
   scopeElement = null;
   // Keep the host mounted across bfcache/SPA teardown; start() re-attaches the observer.

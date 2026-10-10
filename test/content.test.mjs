@@ -8,21 +8,25 @@ await import('../probe/reader.js');
 await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
-function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER) {
+const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
+function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map()) {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
   document.documentElement.lang = lang;
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.0.4';
+  let manifest = '0.0.5';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
-  const location = { pathname, search: '', assign(target) { navigated.push(target); } };
+  const location = { hostname:'x.com', pathname, search: '', assign(target) { navigated.push(target); } };
+  const listeners = new Map();
   const window = {
     setTimeout(fn) { timers.set(++id, fn); return id; }, clearTimeout(key) { timers.delete(key); },
     setInterval(fn) { polls.set(++id, fn); return id; }, clearInterval(key) { polls.delete(key); },
-    addEventListener() {}, removeEventListener() {},
+    location, localStorage:{ getItem(key) { return stored.get(key) ?? null; }, setItem(key,value) { stored.set(key,value); }, removeItem(key) { stored.delete(key); } },
+    addEventListener(type,fn) { if (!listeners.has(type)) listeners.set(type,new Set()); listeners.get(type).add(fn); },
+    removeEventListener(type,fn) { listeners.get(type)?.delete(fn); },
   };
   const rect = function () {
     let el = this;
@@ -42,6 +46,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   });
   function flush() { for (let n = 0; timers.size && n < 10; n++) { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()); } }
   function poll() { [...polls.values()].forEach((fn) => fn()); flush(); }
+  vm.runInContext(positionSource, context);
   vm.runInContext(source, context); flush();
   const host = () => document.getElementById('xsched-probe-root');
   const shadow = () => host().shadowRoot;
@@ -51,7 +56,13 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
     Object.defineProperty(event, 'isTrusted', { value: trusted });
     shadow().querySelector(selector).dispatchEvent(event);
   };
-  return { document, host, shadow, click, location, navigated, poll, flush, context,
+  return { document, host, shadow, click, location, navigated, poll, flush, context, stored,
+    resize(width,height) { context.innerWidth=width; context.innerHeight=height; for (const fn of listeners.get('resize') || []) fn(); flush(); },
+    pointer(type,x,y,extras={}) {
+      const event = new document.defaultView.Event(type, {cancelable:true});
+      Object.assign(event,{clientX:x,clientY:y,pointerId:1,button:0,isPrimary:true,...extras});
+      shadow().querySelector('.shortcut').dispatchEvent(event);
+    },
     mutate(records) { mutationCallback(records); flush(); },
     setManifest(value) { manifest = value; }, invalidate() { invalidated = true; } };
 }
@@ -92,20 +103,22 @@ test('polls and rerenders preserve an externally hidden host and report mounted 
   assert.equal(host.dataset.xschedMounted, '1');
   assert.match(host.dataset.xschedDiag, /\bmounted=1\b/);
 });
-test('no-space hiding reports mounted zero, retries placement and preserves external display and open intent', () => {
+test('no-space hiding only retries on resize and preserves external display and open intent', () => {
   let room = true;
   const ui = { ...globalThis.XSCHED_UI, placement(...args) {
     return room ? globalThis.XSCHED_UI.placement(...args) : { clear: false, right: 16, bottom: 112 };
   } };
   const f = fixture(undefined, undefined, undefined, null, ui);
   for (let n = 0; n < 2; n++) {
-    room = false; f.poll();
+    room = false; f.resize(1100,820);
     assert.equal(f.host().style.display, 'block');
     assert.equal(f.host().style.visibility, 'hidden');
     assert.equal(f.host().dataset.xschedMounted, '0');
     assert.match(f.host().dataset.xschedDiag, /\bmounted=0\b/);
     if (n === 1) f.host().style.setProperty('display', 'none', 'important');
     room = true; f.poll();
+    assert.equal(f.host().style.visibility,'hidden','poll must not move or unhide the fixed anchor');
+    f.resize(1100,820);
     assert.equal(f.host().style.visibility, 'visible');
     assert.equal(f.host().dataset.xschedMounted, n === 1 ? '0' : '1');
   }
@@ -161,10 +174,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.0.4 (manifest 0.0.4)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.0.5 (manifest 0.0.5)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.0.4 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.0.5 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -173,7 +186,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.0\.4/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.0\.5/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });

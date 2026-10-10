@@ -1,16 +1,16 @@
-// Gate 0.3 UI vocabulary and pure placement helper; independent of reader assumptions.
+// Gate 0.4: button anchor and panel geometry are independent of reader assumptions.
 (() => {
 "use strict";
 const STRINGS = Object.freeze({
-  'zh-Hant': { shortcut: 'xsched：開關排程浮層', goto: '前往 Scheduled', collapse: '縮小' },
-  'zh-Hans': { shortcut: 'xsched：打开或关闭排程面板', goto: '前往 Scheduled', collapse: '收起' },
-  en: { shortcut: 'xsched: toggle scheduled posts panel', goto: 'Go to Scheduled', collapse: 'Minimize' },
-  ja: { shortcut: 'xsched：予約投稿パネルを開閉', goto: '予約済みへ移動', collapse: '最小化' },
-  ko: { shortcut: 'xsched: 예약 게시물 패널 열기/닫기', goto: '예약 게시물로 이동', collapse: '접기' },
-  es: { shortcut: 'xsched: abrir o cerrar el panel de publicaciones programadas', goto: 'Ir a Programadas', collapse: 'Minimizar' },
-  fr: { shortcut: 'xsched : ouvrir ou fermer le panneau des publications programmées', goto: 'Voir les publications programmées', collapse: 'Réduire' },
-  de: { shortcut: 'xsched: Bereich für geplante Beiträge öffnen oder schließen', goto: 'Zu geplanten Beiträgen', collapse: 'Minimieren' },
-  pt: { shortcut: 'xsched: abrir ou fechar o painel de publicações agendadas', goto: 'Ver publicações agendadas', collapse: 'Minimizar' },
+  'zh-Hant': { shortcut: 'xsched：開關排程浮層', goto: '前往 Scheduled', collapse: '縮小', reset: '重設位置' },
+  'zh-Hans': { shortcut: 'xsched：打开或关闭排程面板', goto: '前往 Scheduled', collapse: '收起', reset: '重置位置' },
+  en: { shortcut: 'xsched: toggle scheduled posts panel', goto: 'Go to Scheduled', collapse: 'Minimize', reset: 'Reset position' },
+  ja: { shortcut: 'xsched：予約投稿パネルを開閉', goto: '予約済みへ移動', collapse: '最小化', reset: '位置をリセット' },
+  ko: { shortcut: 'xsched: 예약 게시물 패널 열기/닫기', goto: '예약 게시물로 이동', collapse: '접기', reset: '위치 초기화' },
+  es: { shortcut: 'xsched: abrir o cerrar el panel de publicaciones programadas', goto: 'Ir a Programadas', collapse: 'Minimizar', reset: 'Restablecer posición' },
+  fr: { shortcut: 'xsched : ouvrir ou fermer le panneau des publications programmées', goto: 'Voir les publications programmées', collapse: 'Réduire', reset: 'Réinitialiser la position' },
+  de: { shortcut: 'xsched: Bereich für geplante Beiträge öffnen oder schließen', goto: 'Zu geplanten Beiträgen', collapse: 'Minimieren', reset: 'Position zurücksetzen' },
+  pt: { shortcut: 'xsched: abrir ou fechar o painel de publicações agendadas', goto: 'Ver publicações agendadas', collapse: 'Minimizar', reset: 'Redefinir posição' },
 });
 function languageKey(value) {
   const tag = typeof value === 'string' ? value.toLowerCase() : '';
@@ -30,10 +30,16 @@ function overlaps(a, b, gap = 8) {
 function collectObstacles(doc, getStyle, width, height) {
   const candidates = new Set();
   const add = el => {
-    if (el?.nodeType === 1 && candidates.size < 256 && !el.closest('[data-xsched-host="1"]')) candidates.add(el);
+    if (el?.nodeType === 1 && candidates.size < 256 && !el.closest('[data-xsched-host="1"], [role="dialog"], [role="alertdialog"]')) candidates.add(el);
   };
   let queried = 0;
-  for (const el of doc.querySelectorAll('button, a, [role="button"], [role="dialog"], aside')) {
+  // Include direct injected wrappers even when their buttons live in closed shadow.
+  for (const el of doc.querySelectorAll('body > *, html > *')) {
+    if (queried++ >= 64) break;
+    if (el !== doc.body && el.tagName !== 'HEAD') add(el);
+  }
+  queried = 0;
+  for (const el of doc.querySelectorAll('button, a, [role="button"], aside')) {
     if (queried++ >= 96) break;
     add(el);
   }
@@ -66,16 +72,15 @@ function collectObstacles(doc, getStyle, width, height) {
   };
   for (const el of candidates) {
     let depth = 0;
-    for (let node = el; node && node !== doc.body && depth++ < 12; node = node.parentElement) {
+    for (let node = el; node && node !== doc.body && node !== doc.documentElement && depth++ < 12; node = node.parentElement) {
       const style = styleOf(node);
       if (!style || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.opacity === '0') break;
       if (style.position !== 'fixed' && style.position !== 'sticky') continue;
       const rect = visible(node, style);
       if (!rect) break;
-      // A full-page fixed modal/backdrop is not a corner widget. Its interactive
-      // descendant still counts, without treating the whole viewport as blocked.
+      // Full-page wrappers/backdrops never become floating-control obstacles.
       const fullPage = rect.width >= width * .85 && rect.height >= height * .85;
-      const obstacle = fullPage && el.matches('button, a, [role="button"]') ? el : fullPage ? null : node;
+      const obstacle = fullPage ? null : node;
       if (obstacle && !emitted.has(obstacle)) {
         const bounds = visible(obstacle, styleOf(obstacle));
         if (bounds) { emitted.add(obstacle); out.push(bounds); }
@@ -85,9 +90,9 @@ function collectObstacles(doc, getStyle, width, height) {
   }
   return out;
 }
-function placement(width, height, obstacles, panelHeight = 0) {
-  const panelWidth = panelHeight ? Math.min(344, width - 32) : 44;
-  const totalHeight = 44 + (panelHeight ? panelHeight + 12 : 0);
+function placement(width, height, obstacles) {
+  const panelWidth = 44;
+  const totalHeight = 44;
   const maxBottom = height - totalHeight - 16;
   const maxRight = width - panelWidth - 16;
   const base = Math.min(112, maxBottom);
@@ -105,5 +110,40 @@ function placement(width, height, obstacles, panelHeight = 0) {
   }
   return { right:16,bottom:Math.max(16,Math.min(112,height-60)),clear:false };
 }
-globalThis.XSCHED_UI = { STRINGS, stringsFor, overlaps, placement, collectObstacles };
+function clampPosition(pos, width, height) {
+  const maxX = Math.max(0, width - 44 - 16), maxY = Math.max(0, height - 44 - 16);
+  return { x: Math.min(maxX, Math.max(Math.min(16, maxX), pos.x)), y: Math.min(maxY, Math.max(Math.min(16, maxY), pos.y)) };
+}
+// Only the panel moves. Try above/below, then beside the immutable button anchor.
+function panelPlacement(width, height, anchor, obstacles, naturalHeight, minimum) {
+  const panelWidth = Math.min(344, Math.max(0, width - 32));
+  const cap = Math.min(Math.floor(height * .6), height - 32);
+  const align = left => Math.max(16, Math.min(width - panelWidth - 16, left));
+  const above = anchor.y - 12 - 16, below = height - 16 - anchor.y - 44 - 12;
+  const lefts = [...new Set([align(anchor.x+44-panelWidth),align(anchor.x),
+    ...obstacles.slice(0,32).flatMap(rect => [rect.left-panelWidth-8,rect.right+8]),
+  ])].filter(left => left>=16 && left+panelWidth<=width-16).slice(0,32);
+  const vertical = ['above','below'].flatMap(side => lefts.map(left => ({side,left,available:side==='above'?above:below})))
+    .sort((a,b) => Math.min(cap,b.available)-Math.min(cap,a.available));
+  const candidates = [...vertical,
+    { side:'beside', available:height-32, left:anchor.x-12-panelWidth },
+    { side:'beside', available:height-32, left:anchor.x+44+12 },
+  ];
+  for (const candidate of candidates) {
+    if (candidate.left < 16 || candidate.left + panelWidth > width - 16) continue;
+    const available = Math.min(cap, candidate.available);
+    if (available < minimum) continue;
+    const heights = [Math.min(available, Math.max(minimum, naturalHeight))];
+    for (let next=heights[0]-32; next>=minimum && heights.length<13; next-=32) heights.push(next);
+    heights.push(minimum);
+    for (const h of heights) {
+      const top = candidate.side==='above' ? anchor.y-12-h : candidate.side==='below' ? anchor.y+56 : Math.max(16, Math.min(height-h-16, anchor.y+44-h));
+      const rect = { left:candidate.left, top, right:candidate.left+panelWidth, bottom:top+h };
+      const button = { left:anchor.x, top:anchor.y, right:anchor.x+44, bottom:anchor.y+44 };
+      if (!overlaps(rect,button) && !obstacles.some(other => overlaps(rect,other))) return { ...rect, width:panelWidth, maxHeight:h, clear:true };
+    }
+  }
+  return { clear:false };
+}
+globalThis.XSCHED_UI = { STRINGS, stringsFor, overlaps, placement, collectObstacles, clampPosition, panelPlacement };
 })();

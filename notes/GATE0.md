@@ -597,3 +597,24 @@ production reader／content、verify與權限保持原狀。`scripts/e2e.mjs:535
 實跑 `npm test`退出0（8檔）；`node --test --test-isolation=none test/` **119過／0敗／0跳過**；`npm run verify`退出0：**30 API bypass／14 icon／9 SVG／38 leak**，9 probe檔／4 Logo SVG。`node --check scripts/e2e.mjs`、`git diff --check`通過。共修改5檔：e2e、calendar／content測試、GATE0與HANDOFF；未commit／push／生成截圖。
 
 本輪Chrome e2e因既有listen限制仍由外部執行，**外部原紅燈的實跑版本／DOM落差尚未確認，不能宣稱已在Chrome修好**。新的前置與snapshot斷言會在落差發生的步驟給出證據，避免只剩count等待逾時。外部請確認同一repo工作樹含本次修改，跑 `npm test` → `npm run verify` → `npm run e2e`；若仍紅，回傳第一個失敗斷言與scan結果，不放寬或跳過。全部通過後仍需獨立複審，不能沿用修正前453斷言作最新驗收。
+
+# 閘 0.4：固定快捷鈕錨點／拖動保存／其他擴充避讓（probe 0.0.5）
+
+## (b) 根因：先分析、尚未改production時的證據
+
+基準main `4491b79`（PR #8），開工 `f140740`；老闆確認0.0.4繁中時間解析與捲動通過。本節只記格式／機制，不提交真日期或畫面。
+
+0.0.4 `content.js:103–107`的host是position:fixed，`166–167` append到body或documentElement；不是掛在X dialog內，也沒有用dialog當CSS定位參考容器。問題是`positionUI:259–286`每次重收障礙、把panel高度傳給placement、最後把位置寫回快捷鈕host。開關click:159–164觸發render；poll:450–454也重跑同一定位。
+
+`ui.js:88–103`在展開時把width從44改成344，height從44改成44+panelHeight+12，對這個聯合矩形找位置，因而把浮層的避讓反過來移動鈕。`ui.js:75–81`雖忽略全螢幕modal矩形，仍把其button子節點列為障礙；非全屏fixed dialog本體也會被計入。modal出現時可以再次改變位置。真畫面上的「跳進modal右下角」是視窗坐標的避讓結果，不代表DOM被移入dialog；沒有真機DOM不能再斷言是哪個具體障礙造成那個落點。
+
+離線實跑：`node /tmp/xsched-gate04-position-vm.mjs`。從未改的content.js擷取完整positionUI函式，用VM執行原函式＋原ui.js；1100×820、panel測試高度44、固定障礙矩形(900,600)–(980,655)。輸出：
+
+```text
+collapsed=false visibility=visible right=16px bottom=228px
+collapsed=true  visibility=visible right=16px bottom=112px
+collapsed=false visibility=visible right=16px bottom=228px
+modalObstacles=[{left:900,right:980,top:600,bottom:655,width:80,height:55}]
+```
+
+最後一行用全螢幕fixed role=dialog模型與其靜態button子節點執行原collectObstacles，證明modal內容仍被當障礙。另直接呼叫原placement，closed={right:16,bottom:112,clear:true}、open={right:16,bottom:228,clear:true}。這是原函式VM的計算證據，不是真Chrome布局證據；本輪linkedom缺依賴且npm registry DNS EAI_AGAIN，不能把未完成的linkedom／Chrome實跑寫成通過。

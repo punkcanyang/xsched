@@ -13,7 +13,7 @@
 (() => {
 "use strict";
 
-const SKELETON_VERSION = "0.0.4";
+const SKELETON_VERSION = "0.0.5";
 const MAX_NODES = 6000;
 const MAX_DEPTH = 60;
 
