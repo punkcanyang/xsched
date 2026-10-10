@@ -660,3 +660,37 @@ verify原persistent storage禁令保留。只對根目錄position.js、且來源
 - 有界取樣可能漏極小或候選上限外的元件；closed shadow只能看有尺寸的外層wrapper，不能枚舉內層。全頁wrapper／modal有意排除。極小或障礙過密視窗可能只能留快捷鈕；若自動鈕本身也無安全位置則暫藏，resize會重試。
 - 原生title由Chrome決定呈現方向，沒有自訂tooltip可驗證矩形；e2e驗證沒有自訂tooltip节点。真機不同外掛組合仍需老闆自己的Chrome確認。
 - 儲存例外只影響刷新保留；同origin儲存可被頁面更改。位置只按CSS像素保存，不跨裝置同步。舊虛擬列表累加／讀法／時間格式限制沿用0.0.4，本輪不改解析行為。
+
+# 閘 0.4 Codex 複審
+
+2026-10-10，接續同一獨立複審 session，與寫碼 session `01a1212e` 不同。已讀 AGENTS／ROADMAP／開工卡／競品／HANDOFF／閘0.4筆記，重審 `git diff 4491b79...b01026b` 全部改動及本輪工作樹修正。前面依賴缺失／待外部驗證記錄是寫碼時的歷史，本節為最新複審結果。
+
+## 發現與小修正
+
+| 嚴重度 | 檔案 | 證據與修正 |
+|---|---|---|
+| 中：拖動清理 | `probe/content.js`、`test/content.test.mjs` | resize／重設／stop清空drag卻不釋放capture，另一個primary pointerdown也能覆蓋active drag。以b01026b真content VM重現resize後仍持有capture。加入集中取消／釋放，先清state再release以防loss事件重入，並拒絕覆蓋active drag。回歸涵蓋resize／重設／pagehide／dispose／pointercancel／capture loss與第二個pointer；取消不存值、後續move／up不得寫位置。 |
+| 中：resize與重掛 | `probe/content.js`、`test/content.test.mjs` | applyAnchor在host斷線時先return，resize未重夾保留座標，重掛會用舊坐標。改為先計算anchor再判斷是否能寫host；以保存的假位置縮窗＋重掛驗證夾位，放大恢复原值，storage不被resize覆寫。 |
+| 中：既有hostname相容性 | `probe/content.js`、`test/content.test.mjs` | manifest仍match twitter.com，但新頂層x.com guard讓該host完全沒UI；已用b01026b真content VM重現。恢復兩個原有matching host的UI；position模組仍拒絕twitter.com的load／save／reset，回歸證明三條路徑皆0儲存呼叫且不更改既有key。未增加host。 |
+| 高：公開資料衛生 | `notes/HANDOFF-gate0.4.md` | 開頭重新記入老闆實测的真日期時間，違反不提交真機資料規則。已刪除日期時間，只留繁中格式與timeOk／timeFail。沒有在本複審節複製真值；本輪不改Git歷史。 |
+
+`scripts/e2e.mjs`另補真mouse拖動持有capture→resize→mouseup前已釋放、錨點復原／不切換／不儲存四項斷言；原resize測試先移除host，再縮窗驗證重掛夾位。原drag／reload／reset／modal精確矩形、fixed操作區與0資源／背景請求等所有斷言保留。
+
+## 重點核對
+
+- **根因成立（已親讀程式，真機落點仍非本session驗證）**：基準把panel高度／寬度併入placement，render與poll都回寫host；原host掛body／html，沒有移進dialog。modal子鈕可成障礙的推論有原函式VM與程式證據，但不能指認老闆畫面中的哪個元件決定落點。新applyAnchor只在初始化／拖動及取消／重設／resize計算座標，重掛套用既有錨點；開關／poll／X mutation只定位panel，回歸驗證SPA／modal／重掛不搬鈕。
+- **拖動／幾何**：6px門檻、有效pointer座標、單一active pointer、相容click抑制、capture清理、可見範圍clamp、保存位置優先均核對。panel獨立多方向定位、≤60vh、固定操作列與body捲動保留；無空間收面板而不搬鈕。有界64 root／96控制項／256候選／320點／768 style／12祖先，panel≤66候選×14高度。排除dialog／alertdialog子樹及全頁wrapper；只讀他人rect／computed style，不改他人DOM、不click／捲頁。九語重設與原生title完整；檢視外掛避讓／modal開啟假資料截圖，Chrome hit-test仍以外部實跑為證。
+- **儲存是明確授權的受限例外**：基準全面禁止localStorage，本輪依新版AGENTS只開單一已審位置模組，不能稱基準仍全面禁止。已親讀37行position.js：hostname必須x.com、固定key `xsched.probe.pos`、恰兩個有限數字、JSON長度上限128、寫入複製後再驗證、捕捉storage／getter例外；不存本文／身份／URL／診斷，不加storage權限。來源SHA-256確實為 `6c20a9e0a844b21a23834f8af50ecf58084f6d5bd9fa9cbcdd44624ff436de10`，本複審未改position.js或摘要。其他模組storage仍禁，新增方法名別名阻擋；同名改碼／改名／錯key／刪數字驗證／非數字內容／其他storage／網路混入18攻擊全拒絕。這符合本機資料、權限最小及已授權邊界，其餘網路／注入／manifest／39洩漏守門保留。
+- **硬規則與衛生**：manifest與4491b79對照，permissions／host／optional permissions／web resources／externally_connectable／action及matches完全不變；只改描述／版本與載入本機position.js。reader／skeleton僅升版本，閘0.3的本文隔離、合併aria、fmt／samples／骨架安全規則全保留。指定舊身份字串及常見token／私鑰掃描（含hidden／binary、排除node_modules／.git）0命中；real fixtures未改，新增extensions fixture明列假資料／非真頁快照，無遠端資源。診斷不增加位置或任何本文資料；$0、未登入X／連真站。
+- **文件／實測**：5步實測保留reload0.0.5、拖動刷新、modal前後不跳、重設與診斷回報；不把本機假fixture／截圖當真頁驗收。老闆自己的Chrome與不同擴充組合仍待實測。
+
+## 實跑與外部交付
+
+- `npm test`退出0：9檔全過；細項 **133/133、0敗、0跳過**。
+- `npm run verify`退出0：**10 probe檔／4 Logo SVG；30 API／14 icon／9 SVG／39 leak／18 storage自測**。已核對守門diff，除上述經授權的精確來源儲存例外外未放寬規則。
+- `node --check probe/content.js`、`node --check scripts/e2e.mjs`與`git diff --check`通過。
+- **外部回報，非本session實跑**：b01026b的test129／verify39＋18／e2e513通過；這是本輪修正前證據。最新content與新增Chrome情境須外部重跑test／verify／e2e全過後提交／合併，不能沿用513宣稱最新通过。本沙箱沒有listen／Chrome驗收或新截圖。
+
+本輪修改5檔：`probe/content.js`、`test/content.test.mjs`、`scripts/e2e.mjs`、`notes/HANDOFF-gate0.4.md`、`notes/GATE0.md`。未commit／push／merge／改main；position.js、verify、manifest及日期讀法未改。
+
+**VERDICT: APPROVE（阻擋問題已修並有回歸；合併前外部最新三測試須全過）。** 仍有有限幾何取樣／closed shadow／極小視窗、初始化後新外掛不自動搬鈕、手動位置可覆蓋其他控制項、同origin頁面可改位置key與儲存禁用不保存等既有明列限制。原生title方向由Chrome決定；探針累加不能當即時權威總數。真機位置驗收不由本session代替。

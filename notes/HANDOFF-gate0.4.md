@@ -4,7 +4,7 @@
 
 ## 老闆實測 0.0.4
 
-- 時間解析通過（繁中樣本 → 2026-10-13 23:19 Tue，timeOk=1、timeFail=0），浮層可捲。
+- 時間解析通過（繁中格式，timeOk=1、timeFail=0），浮層可捲；不記錄老闆的真日期時間。
 - 問題「排得太亂」：Dagaz 快捷鈕與其他擴充浮動鈕（圓角方形斜線圖示鈕、NB 圓鈕）疊在一起，tooltip 也蓋到別的鈕。
 
 ## 要做
@@ -87,3 +87,10 @@ npm run e2e
 至少需外部產生並檢查：docs/gate0.4-{dragged-reload,avoid-extensions,tooltip,reset,modal-closed,modal-open,no-modal-open}.png；沿用全部舊情境的截圖改gate0.4前綴，不覆寫舊gate0／0.1／0.2／0.3及骨架。最新0網路資源證據須由e2e完成，僅允許既有一次使用者點擊的Scheduled頂層導覽。
 
 老闆實測≤5步與已知限制見GATE0「閘0.4」：初始化後新增外掛不搬鈕、手動位置優先、有界候選可能漏元件、太小／太密空間可能收面板、title由Chrome處理方向、storage被禁用不刷新保存。老闆自己Chrome驗證另一擴充組合／開草稿不跳仍待實测。
+
+## 收尾（产品开发，2026-10-10 12:45 UTC+8）
+
+- 寫碼 `01a1212e` 完成；複審 `01a12013` **VERDICT: APPROVE**（另修拖動 capture 清理、host 移除時 resize 夾位、twitter.com UI 回復，並刪除本檔先前誤記的真機日期）。
+- 外部實跑（`npm ci` 後；`/tmp/cft` Chrome for Testing 被清掉已重裝 155.0.8059.39）：npm test 133/133、verify OK（39 洩漏＋18 storage 自測）、e2e OK 517 斷言。
+- PR：https://github.com/punkcanyang/xsched/pull/9 ；merge --no-ff 到 main。
+- 已知：真機日期曾出現在已 push 的 `f140740`（本檔初版），依規不 force push，歷史保留；目前工作樹已無。

@@ -2,7 +2,7 @@
 // All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
 (() => {
 "use strict";
-if (location.hostname !== "x.com") return;
+if (location.hostname !== "x.com" && location.hostname !== "twitter.com") return;
 const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted, versionLine, formatTime, maskSample } = globalThis.XSCHED_READER;
 const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 
@@ -41,6 +41,20 @@ let savedPosition = positionStore.load();
 let anchor = null;
 let drag = null;
 let suppressClick = false;
+
+function releaseDragCapture(active) {
+  try { active.target.releasePointerCapture(active.id); } catch { /* already released or disconnected */ }
+}
+
+function cancelDrag() {
+  if (!drag) return;
+  const active = drag;
+  drag = null;
+  anchor = active.origin;
+  suppressClick = true;
+  // Clear state first: releasing capture may synchronously report its loss.
+  releaseDragCapture(active);
+}
 
 // Set styles through CSSOM (never a <style> element or style attribute string), so a
 // strict page CSP cannot strip them. !important fends off X's own element styles.
@@ -90,7 +104,7 @@ function ensureHost() {
   if (retired) return null;
   for (const old of document.querySelectorAll("#xsched-probe-root")) if (old !== host) retireLegacy(old);
   if (host && host.isConnected) return host;
-  if (drag) { anchor = drag.origin; drag = null; suppressClick = true; }
+  cancelDrag();
   const now = Date.now();
   if (now - remountWindowStart >= REMOUNT_WINDOW_MS) {
     remountWindowStart = now;
@@ -172,9 +186,9 @@ function ensureHost() {
     render(lastReport, lastItems);
   });
   shortcut.addEventListener('pointerdown', event => {
-    if (event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+    if (drag || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
     suppressClick = false;
-    drag = { id:event.pointerId, startX:event.clientX, startY:event.clientY, origin:{...anchor}, moved:false };
+    drag = { id:event.pointerId, target:shortcut, startX:event.clientX, startY:event.clientY, origin:{...anchor}, moved:false };
     try { shortcut.setPointerCapture(event.pointerId); } catch { /* mouse-only DOM fixtures */ }
   });
   shortcut.addEventListener('pointermove', event => {
@@ -189,7 +203,8 @@ function ensureHost() {
   });
   shortcut.addEventListener('pointerup', event => {
     if (!drag || event.pointerId !== drag.id) return;
-    const moved = drag.moved;
+    const active = drag;
+    const moved = active.moved;
     drag = null;
     if (moved) {
       suppressClick = true;
@@ -198,11 +213,11 @@ function ensureHost() {
       applyAnchor(true);
       positionUI();
     }
-    try { shortcut.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+    releaseDragCapture(active);
   });
   const cancel = event => {
     if (!drag || event.pointerId !== drag.id) return;
-    anchor = drag.origin; drag = null; suppressClick = true;
+    cancelDrag();
     applyAnchor(false); positionUI();
   };
   shortcut.addEventListener('pointercancel', cancel);
@@ -297,7 +312,6 @@ function makeButton(label, datasetKey) {
 // This is the only writer of button coordinates. Remount reuses the same anchor.
 // Automatic avoidance runs on initialization/reset/resize; a manual position wins.
 function applyAnchor(recompute) {
-  if (!host?.isConnected) return;
   if (!anchor || recompute) {
     if (savedPosition) anchor = { ...clampPosition(savedPosition,innerWidth,innerHeight), clear:true };
     else {
@@ -306,6 +320,9 @@ function applyAnchor(recompute) {
       anchor = { ...clampPosition({x:innerWidth-chosen.right-44,y:innerHeight-chosen.bottom-44},innerWidth,innerHeight), clear:chosen.clear };
     }
   }
+  // Resize can occur while X has removed the host. Update the retained anchor
+  // before remount so it still fits the new viewport, without changing storage.
+  if (!host?.isConnected) return;
   css(host, { left:`${anchor.x}px`, top:`${anchor.y}px`, right:'auto', bottom:'auto', visibility:anchor.clear?'visible':'hidden' });
 }
 
@@ -453,7 +470,7 @@ function render(report, items) {
     reset.addEventListener('click', event => {
       event.preventDefault(); event.stopPropagation();
       positionStore.reset(); savedPosition = null;
-      drag = null; applyAnchor(true); positionUI();
+      cancelDrag(); applyAnchor(true); positionUI();
     });
     controls.append(reset);
     body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
@@ -513,7 +530,7 @@ function pollLocation() {
 }
 
 function onResize() {
-  if (drag) { anchor = drag.origin; drag = null; suppressClick = true; }
+  cancelDrag();
   applyAnchor(true); positionUI(); schedule();
 }
 
@@ -555,7 +572,7 @@ function start() {
 }
 
 function stop() {
-  if (drag) { anchor = drag.origin; drag = null; suppressClick = true; applyAnchor(false); }
+  if (drag) { cancelDrag(); applyAnchor(false); }
   observer?.disconnect();
   observer = null;
   window.clearInterval(pollId);

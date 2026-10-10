@@ -955,6 +955,17 @@ async function main() {
     await sleep(800);
     await page.screenshot({path:join(DOCS,'gate0.4-tooltip.png')});
     assert(await page.evaluate(()=>window.localStorage.getItem('xsched.probe.pos')===null),'automatic placement never persists page data');
+    // Resize interrupts a real captured pointer, releasing it before mouseup.
+    const expandedBeforeCancel=(await probeState(page)).expanded;
+    await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('.shortcut').addEventListener('pointerdown', event=>{window.fixtureDragPointerId=event.pointerId;},{once:true}));
+    await page.mouse.move(automatic.x+automatic.width/2,automatic.y+automatic.height/2);
+    await page.mouse.down();await page.mouse.move(automatic.x+automatic.width/2-12,automatic.y+automatic.height/2,{steps:3});
+    assert(await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('.shortcut').hasPointerCapture(window.fixtureDragPointerId)),'active physical drag owns pointer capture');
+    await page.evaluate(()=>window.dispatchEvent(new Event('resize')));
+    assert(await page.evaluate(()=>!document.getElementById('xsched-probe-root').shadowRoot.querySelector('.shortcut').hasPointerCapture(window.fixtureDragPointerId)),'resize immediately releases drag capture before pointerup');
+    assert(JSON.stringify(await buttonRect())===JSON.stringify(automatic),'cancelled drag restores the automatic anchor without saving');
+    await page.mouse.up();
+    assert((await probeState(page)).expanded===expandedBeforeCancel && await page.evaluate(()=>window.localStorage.getItem('xsched.probe.pos')===null),'cancelled drag cannot toggle panel or persist a position');
     const expandedBeforeDrag=(await probeState(page)).expanded;
     await page.mouse.move(automatic.x+automatic.width/2,automatic.y+automatic.height/2);
     await page.mouse.down();await page.mouse.move(242,142,{steps:15});await page.mouse.up();
@@ -968,6 +979,8 @@ async function main() {
     await until(async()=> (await probeState(page)).expanded==='true','dragged reload mounted');
     assert(JSON.stringify(await buttonRect())===JSON.stringify(dragged),'reload preserves exact dragged button rectangle');
     await page.screenshot({path:join(DOCS,'gate0.4-dragged-reload.png')});
+    // X may redraw away the host just before the viewport changes.
+    await page.evaluate(()=>document.getElementById('xsched-probe-root').remove());
     await page.setViewport({width:180,height:150});await sleep(600);
     const clamped=await buttonRect();
     assert(clamped.left>=0&&clamped.top>=0&&clamped.right<=180&&clamped.bottom<=150,'resize clamps manual anchor inside viewport');

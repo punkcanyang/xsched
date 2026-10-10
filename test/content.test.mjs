@@ -9,7 +9,7 @@ await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
 const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
-function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map()) {
+function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com') {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
   document.documentElement.lang = lang;
   const timers = new Map();
@@ -19,7 +19,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
-  const location = { hostname:'x.com', pathname, search: '', assign(target) { navigated.push(target); } };
+  const location = { hostname, pathname, search: '', assign(target) { navigated.push(target); } };
   const listeners = new Map();
   const window = {
     setTimeout(fn) { timers.set(++id, fn); return id; }, clearTimeout(key) { timers.delete(key); },
@@ -57,6 +57,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
     shadow().querySelector(selector).dispatchEvent(event);
   };
   return { document, host, shadow, click, location, navigated, poll, flush, context, stored,
+    emit(type) { for (const fn of listeners.get(type) || []) fn({}); flush(); },
     resize(width,height) { context.innerWidth=width; context.innerHeight=height; for (const fn of listeners.get('resize') || []) fn(); flush(); },
     pointer(type,x,y,extras={}) {
       const event = new document.defaultView.Event(type, {cancelable:true});
@@ -201,6 +202,76 @@ test('pointer threshold, cancellation and secondary pointers never persist accid
   f.pointer('pointermove',200,200);f.pointer('pointercancel',200,200);assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
   f.pointer('pointerdown',100,100,{button:2});f.pointer('pointermove',300,300);f.pointer('pointerup',300,300);
   assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+});
+test('interrupted drags immediately release capture without persisting or allowing stale movement', () => {
+  for (const reason of ['resize', 'reset', 'pagehide', 'dispose', 'pointercancel', 'lostpointercapture']) {
+    const f = fixture();
+    const shortcut = f.shadow().querySelector('.shortcut');
+    const captures = new Set();
+    shortcut.setPointerCapture = id => captures.add(id);
+    shortcut.releasePointerCapture = id => {
+      captures.delete(id);
+      // Browser capture loss must not re-enter cancellation with active state.
+      const event = new f.document.defaultView.Event('lostpointercapture');
+      Object.assign(event, { pointerId: id }); shortcut.dispatchEvent(event);
+    };
+    f.pointer('pointerdown', 100, 100); f.pointer('pointermove', 160, 160);
+    assert.ok(captures.has(1), reason);
+    if (reason === 'resize') f.resize(1100, 820);
+    else if (reason === 'reset') f.click('[data-xsched-reset-position]');
+    else if (reason === 'pagehide') f.emit('pagehide');
+    else if (reason === 'dispose') f.context.XSCHED_PROBE_SESSION.dispose();
+    else f.pointer(reason, 160, 160);
+    assert.equal(captures.size, 0, reason);
+    assert.equal(f.stored.size, 0, reason);
+    if (f.host()) {
+      const point = [f.host().style.left, f.host().style.top];
+      f.pointer('pointermove', 300, 300); f.pointer('pointerup', 300, 300);
+      assert.deepEqual([f.host().style.left, f.host().style.top], point, reason);
+      assert.equal(f.stored.size, 0, reason);
+    }
+  }
+});
+test('another primary pointer cannot replace an active drag or take its capture', () => {
+  const f = fixture();
+  const shortcut = f.shadow().querySelector('.shortcut');
+  const captures = new Set();
+  shortcut.setPointerCapture = id => captures.add(id);
+  shortcut.releasePointerCapture = id => captures.delete(id);
+  const initial = [f.host().style.left, f.host().style.top];
+  f.pointer('pointerdown', 100, 100);
+  f.pointer('pointerdown', 200, 200, { pointerId: 2 });
+  f.pointer('pointermove', 300, 300, { pointerId: 2 });
+  assert.deepEqual([f.host().style.left, f.host().style.top], initial);
+  assert.deepEqual([...captures], [1]);
+  f.pointer('pointermove', 80, 80);
+  assert.notDeepEqual([f.host().style.left, f.host().style.top], initial);
+  f.pointer('pointercancel', 80, 80);
+  assert.deepEqual([f.host().style.left, f.host().style.top], initial);
+  assert.equal(captures.size, 0); assert.equal(f.stored.size, 0);
+});
+test('twitter.com retains its matching probe UI without accessing position storage', () => {
+  const stored = new Map([['xsched.probe.pos', JSON.stringify({ x: 200, y: 100 })]]);
+  const calls = [];
+  for (const method of ['get', 'set', 'delete']) {
+    const original = stored[method].bind(stored);
+    stored[method] = (...args) => { calls.push(method); return original(...args); };
+  }
+  const f = fixture(undefined, undefined, undefined, null, undefined, undefined, stored, 'twitter.com');
+  assert.equal(f.host().dataset.xschedCount, '2');
+  f.pointer('pointerdown', 100, 100); f.pointer('pointermove', 80, 80); f.pointer('pointerup', 80, 80);
+  f.click('[data-xsched-reset-position]');
+  assert.deepEqual(calls, [], 'load/save/reset remain x.com only');
+  assert.equal(Map.prototype.get.call(stored, 'xsched.probe.pos'), JSON.stringify({ x: 200, y: 100 }));
+});
+test('resize while the host is removed clamps the remounted anchor and retains its saved preference', () => {
+  const stored = new Map([['xsched.probe.pos', JSON.stringify({ x: 1000, y: 700 })]]);
+  const f = fixture(undefined, undefined, undefined, null, undefined, undefined, stored);
+  f.host().remove(); f.resize(390, 600);
+  assert.equal(f.host().style.left, '330px'); assert.equal(f.host().style.top, '540px');
+  assert.equal(stored.get('xsched.probe.pos'), JSON.stringify({ x: 1000, y: 700 }));
+  f.resize(1100, 820);
+  assert.equal(f.host().style.left, '1000px'); assert.equal(f.host().style.top, '700px');
 });
 test('home has only closed shortcut; localized goto navigates fixed target despite dataset tampering', () => {
   const f = fixture('/home', 'zh-Hant');
