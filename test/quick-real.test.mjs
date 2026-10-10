@@ -120,3 +120,12 @@ test('neutral linked labels infer roles from complete domains; 24h and stepped m
  assert.equal(Q.detectControls(g.document).ready,true);assert.equal(Q.fillSlot(g.document,'evening',now),true);
  assert.equal(hour.value,'20');assert.equal(minute.value,'0');assert.equal(g.counts.change,5);
 });
+
+test('disabled duplicate target values and hidden options cannot be selected through the new mapper',()=>{
+ for(const edit of [
+  field=>{const copy=field.querySelector('option[value="30"]').cloneNode(true);copy.setAttribute('disabled','');field.prepend(copy);},
+  field=>field.querySelector('option[value="30"]').setAttribute('hidden',''),
+ ]) {
+  const f=fixture();edit(f.field('minute'));const before=f.values();assert.equal(Q.fillSlotResult(f.document,'lunch',now),'optionsMissing');assert.deepEqual(f.values(),before);assert.equal(f.counts.change,0);
+ }
+});

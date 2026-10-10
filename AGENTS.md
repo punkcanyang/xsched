@@ -54,6 +54,12 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 - `npm run verify`追加**不click任何X鈕／不代替使用者送出**：禁止click方法與別名、requestSubmit／submit與別名、Mouse／Pointer／Keyboard／Submit事件及未審dispatchEvent；另擋click／submit解構與反射取方法、onclick／onsubmit別名。只對根目錄`probe/quick.js`的完全一致SHA-256來源，豁免dispatchEvent關鍵字一條；唯一`writeNativeControls`函式只對整組預檢後的原生select派送input／change，其他網路／storage／注入／激活禁令仍全掃。修改此模組須重審來源摘要；33個native writer攻擊自測（原20項全保留），另有真CLI違規退出測試；原30 API／14 icon／9 SVG／21 storage完整保留，39洩漏自測加option身份／日期路徑成41。位置storage仍僅position.js兩個固定數字key，不新增設定儲存。
 - `npm run e2e`保留閘0.5全部斷言與0擴充資源／背景請求證據；合成設定dialog有月日年時分AMPM選單、Confirm／Schedule／composer Post及form click／submit計數。按四個快速時段：值與本地計算及獨立跨年期望一致、input/change有觸發、送出click／submit始終0；無欄位／部分欄位／選項無法表示皆完全不改值。測試腳本在main及extension isolated world注入2027年Date時鐘，production無時間override，年份選單從2027開始。比對2cceb5e的manifest權限／host／資源／matches不變。生成`docs/v1.0-quick-{dialog-detected,slot-filled,not-detected,partial-fields,diag}.png`及舊情境的新前綴副本／骨架，既有gate0–0.5截圖不覆寫；需要原Chrome for Testing／Xvfb。
 
+## 快速時段0.1.1的真骨架回歸
+
+- `npm test`另測`test/quick-real.test.mjs`：內外dialog／兩group／aria-labelledby唯一label／空testid、四時段、opaque值及文字／數字映射、全域一致零基月份、12 AM/PM／24h／刻度分、上下午文字與順序矛盾拒絕、disabled同值／hidden選項、缺年份／日／分與min/max預檢零寫入。事件後讀回不符整組還原並派送input/change，節點回收／還原拒絕明示不完整；content VM驗證繁中優先於瀏覽器簡中及錯誤跨render保留。新fixture全為假資料、年份2027+；不直接寫日期input。
+- `npm run verify`保留原30 API／14 icon／9 SVG／21 storage／41 leak／33 native writer自測；select與label的安全日曆UI詞彙testid新出口增加14身份攻擊，洩漏成55；writer刪讀回／bounds／period驗證、setter替換／body派送／click別名增加6攻擊，native writer成39。仍只對quick.js精確SHA豁免dispatchEvent一条，唯一writer只送select input/change（含整組還原）；不click／不submit禁令與position storage摘要不變。
+- `npm run e2e`保留全部舊情境與0網路證據；真骨架精簡合成picker要求schedDialog=1 dateCtl=3 timeCtl=3 selects=6、四時段逐欄／12h換算、兩世界2027假時鐘、缺年份零改／零事件、change handler拒絕目標後所有select原值復原且input/change各12次，所有Confirm／Schedule／Post／calendar click及form submit皆0。date input不直接寫、picker骨架安全匯出、權限與293589f相同。新截圖`docs/v1.0-quickfix-{real-detected,real-filled,year-missing,rollback}.png`及舊情境的新前綴副本；既有截圖不覆寫。原真機骨架禁止提交；新的value格式與React接受仍須老闆確認。
+
 ## READY 的標準（PR 說明裡要有）
 
 1. 做了什麼（閘 0 要附 DOM 依據、讀取方式、改版風險）。

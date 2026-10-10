@@ -67,6 +67,8 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 1. **快速選時段**：發文框旁加按鈕，預設時段（例如 9:00／12:30／20:00，可自訂、可設星期）。一按＝打開 X 原生排程視窗並填入「下一個空時段」，老闆確認後照原流程按 Schedule。
    - 本輪0.1.0：四個固定未來時段與九語shadow介面、純計數診斷、原生select整組預檢填值；老闆手動開X設定視窗／自己確認，擴充不click或submit。設定DOM仍未驗證，失敗不半填；不做自訂／星期／佔用避讓。npm test154/154、verify OK（41洩漏／20 native writer自測）；e2e沙箱listen EPERM，外部最新三測試／範例截圖與獨立複審待跑，未達READY。證據、假設與5步實測見GATE0「1.0快速選時段」，交接見HANDOFF-v1.0-quick。
 
+   - 狀態更新：0.1.0已合main293589f（PR #11）。插隊0.1.1 quick-fix：排程設定真遮罩骨架已到，確認內層modal／兩group／六個label-linked select，testid實際為空。已補結構辨識、保守option映射、九語年份／選項錯誤、讀回整組還原＋事件、date input bounds只讀及picker testid安全匯出。option真值／React仍待老闆逐欄驗證；169 unit過、verify55洩漏／39 writer過，沙箱e2e listen EPERM，外部最新e2e／假資料截圖／複審待跑。見HANDOFF-v1.0-quick-fix與GATE0「1.0快速時段0.1.1：真骨架」。總覽另分支暫停，未帶入本輪。
+
 2. **自動預排**（可開關，預設關）：開啟後按發文改走排程，填入下一個空時段。
 3. **空時段避開 X 上已排的推文**（用閘 0 讀到的列表），不只記本機。
 4. **排程總覽**：側欄或頁面面板，周視圖／列表，顯示已排推文的時間與文字前段，點擊跳到 X 的 Scheduled 那則編輯。

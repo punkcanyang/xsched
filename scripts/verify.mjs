@@ -25,7 +25,7 @@ const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d
 
 // Exact-source exception only for the sole native select input/change writer.
 // All other activation, network, storage and markup rules still scan this file.
-const QUICK_SOURCE_SHA256 = "02dd0d5eafd18ed0ed9581ab92982efb06fcf2eea381ef7cd3aebba1fe887bb6";
+const QUICK_SOURCE_SHA256 = "70c3ccde2e47ce2f7bfe0da87cbbf8b2d98960fea516fe58297bf461ba5487cf";
 
 // Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
 // on a hostile synthetic page, that no page content can reach the skeleton or the samples.

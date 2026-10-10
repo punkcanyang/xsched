@@ -879,3 +879,43 @@ ready依實際host的diagnostic是否存在判斷。fixture的dialog及子樹由
 | L165–170／168 | 第三select，c=2 | 兩個文字長度2的選項，無空白；上下午需以九語文字＋順序互相驗證 |
 
 0.1.0只查未驗證scheduledDateField／scheduledTimeField容器與name選單，因此真骨架雖有6個select，schedDialog仍0。修法必須加入真結構分支；不把未知class／遮罩id／空testid當成真選擇器。option value全部=x，**value格式未驗證**，不能直接假設月為1–12或上下午為AM/PM。
+
+## 偵測／填值設計
+
+所有新結構選擇器集中在quick.js的QUICK_CONFIG並附上述行號：真結構分支只接收可見`[role="dialog"][aria-modal="true"]`，日期與時間select必須直接歸屬同一最近group與dialog；aria-labelledby必須唯一指到本group的label，不借背景／別的dialog／重複id。由九語日曆label提示及選項完整域辨識角色；label為中性詞時依域推斷，歧義一律拒絕。日期group另需一個type=date input；時間group支援12h＋兩個上下午選項或完整0–23的24h。原scheduledDateField／scheduledTimeField＋name的合成備援保留，結果不改；不新增class或猜測testid前綴。
+
+數字來源是option value或完整數字／日曆單位／九語月份名稱的option文字，寫回實際option.value而非猜一個後端編碼。數值與文字都可識別但不一致時拒絕；只有**整個0–11域與十二個月份文字都一致差1**才接受零基月份。12h域必須完整1–12，24h必須完整0–23；目標日／分／年不可表示時不半填。AM／PM須有兩個可用且值唯一的選項，第一個文字確認上午、第二個確認下午；若value也可辨認AMPM，必須與文字及順序一致。未知上下午文字／逆序／duplicate value（含disabled同值選項）／hidden目標選項均拒絕。這是保守合约，不宣稱已知真X的value格式。
+
+目標年份不存在時九語明示「目標年份不在 X 的選項中」，其他缺選項／日期越界也有獨立九語錯誤。維持本地Date四個未來時段與至少5分鐘餘量。date input只讀min/max作本地日曆日期預檢，不寫value／min／max、不點日曆鈕：骨架沒有同步鏡像或事件行為證據，不能把它當必填控制項；X自己的React事件可能同步它，還需真頁確認。
+
+唯一writeNativeControls用原生HTMLSelectElement.prototype.value setter先寫整組，再送每個select的bubbles input/change，最後逐欄檢查連線及value。任何setter／事件後讀回不符，都嘗試對**全部原節點**還原原值，整組還原值先於還原input/change事件。還原讀回成功才顯示「填值失敗，已還原」；React若回收節點、拒絕還原或重設欄位，明示「還原不完整」，不對新節點猜測補寫，不宣稱成功。無setter完全不寫，預檢失敗完全無事件。0.1.0的「setter部分失敗後靜默還原」測試依本輪授權改為驗證整組還原事件與零click／submit，沒有放寬失敗或送出斷言。
+
+## 骨架／隱私／送出守門
+
+新增select／label專用data-testid出口；只保留短ASCII且由固定日曆UI詞彙組成的值（例如合成select-month／month-label），拒絕@／URL／email／UUID／數字ID／未知身份詞。其他元素照舊，未知合法testid也可能遮成x，這是刻意保守。原先空testid新版仍印裸名稱，不能還原不存在的前綴。label文字、id／aria-labelledby、option文字與value仍遮罩，select／option文字只留長度，沒有新增值型診斷；schedDialog／dateCtl／timeCtl／selects仍是純計數。
+
+verify原API／注入／storage／激活與防送出規則全保留；只更新逐行核對的quick.js精確來源摘要，唯一writer（含還原）只能對已預檢select派送input/change。原33 native writer攻擊保留，再加讀回／bounds／上下午檢查被刪、原生setter替換、派送到body及點擊別名攻擊為39；原41洩漏自測保留，加入select／label兩個新出口各7個身份攻擊成55。position.js來源與摘要不動；manifest权限／host／resources／matches與293589f一致，無新增依賴，$0。
+
+三份`fixtures/quick-real-*.html`是精簡結構重建：保留內外dialog／group、label＋aria-labelledby、空testid、select選項數量及date input；所有id、文字、value及日期為新生成假資料，年份2027／2028／2029。Form／送出計數器是測試專用合成結構，不宣稱骨架證明有form。variant year-missing只保留2027；rollback以頁面change handler一次拒絕目標hour，不修改production或extension prototype。用Python掃新fixture：無URL／email／@handle／UUID，日期年份均>=2027，id只允許fake-/fixture-/合成測試按鈕；原骨架只有讀取，未轉存／提交任何真值。
+
+## 實跑／外部待跑
+
+本輪npm test退出0（11檔），細項`node --test --test-isolation=none test/`：**169過／0敗／0跳過**。verify退出0：11個probe檔／4 SVG，**30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer自測**。包含真結構計數、四時段、上下午文字／位置一致、12 AM／PM邊界、24h／分鐘刻度、零基／opaque option映射、label關聯／歧義、年份缺失與日期bounds零寫入、讀回拒絕整組還原／還原不完整、九語及content VM錯誤保持。reader讀法只升版本。
+
+npm run e2e沙箱仍在fixture HTTPS server `listen EPERM: operation not permitted 127.0.0.1`退出1，**Chrome斷言0、新截圖0**，不宣稱通過。保留舊合成／gate0全部斷言，只有不可表示分鐘的期待文字改成新的精確錯誤，原零寫入／零事件／零送出斷言不變；新情境要求真結構1／3／3／6、四時段逐欄值與獨立跨年期望、AMPM轉換、日期input不寫、input/change、缺年份零寫入、12次整組填值＋還原事件、所有Confirm／Schedule／Post／calendar click及submit=0。main與extension兩個世界用既有2027假Date，production無時鐘覆寫。仍沿用0網路證據與293589f權限比較。
+
+外部在最新工作樹依次跑npm test → npm run verify → npm run e2e（既有Chrome for Testing／Xvfb／CHROME_PATH）。預期產生`docs/v1.0-quickfix-{real-detected,real-filled,year-missing,rollback}.png`，舊情境另存quickfix前綴，既有gate0與v1.0-quick截圖保留。本輪不同session複審與真頁逐欄驗收仍待做；外部WIP b60b70d後續差異尚需提交，沙箱未commit／push，**未達READY**。總覽留在另一分支，沒有帶入。
+
+## 老闆實測（≤5步）
+
+1. `git pull main`。
+2. 在`chrome://extensions`重新載入probe/，確認0.1.1。
+3. 在x.com發文框自己打開原生排程對話框，再點Dagaz浮層的一個快速時段。
+4. 逐欄核對月／日／年／時／分／上午下午與原生畫面一致，**不要按排程**；若必須送出測試，先手動選2027以後的年份，測完到Scheduled刪掉。
+5. 按「複製頁面結構」和「複製診斷」貼回；若出錯附畫面，真機資料不提交公開repo。
+
+## 已知限制／是否需再貼骨架
+
+需要0.1.1新版骨架及診斷，搭配逐欄實測確認偵測／React接受結果；原骨架已足夠證明結構，但**option真value、label實際詞與React受控行為尚未驗證**。空testid下一次仍為空；若出現非空且屬安全UI詞彙，新出口才可見，其他字串仍遮罩。option仍只輸出長度，不能靠新版骨架確認全部值編碼；若仍失敗，再請回報不含推文或真日期的label詞／下拉編碼類型（例如月份0基或1基、上下午顯示文字），不需帳號或真id。
+
+日曆input未直接同步，原生事件是否更新X內部狀態不能由合成fixture證明；若React重建欄位，原節點可能無法完整還原，錯誤會要求自行檢查。多個設定dialog、重複label id／多重aria-labelledby、未知上下午詞／選項順序、無法安全映射的值一律拒絕。原本X可接受提前量／上限、DST與本地時區、自訂／星期／佔用避讓未做的限制沿用0.1.0。本版仍不開X排程視窗、不確認／排程／發佈、不背景發文。

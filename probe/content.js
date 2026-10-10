@@ -517,7 +517,7 @@ function render(report, items) {
       const button = makeButton(label);
       button.dataset.xschedSlot = id;
       button.disabled = !detected.ready;
-      button.title = detected.ready ? label + ' — ' + labels.ready : labels.missing;
+      button.title = detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
       button.setAttribute('aria-label',button.title);
       if (button.disabled) css(button,{opacity:'.55',cursor:'default'});
       button.addEventListener('click',event => {

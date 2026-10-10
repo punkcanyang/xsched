@@ -18,3 +18,12 @@
 ## 本輪先查／計畫
 
 已確認分支v1.0/quick-fix、HEAD106661e、工作樹乾淨，總覽檔案不在此分支，不帶入。先親讀3134節點骨架及skeleton.js：裸data-testid是空屬性；非空未知值會=x，沒有可用前綴。以內層dialog、label關聯、日期／時間group與選項完整域辨識；保留原合成備援。原生select集中writer批次設值、input/change、讀回失敗整組還原並派送事件；date input不猜測同步，只讀min/max預檢。新fixture／日期／id／文字全部合成2027+。補九語錯誤、select／label testid安全匯出、原送出禁令及新攻擊自測，最後跑unit／verify，Chrome e2e與提交交外部。
+
+## 實作／交接結果
+
+- 結構證據、選擇器依據、空testid意義及5步實測見GATE0「1.0快速時段0.1.1：真骨架」。內層aria-modal dialog與兩group，label關聯＋選項域；保留合成備援，不猜class／真id／前綴。value／React行為仍待真頁確認。
+- 原生writer批次設值／input/change，讀回失敗整組還原＋事件；還原不完整明示。新增九語年份／選項／bounds／讀回／還原錯誤。date input只讀min/max，不直接同步。skeleton僅select／label的安全日曆UI詞彙testid可見，身份／任意詞／option內容仍遮。
+- 假fixture三份（quick-real-dialog、year-missing、rollback），新quick-real unit及content VM；所有新日期2027+，原始骨架未提交。沒有總覽程式／接線；position模組未動，reader只升版。
+- 本輪npm test：11檔退出0；細項169/169、0敗／0跳過。verify OK：30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer；原41／33自測保留。node語法及diff空白檢查過。
+- e2e沙箱listen EPERM退出1，Chrome斷言0、新截圖0；外部跑`npm test`、`npm run verify`、`npm run e2e`（原Chrome for Testing／Xvfb），並提交b60b70d之後的修改。新增截圖quickfix-{real-detected,real-filled,year-missing,rollback}；舊截圖不覆寫。未達READY，還需外部最新e2e、另一session複審及老闆逐欄實測。
+- 請老闆再貼0.1.1設定視窗開著的骨架＋計數診斷。新版不能還原原先空testid，value仍遮罩；若失敗需非個資label／option編碼類型。不要提交真機內容／日期／id。

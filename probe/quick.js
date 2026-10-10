@@ -85,13 +85,13 @@ const PERIOD_WORDS = Object.freeze({
 const normalizeWord = text => String(text || '').trim().toLowerCase().replace(/[.\s]/g,'');
 const MONTH_WORDS = new Map();
 for (const lang of ['zh-Hant','zh-Hans','en','ja','ko','es','fr','de','pt']) {
-  for (const width of ['long','short']) for (let i=0;i<12;i++) {
-    const word = new Intl.DateTimeFormat(lang,{month:width}).format(new Date(2027,i,1));
-    MONTH_WORDS.set(normalizeWord(word),i+1);
+  for (const width of ['long','short']) {
+    const formatter=new Intl.DateTimeFormat(lang,{month:width});
+    for (let i=0;i<12;i++) MONTH_WORDS.set(normalizeWord(formatter.format(new Date(2027,i,1))),i+1);
   }
 }
 function enabledOptions(select) {
-  return [...select.querySelectorAll(QUICK_CONFIG.option)].filter(option=>!option.disabled && !option.hasAttribute('disabled') && !option.parentElement?.hasAttribute('disabled'));
+  return [...select.querySelectorAll(QUICK_CONFIG.option)].filter(option=>!option.disabled && !option.hasAttribute('disabled') && !option.parentElement?.hasAttribute('disabled') && !option.hasAttribute('hidden') && option.getAttribute('aria-hidden')!=='true');
 }
 function numericText(text, field) {
   const raw=String(text || '').trim();
@@ -106,7 +106,8 @@ function periodWord(text) {
 }
 function realOptions(select,field) {
   const options=enabledOptions(select);
-  if (!options.length || options.some(option=>typeof option.value!=='string' || option.value==='')) return null;
+  const all=[...select.querySelectorAll(QUICK_CONFIG.option)];
+  if (!options.length || options.some(option=>typeof option.value!=='string' || option.value==='' || all.filter(other=>other.value===option.value).length!==1)) return null;
   if (field==='period') {
     if (options.length!==2) return null;
     const pairs=options.map((option,index)=>{
