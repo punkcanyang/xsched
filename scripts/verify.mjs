@@ -486,7 +486,13 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   const bodyTimePage = new DOMParser().parseFromString('<html><body><section role="dialog"><div data-testid="cellInnerDiv"><span>未知格式</span><div data-testid="tweetText">將於 2026年11月3日 週二 下午11:19 發送</div></div></section></body></html>', 'text/html');
   const bodyTimeReport = reader.readSnapshot(bodyTimePage, { pathname:'/compose/post/unsent/scheduled' });
   if (bodyTimeReport.items.length || bodyTimeReport.timeOk || bodyTimeReport.fmt || bodyTimeReport.samples.length) throw new Error('self-test: tweet body became schedule metadata');
-  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 5, fragments: maskedCount };
+  const bodyTimeRow = bodyTimePage.querySelector('[data-testid="cellInnerDiv"]');
+  bodyTimeRow.querySelector('span').replaceWith(bodyTimePage.createElement('div'));
+  bodyTimeRow.firstElementChild.textContent = 'Will send on 2027-01-01 23:59 UTC';
+  bodyTimeRow.setAttribute('aria-label', bodyTimeRow.firstElementChild.textContent + ' ' + bodyTimeRow.querySelector('[data-testid="tweetText"]').textContent);
+  const ariaBodyReport = reader.readSnapshot(bodyTimePage, { pathname:'/compose/post/unsent/scheduled' });
+  if (ariaBodyReport.items.length || ariaBodyReport.timeOk || ariaBodyReport.timeFail !== 1 || ariaBodyReport.fmt || ariaBodyReport.samples.length) throw new Error('self-test: accessible label borrowed tweet body date');
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6, fragments: maskedCount };
 }
 
 function selfTest() {

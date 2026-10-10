@@ -154,3 +154,11 @@ npm run e2e
 ```
 
 若仍紅，回傳第一個失敗斷言（DOM前置、isolated snapshot或浮層scope重置）與scan結果；不用真頁資料，不跳過情境或改期待值。全過後外部提交／push，另session再複審；尚未READY／未合main，原補複審待辦保留。
+
+## 收尾完成（2026-10-10 09:25 UTC+8）
+
+- 老闆補的是 Codex 額度（Grok Build 仍 402，未使用、無 grok session）。
+- 寫碼 `01a1212e`（Codex gpt-6.1-sol high）：紅燈分析＝**測試前置寫錯**（外部紅燈跑的是複審第一輪版本，只改 `.when`／本文，按鈕 aria-label 仍含 09:00，reader 依設計採用）；補強 e2e 與回歸，production reader 未改。
+- 複審 `01a12013`（Codex gpt-6.1-sol high）第三輪：紅燈分析成立、新測試未變弱；另修一個高嚴重度讀法漏洞（合併 aria-label「未知時間＋本文」會借本文日期 → 解析前排除相同本文尾段），**VERDICT: APPROVE**。
+- 外部實跑：npm test 120/120、verify OK（39 洩漏自測）、e2e OK 476 斷言。
+- 「10/14 後補 Codex 複審」：本 PR 已由 Codex 複審 APPROVE，此項**已滿足**，不必再補。

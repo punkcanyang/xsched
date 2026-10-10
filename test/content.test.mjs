@@ -126,8 +126,8 @@ test('legacy body dates never rescue rewritten metadata, including virtual accum
     const cell = f.document.querySelector('[data-testid="cellInnerDiv"]');
     const label = cell.querySelector('.when');
     label.textContent = 'Will send on 2027-01-01 23:59 UTC';
-    cell.querySelector('[role="button"]').setAttribute('aria-label', label.textContent);
     cell.querySelector('[data-testid="tweetText"]').textContent = '將於 2026年11月3日 週二 下午11:19 發送 @decoy_handle decoy@example.invalid https://fake.invalid/';
+    cell.querySelector('[role="button"]').setAttribute('aria-label', label.textContent + ' ' + cell.querySelector('[data-testid="tweetText"]').textContent);
     f.mutate([{ type: 'childList', target: label, addedNodes: [...label.childNodes], removedNodes: [] }]);
     assert.equal(f.host().dataset.xschedCount, virtual ? '2' : '1');
     assert.match(f.host().dataset.xschedDiag, /\bl1=1 l2=1\b/);

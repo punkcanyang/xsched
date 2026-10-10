@@ -477,6 +477,15 @@ function scheduleText(el) {
   return parts.join("");
 }
 
+// Legacy accessible labels can concatenate schedule metadata and the post body.
+// Remove the exact known body suffix before parsing, just as scheduleText excludes
+// its subtree. Do not let an unknown metadata prefix borrow a date from that body.
+function scheduleAria(el, value) {
+  const text = normalize(value);
+  const body = normalize(el.querySelector(READ_CONFIG.selectors.tweet)?.textContent);
+  return body && text.endsWith(body) ? normalize(text.slice(0, -body.length)) : text;
+}
+
 function parseElement(el, allowLoose, options = {}) {
   if (el.closest(READ_CONFIG.selectors.tweet)) return null;
   // Boss skeleton L108–124: real HTML button, dedicated date span, separate body.
@@ -492,7 +501,7 @@ function parseElement(el, allowLoose, options = {}) {
   }
   const named = [...el.querySelectorAll(READ_CONFIG.selectors.namedRow)].find(node => !node.closest(READ_CONFIG.selectors.tweet));
   const aria = (el.getAttribute && el.getAttribute("aria-label")) || (named && named.getAttribute("aria-label")) || "";
-  const fromAria = aria ? parseSchedule(aria, { ...options, allowLoose }) : null;
+  const fromAria = aria ? parseSchedule(scheduleAria(el, aria), { ...options, allowLoose }) : null;
   const fromText = parseSchedule(scheduleText(el), { ...options, allowLoose });
   let parsed = fromAria || fromText;
   if (!parsed) return null;
@@ -688,7 +697,7 @@ function readSnapshot(doc, { pathname = "", now = new Date() } = {}) {
   const pool = outermost([...cells, ...listitems, ...links, ...buttons]);
   let timeFail = 0;
   for (const el of pool) {
-    const text = normalize(`${(el.getAttribute && el.getAttribute("aria-label")) || ""} ${scheduleText(el) || ""}`);
+    const text = normalize(`${scheduleAria(el, el.getAttribute("aria-label") || "")} ${scheduleText(el) || ""}`);
     if (!READ_CONFIG.time.year.test(text)) continue;
     if (!parseSchedule(text, { allowLoose: true })) timeFail += 1;
   }

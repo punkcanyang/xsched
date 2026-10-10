@@ -494,7 +494,7 @@ verify 原網路 API／資源 sink／HTML 注入／權限／固定導覽規則�
 
 # 閘 0.3 Codex 複審
 
-2026-10-10，接續同一獨立 Codex 複審 session（與寫碼 session `01a1212e` 不同）。已讀 AGENTS／ROADMAP／開工卡／競品／HANDOFF 與本文件閘0.3節，審查 `git diff fdc8096...65052dd` 全部改動，再核對本次工作樹修正。本節為最新審查狀態，前面的未複審／外部待跑紀錄保留為歷史。
+2026-10-10，接續同一獨立 Codex 複審 session（與寫碼 session `01a1212e` 不同）。已讀 AGENTS／ROADMAP／開工卡／競品／HANDOFF 與本文件閘0.3節，第一輪審查 `git diff fdc8096...65052dd` 全部改動。以下第一輪結果保留為歷史；最新判定與交付以本節末「本輪續審（b6c8a1a＋工作樹修正）」為準。
 
 ## 發現與修正
 
@@ -527,6 +527,29 @@ verify 原網路 API／資源 sink／HTML 注入／權限／固定導覽規則�
 **VERDICT: APPROVE（程式複審；合併前須外部最新三項測試全過）。** 阻擋問題已修且有回歸證據，未發現其他阻擋；不代表閘0真機驗收已完成。繁中格式已確認，0.0.4的逐則時間／布局仍待老闆自己的Chrome實测；簡中只確認對應假資料。
 
 老闆步驟保留 **≤5步**：pull main → reload確認0.0.4 → refresh X確認捲動／縮小／避讓 → Scheduled逐則對照日期＋時分 → 回傳浮層與失敗樣本截图及診斷。真機資料不提交公開repo。剩餘限制為有限幾何取樣、closed shadow／極小視窗、本地時區及無年份順序假設、DOM可見窗口累加與同時間同本文去重，不能把探針數字當即時權威總數。
+
+## 本輪續審（b6c8a1a＋工作樹修正）
+
+接續同一複審 session，已重審 PR #8 的 `git diff fdc8096...b6c8a1a` 全部改動及本輪修正。下方「紅燈分析」是寫碼 session 在 b6c8a1a 前的分析紀錄，其 production 未改／Chrome 待跑敘述保留為當時狀態。
+
+**紅燈分析成立，新增測試比第一輪嚴格。** 已親讀 reader／content／測試，並離線重現：只改 `.when`／tweetText，舊 aria-label 合法提供09:00，單次 snapshot 即有2則、l1=l2=2；因此不能只歸因於累加。兩份 metadata 都未知後，單次掃描僅第二列；virtual 同scope仍保留已見列、換scope清空是既有設計。timeFail來自本次掃描，timeOk／items來自UI累加集合；en時間標籤是div，不是認證span，故timeFail=1但samples=none正確，沒有放寬樣本入口。b6c8a1a 保留本文日期、count=1、fmt／samples空與解碼診斷無本文日期的斷言，另加單次 isolated snapshot與scope重置，沒有接受count=2或跳過情境。
+
+**本輪另發現高嚴重度讀法漏洞並修正**：舊fixture的aria-label本來是「時間＋本文」。若可見時間未知、aria同步變成「未知時間＋同一本文」，reader仍可從aria中的本文借到假日期11/3 23:19；離線重現為2則、l1=l2=2，fmt／samples雖空，但讀法錯誤。這不是上述舊aria保留09:00的紅燈根因。`probe/reader.js` 新增完全比對的本文尾段排除：解析accessible label及計timeFail前移除與tweetText完全相同的尾段，不猜新選擇器、不改日期文法，保留正確外部aria時間與本文preview／去重鍵。
+
+保護證據：`test/calendar.test.mjs` 新增cell／listitem／button role、自身與內層aria的回歸，並驗證正確外部時間仍可讀。既有content mutation回歸與e2e改成保留「未知時間＋本文」的accessible label形狀；isolated snapshot、scope重置、count=1、唯一第二列、fmt／samples空、解碼診斷無本文日期的斷言全保留。verify新增合併aria的攻擊，洩漏自測38→39；用b6c8a1a原reader跑最新攻擊，確實以 `accessible label borrowed tweet body date` 失敗。原API30／icon14／SVG9與所有網路／注入／manifest規則未改。
+
+上一輪其餘核對仍成立：繁簡週／周／星期、12點邊界、24h、跨年及五語回歸全過；panel≤60vh、body內捲／固定操作列、縮小狀態、有限避讓／重掛與mounted檢查不變；UI仍只寫自家shadow／host，固定Scheduled導覽仍限可信使用者點擊。三份real fixture與repo外骨架離線轉換結果逐字相同且隱私掃描通過；格式與假日期來源標示清楚。指定舊身份字串掃描含binary／hidden、排除node_modules／.git歷史，0命中；常見token／私鑰掃描亦0命中。manifest只升版，無新權限／API／網路資源。老闆5步實測含Scheduled逐則對照日期與時分，真機驗收及幾何／累加限制保留。
+
+實跑與交付：
+
+- `npm test`退出0，8檔全過；細項 **120/120、0敗、0跳過**。
+- `npm run verify`退出0：9 probe檔／4 Logo SVG，**30 API／14 icon／9 SVG／39 leak自測**。
+- 60組舊fixture／路徑完整snapshot與b6c8a1a逐字相同；新攻擊拒絕舊reader。`node --check scripts/e2e.mjs`、`git diff --check`通過。
+- **外部回報、非本session實跑**：b6c8a1a的test119／verify38／e2e476通過；這是本輪修正前證據。最新production reader與合併aria情境仍須外部重跑三項，不能沿用476宣稱最新通過。網路證據仍要求0擴充資源／背景請求，只保留既有一次可信使用者點擊的固定Scheduled頂層導覽。
+
+本輪修改6檔：`probe/reader.js`、`test/calendar.test.mjs`、`test/content.test.mjs`、`scripts/e2e.mjs`、`scripts/verify.mjs`、本文件。無commit／push／merge／main修改、未登入X／連真站／花費／生成新截圖。
+
+**VERDICT: APPROVE（本輪阻擋問題已修；合併前外部最新test／verify／e2e須全過）。** 老闆真機逐則時間與布局驗收仍待自己的Chrome實測；虛擬累加不追蹤編輯／刪除身份，不能當即時權威總數。
 
 # 閘 0.3 e2e 紅燈分析
 

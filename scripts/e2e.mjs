@@ -543,12 +543,14 @@ async function main() {
       const cell = replacement.querySelector('[data-testid="cellInnerDiv"]');
       const unknownTime = 'Will send on 2027-01-01 23:59 UTC';
       cell.querySelector('.when').textContent = unknownTime;
-      cell.querySelector('[role="button"]').setAttribute('aria-label', unknownTime);
       cell.querySelector('[data-testid="tweetText"]').textContent = '將於 2026年11月3日 週二 下午11:19 發送';
+      // Preserve the legacy fixture's accessible metadata + body shape, so the
+      // aria parsing path must exclude the appended body date as well.
+      cell.querySelector('[role="button"]').setAttribute('aria-label', unknownTime + ' ' + cell.querySelector('[data-testid="tweetText"]').textContent);
       scope.replaceWith(replacement);
       return {
         freshScope: !scope.isConnected && replacement.isConnected,
-        labelsChanged: cell.querySelector('.when').textContent === unknownTime && cell.querySelector('[role="button"]').getAttribute('aria-label') === unknownTime,
+        labelsChanged: cell.querySelector('.when').textContent === unknownTime && cell.querySelector('[role="button"]').getAttribute('aria-label') === unknownTime + ' ' + cell.querySelector('[data-testid="tweetText"]').textContent,
         bodyPresent: cell.querySelector('[data-testid="tweetText"]').textContent === '將於 2026年11月3日 週二 下午11:19 發送',
       };
     });

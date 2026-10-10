@@ -103,6 +103,25 @@ test('legacy separate time label still reads correctly when the post contains an
     assert.equal(report.timeFail, 0, attr);
   }
 });
+test('legacy accessible labels cannot borrow the appended tweetText date after metadata fails', () => {
+  const body = '將於 2026年11月3日 週二 下午11:19 發送';
+  for (const attr of ['data-testid="cellInnerDiv"', 'role="listitem"', 'role="button"']) {
+    const {document} = parseHTML(`<html><body><section role="dialog"><div ${attr}><div role="button"><div>Will send on 2027-01-01 23:59 UTC</div><div data-testid="tweetText">${body}</div></div></div></section></body></html>`);
+    const row = document.querySelector('[role="dialog"]').firstElementChild;
+    for (const labelOwner of [row, row.firstElementChild]) {
+      labelOwner.setAttribute('aria-label', 'Will send on 2027-01-01 23:59 UTC ' + body);
+      const report = snap(document);
+      assert.equal(report.items.length, 0, attr);
+      assert.equal(report.timeOk, 0, attr);
+      assert.equal(report.timeFail, 1, attr);
+      assert.deepEqual(report.samples, [], attr);
+      assert.equal(report.fmt, '', attr);
+      labelOwner.removeAttribute('aria-label');
+    }
+    row.firstElementChild.setAttribute('aria-label', 'Will send on Nov 9, 2026 at 8:05 PM ' + body);
+    assert.deepEqual(snap(document).items.map(item => R.formatTime(item.at)), ['2026-11-09 20:05 (Mon)'], 'valid external aria time remains readable');
+  }
+});
 const labels = [
   ['en','Jan 1 at 12:05 AM', 0,5], ['en','Jan 1 at 12:05 PM',12,5], ['en','1 Jan at 23:59',23,59],
   ['zh-Hant','1月1日 上午12:05',0,5], ['zh-Hant','1月1日 下午12:05',12,5], ['zh-Hant','1月1日 23:59',23,59],
