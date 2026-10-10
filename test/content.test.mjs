@@ -79,8 +79,12 @@ test('panel author link stays outside scrolling content and is excluded from ske
     assert.equal(link.getAttribute('target'), '_blank');
     assert.ok(link.getAttribute('rel').split(/\s+/).includes('noopener'));
     assert.equal(link.textContent, '@punkcan');
-    assert.equal(link.parentElement.className, 'panel-author');
-    assert.equal(link.parentElement.parentElement.className, 'panel-actions');
+    assert.equal(link.className, 'panel-author');
+    assert.equal(link.parentElement, f.shadow().querySelector('section'));
+    assert.equal(link.style.position, 'absolute', 'author cannot add a flex row to the fixed chrome');
+    const actions = f.shadow().querySelector('.panel-actions');
+    assert.equal(actions.contains(link), false);
+    assert.deepEqual([...actions.children].map(el => el.tagName), ['BUTTON', 'BUTTON', 'BUTTON'], 'original fixed actions keep exactly their three buttons');
     assert.equal(f.shadow().querySelector('.panel-body').contains(link), false);
     for (const output of [f.host().dataset.xschedDiag, globalThis.XSCHED_SKELETON.buildSkeleton(f.document)]) {
       assert.ok(!output.includes('punkcan'));

@@ -6,7 +6,7 @@
 
 - README 授權段落增加作者 `[@punkcan](https://x.com/punkcan)`，這是老闆明確指定可公開的帳號。
 - `probe/ui.js` 增加 `createAuthorLink(doc)`：只用 `createElement('a')`、`setAttribute`、`textContent` 建立普通連結；href 精確為 `https://x.com/punkcan`、target `_blank`、rel `noopener`、文字 `@punkcan`。
-- 浮層實際由 `probe/content.js` 組裝，因此此檔只接入 factory，在既有固定操作區末尾另起一行、小字靠右；連結在捲動內容之外，縮小時不建立。位置、拖動與避讓模型不改。
+- 浮層實際由 `probe/content.js` 組裝，因此此檔只接入 factory，在浮層既有12px底部padding中以10px字／10px行高絕對定位靠右；不加入操作區或header的flex排版，不增加固定區高度；連結在捲動內容之外，縮小時不建立。位置、拖動與避讓模型不改。
 - 單元測試覆蓋 DOM 建立（markup setter／插入方法若被用即失敗）、浮層唯一 anchor／屬性、poll／縮小展開／重掛及骨架／診斷排除。移除整個 host 前後骨架相等，確認排除發生在遮罩前。
 - e2e 加入 Scheduled 展開及 1280×600 內容捲到底後的連結驗證：唯一 anchor、精確 href、target／rel／文字、固定操作區底部、在浮層和視窗矩形內可見、elementFromPoint 命中、不與操作鈕重疊；另驗證診斷及複製骨架不含作者。從不點作者連結，既有0資源／背景請求斷言與網路政策不變。新增截圖路徑 `docs/author-link-scheduled.png`，本 session 未產生或覆寫截圖。
 - AGENTS.md 補作者連結測試說明。
@@ -40,9 +40,21 @@
 
 以main `293589f`為底，AGENTS.md保留完整1.0測試／送出守門段落後追加作者連結說明；ui exports同時保留QUICK_STRINGS／quickStringsFor與createAuthorLink；e2e保留0.1.0版本斷言和全部快速時段情境，追加作者連結檢查；verify同時保留quick來源摘要、全部native writer規則／33項自測及作者factory白名單／22項自測，兩者分別統計。與293589f比對，main功能沒有刪除；非衝突檔的差異僅作者連結新增，版本一致性測試沿用0.1.0。quick.js／position.js和manifest／package／版本常數均未修改。
 
+## 外部e2e紅燈與底部padding修正
+
+外部回報：main 293589f的e2e 622斷言通過；作者連結分支1acda83連續兩跑卡在 `pointer drag moves button to user anchor`。取消拖動的resize後，鈕rect是 `{x:1040,y:540,width:44,height:44}`，浮層是 `{left:740,top:152,right:1084,bottom:584,width:344,height:432}`，鈕rect完整落在面板內；滑鼠down沒有到快捷鈕，原始拖動斷言因此超時。fixture截圖亦顯示兩rect相交。
+
+原碼確認：作者wrapper的 `flex-basis:100%` 強制在 `.panel-actions` 多排一列，影響固定操作區的實測高度及 `positionUI` 的 `minimum = header.height + actions.height + 40 + 32`。面板size仍是固定60vh；不能把432px直接當成其最小高度。這個情境沿用localStorage的panel錨點，resize保留x/y、重新依障礙物縮高再受minimum下限限制，不會重新執行初次空位選擇。fixture方塊top為592，減8px間距是584，恰好吻合回報的面板bottom；錨點仍為740/152，因此浮層縮高後仍覆蓋位於1040/540的鈕。`panelPlacement` 無空位的處理是隱藏面板，原碼沒有「找不到就覆蓋鈕」的回退。新增作者列介入了原固定區排版／resize計算，與main沒有此列的結果不同；實際Chrome幾何修復仍須外部跑驗證。
+
+修正只讓作者link退出排版：直接把anchor放在section內，用 `position:absolute;right:12px;bottom:1px;font:10px/1` 佔用既有12px底部padding。原操作列的孩子、header、面板尺寸與兩錨點演算法全部沿用main；不新增一列、不擠body、不搬鈕。link的10px行高加1px底距在原padding內，與操作鈕分隔。factory沒有改，因此verify精確白名單與全部自測數量不需修改。版本仍0.1.0，quick.js／position.js／manifest不動。
+
+單元測試增加檢查anchor是section直接子節點且絕對定位、排程頁操作區仍只有原三顆button；poll／縮小展開／重掛／診斷與骨架檢查保留。e2e只調整作者連結的所在區檢查為padding／退出flex排版，唯一性／href／target／noopener／文字／可見矩形／命中／不遮操作鈕／隱私要求全保留。任何既有e2e斷言（包含原失敗拖動、capture／cancel、雙rect不變及0資源／背景請求）未修改或刪除。本次修改5檔：probe/content.js、test/content.test.mjs、scripts/e2e.mjs、AGENTS.md及本HANDOFF；既有外部截圖不改動。
+
+本次npm test退出0，10檔全過（測試細項仍159項）；verify退出0，30 API／14 icon／9 SVG／41 leak／21 storage／33 native writer／22 author-link全過。最新修正e2e由外部執行，尚無通過結果。
+
 ## 外部交接與已知限制
 
-作者連結原改動已由外部commit為7527282，本session只解檔案衝突，沒有執行Git寫入指令；未push／開PR，也沒有讀寫另一條開發工作目錄。外部仍需git add及rebase --continue，index的UU狀態須由外部完成。請在本分支最新檔案外部跑三測試，取得 `docs/author-link-scheduled.png` 的fixture截圖及0資源／背景请求證據，再交另一個Codex session複審；通過後由外部commit／push。PR附這份交接及外部結果、複審session資訊。
+作者連結原改動已由外部commit為7527282，本session只解檔案衝突，沒有執行Git寫入指令；未push／開PR，也沒有讀寫另一條開發工作目錄。rebase已由外部完成為1acda83（基於main 293589f）；本次是此commit後的布局修正，Git寫入仍由外部做。請在本分支最新檔案外部跑三測試，取得 `docs/author-link-scheduled.png` 的fixture截圖及0資源／背景请求證據，再交另一個Codex session複審；通過後由外部commit／push。PR附這份交接及外部結果、複審session資訊。
 
 Chrome真實排版、拖動、避讓、固定操作區仍需完整外部e2e確認；單元測試不提供Chrome幾何結果。維持main的0.1.0時，載入修改後仍應重新整理已開啟的X頁，避免舊content script繼續執行。沒有新增作者頁網路白名單，e2e不能點連結。
 

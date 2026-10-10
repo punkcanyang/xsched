@@ -274,7 +274,7 @@ async function main() {
         return {
           count: links.length, href: link.getAttribute('href'), target: link.getAttribute('target'),
           rel: link.getAttribute('rel'), text: link.textContent,
-          footer: link.closest('.panel-author')?.parentElement === shadow.querySelector('.panel-actions') && !shadow.querySelector('.panel-body').contains(link),
+          footer: link.classList.contains('panel-author') && link.parentElement === panel && style.position === 'absolute' && !shadow.querySelector('.panel-body').contains(link) && !shadow.querySelector('.panel-actions').contains(link),
           inside: r.left >= p.left && r.right <= p.right && r.top >= p.top && r.bottom <= p.bottom,
           visible: r.width > 0 && r.height > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && style.display !== 'none' && style.visibility === 'visible' && Number(style.opacity) > 0,
           hit: document.elementFromPoint(x, y) === host && shadow.elementFromPoint(x, y) === link,
@@ -290,7 +290,7 @@ async function main() {
       assert(author.target === '_blank', `${label}: author opens a new tab`);
       assert(author.rel?.split(/\s+/).includes('noopener'), `${label}: author has noopener`);
       assert(author.text === '@punkcan', `${label}: author text`);
-      assert(author.footer && author.inside && author.visible && author.hit && author.clear, `${label}: footer link visible within panel, outside scroll body, hit-testable and clear of action buttons`);
+      assert(author.footer && author.inside && author.visible && author.hit && author.clear, `${label}: footer link visible within panel padding, outside flex/scroll areas, hit-testable and clear of action buttons`);
       assert(author.private, `${label}: author excluded from diagnostic`);
       // Inspect only: never click the author link or authorize its navigation.
     }

@@ -588,10 +588,11 @@ function render(report, items) {
       applyAnchor(true); positionUI();
     });
     controls.append(reset);
-    const author = css(document.createElement('div'), { 'flex-basis':'100%', 'text-align':'right', font:'11px/1.4 ui-sans-serif, system-ui, sans-serif' });
+    // Use the existing 12px bottom padding, outside flex layout. An extra action
+    // row changes the measured minimum and can cover the independent shortcut.
+    const author = css(createAuthorLink(document), { position:'absolute', right:'12px', bottom:'1px', margin:'0', font:'10px/1 ui-sans-serif, system-ui, sans-serif', color:'#8b98a5', 'text-decoration':'underline' });
     author.className = 'panel-author';
-    author.append(css(createAuthorLink(document), { color:'#8b98a5', 'text-decoration':'underline' }));
-    controls.append(author);
+    panel.append(author);
     body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
   }
 
