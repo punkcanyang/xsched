@@ -884,7 +884,7 @@ ready依實際host的diagnostic是否存在判斷。fixture的dialog及子樹由
 
 所有新結構選擇器集中在quick.js的QUICK_CONFIG並附上述行號：真結構分支只接收可見`[role="dialog"][aria-modal="true"]`，日期與時間select必須直接歸屬同一最近group與dialog；aria-labelledby必須唯一指到本group的label，不借背景／別的dialog／重複id。由九語日曆label提示及選項完整域辨識角色；label為中性詞時依域推斷，歧義一律拒絕。日期group另需一個type=date input；時間group支援12h＋兩個上下午選項或完整0–23的24h。原scheduledDateField／scheduledTimeField＋name的合成備援保留，結果不改；不新增class或猜測testid前綴。
 
-數字來源是option value或完整數字／日曆單位／九語月份名稱的option文字，寫回實際option.value而非猜一個後端編碼。數值與文字都可識別但不一致時拒絕；只有**整個0–11域與十二個月份文字都一致差1**才接受零基月份。12h域必須完整1–12，24h必須完整0–23；目標日／分／年不可表示時不半填。AM／PM須有兩個可用且值唯一的選項，第一個文字確認上午、第二個確認下午；若value也可辨認AMPM，必須與文字及順序一致。未知上下午文字／逆序／duplicate value（含disabled同值選項）／hidden目標選項均拒絕。這是保守合约，不宣稱已知真X的value格式。
+數字來源是option value或完整數字／日曆單位／九語月份名稱的option文字，寫回實際option.value而非猜一個後端編碼。數值與文字都可識別但不一致時拒絕；只有**整個0–11域與十二個月份文字都一致差1**才接受零基月份。12h域必須完整1–12，24h必須完整0–23；目標日／分／年不可表示時不半填。AM／PM須有兩個可用且值唯一的選項，第一個文字確認上午、第二個確認下午；若value也可辨認AMPM，必須與文字及順序一致。未知上下午文字／逆序／duplicate value（含disabled同值選項）／hidden目標選項均拒絕。這是保守的判定規則，不宣稱已知真X的value格式。
 
 目標年份不存在時九語明示「目標年份不在 X 的選項中」，其他缺選項／日期越界也有獨立九語錯誤。維持本地Date四個未來時段與至少5分鐘餘量。date input只讀min/max作本地日曆日期預檢，不寫value／min／max、不點日曆鈕：骨架沒有同步鏡像或事件行為證據，不能把它當必填控制項；X自己的React事件可能同步它，還需真頁確認。
 
@@ -894,17 +894,34 @@ ready依實際host的diagnostic是否存在判斷。fixture的dialog及子樹由
 
 新增select／label專用data-testid出口；只保留短ASCII且由固定日曆UI詞彙組成的值（例如合成select-month／month-label），拒絕@／URL／email／UUID／數字ID／未知身份詞。其他元素照舊，未知合法testid也可能遮成x，這是刻意保守。原先空testid新版仍印裸名稱，不能還原不存在的前綴。label文字、id／aria-labelledby、option文字與value仍遮罩，select／option文字只留長度，沒有新增值型診斷；schedDialog／dateCtl／timeCtl／selects仍是純計數。
 
-verify原API／注入／storage／激活與防送出規則全保留；只更新逐行核對的quick.js精確來源摘要，唯一writer（含還原）只能對已預檢select派送input/change。原33 native writer攻擊保留，再加讀回／bounds／上下午檢查被刪、原生setter替換、派送到body及點擊別名攻擊為39；原41洩漏自測保留，加入select／label兩個新出口各7個身份攻擊成55。position.js來源與摘要不動；manifest权限／host／resources／matches與293589f一致，無新增依賴，$0。
+verify原API／注入／storage／激活與防送出規則全保留；只更新逐行核對的quick.js精確來源摘要，唯一writer（含還原）只能對已預檢select派送input/change。原33 native writer攻擊保留，再加讀回／bounds／上下午檢查被刪、原生setter替換、派送到body及點擊別名攻擊為39；原41洩漏自測保留，加入select／label兩個新出口各7個身份攻擊成55。position.js來源與摘要不動；manifest 權限／host／resources／matches與293589f一致，無新增依賴，$0。
 
 三份`fixtures/quick-real-*.html`是精簡結構重建：保留內外dialog／group、label＋aria-labelledby、空testid、select選項數量及date input；所有id、文字、value及日期為新生成假資料，年份2027／2028／2029。Form／送出計數器是測試專用合成結構，不宣稱骨架證明有form。variant year-missing只保留2027；rollback以頁面change handler一次拒絕目標hour，不修改production或extension prototype。用Python掃新fixture：無URL／email／@handle／UUID，日期年份均>=2027，id只允許fake-/fixture-/合成測試按鈕；原骨架只有讀取，未轉存／提交任何真值。
 
 ## 實跑／外部待跑
 
-本輪npm test退出0（11檔），細項`node --test --test-isolation=none test/`：**169過／0敗／0跳過**。verify退出0：11個probe檔／4 SVG，**30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer自測**。包含真結構計數、四時段、上下午文字／位置一致、12 AM／PM邊界、24h／分鐘刻度、零基／opaque option映射、label關聯／歧義、年份缺失與日期bounds零寫入、讀回拒絕整組還原／還原不完整、九語及content VM錯誤保持。reader讀法只升版本。
+0.1.1 的單元測試為 **169 過／0 敗／0 跳過**（11 個測試檔）。verify 通過：11 個 probe 檔、4 個 SVG，**30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer 自測**。涵蓋真骨架結構辨識、四個時段、12 AM／PM、24 小時制、分鐘刻度、選項數字與文字映射、label 關聯、缺年份及日期界線的零寫入、讀回失敗後整組還原，以及九語錯誤提示。reader 的讀法沒有改動，只更新版本。
 
-npm run e2e沙箱仍在fixture HTTPS server `listen EPERM: operation not permitted 127.0.0.1`退出1，**Chrome斷言0、新截圖0**，不宣稱通過。保留舊合成／gate0全部斷言，只有不可表示分鐘的期待文字改成新的精確錯誤，原零寫入／零事件／零送出斷言不變；新情境要求真結構1／3／3／6、四時段逐欄值與獨立跨年期望、AMPM轉換、日期input不寫、input/change、缺年份零寫入、12次整組填值＋還原事件、所有Confirm／Schedule／Post／calendar click及submit=0。main與extension兩個世界用既有2027假Date，production無時鐘覆寫。仍沿用0網路證據與293589f權限比較。
+外部在 `737d242` 實跑 `npm test` 169/169、verify OK；e2e 的原合成快速時段與真骨架重建情境均通過，但**完整 e2e 未通過**：最後的網路守衛抓到 Chrome 為 `input type=date` 自繪日曆指示器時產生的 `data:image/svg+xml` 請求。它是瀏覽器內建圖示，不是擴充發出的請求，也不會連線出去；仍不能因此把這次 e2e 記成通過。
 
-外部在最新工作樹依次跑npm test → npm run verify → npm run e2e（既有Chrome for Testing／Xvfb／CHROME_PATH）。預期產生`docs/v1.0-quickfix-{real-detected,real-filled,year-missing,rollback}.png`，舊情境另存quickfix前綴，既有gate0與v1.0-quick截圖保留。本輪不同session複審與真頁逐欄驗收仍待做；外部WIP b60b70d後續差異尚需提交，沙箱未commit／push，**未達READY**。總覽留在另一分支，沒有帶入。
+### 本次 e2e 修法：只隱藏 fixture 的內建圖示
+
+採第一案，在三份 `quick-real-*` fixture 的樣式加上 `input[type=date]::-webkit-calendar-picker-indicator{display:none}`，並在 e2e 真骨架情境前註明原因。已掃描所有 fixture，只有這三份含日期輸入框。這個樣式只隱藏測試頁的瀏覽器日曆圖示，保留原生 date input、value、min/max 及所有填值／還原斷言；擴充本身的行為不變。
+
+**沒有新增 data: 豁免**：`scripts/network-policy.mjs`、網路守衛及「0 擴充資源請求」斷言均未修改。本輪依交接不在沙箱啟動 e2e server，也不生成截圖；CSS 能否消除該筆請求，交由外部重跑確認。
+
+外部實測（2026-10-10 19:40 UTC+8，含本次 fixture 修正）：`npm test` 169/169、verify OK、`npm run e2e` **OK — 686 斷言**；網路段 78 筆本機 fixture／favicon／頁面導覽、0 擴充資源／背景請求、1 次使用者點擊的前往 Scheduled，日期圖示的 data: 請求已消失。
+
+外部請在最新工作樹跑 `npm test` → `npm run verify` → `npm run e2e`，沿用 Chrome for Testing／Xvfb／`CHROME_PATH`。快速時段情境保留：真結構計數 1／3／3／6、四個時段逐欄比對、12 小時換算、日期 input 不寫入、缺年份零寫入／零事件、讀回失敗後整組還原且 input/change 各 12 次，以及 Confirm／Schedule／Post／calendar click、form submit 全為 0。兩個 JavaScript world 都用 2027 年假時鐘，production 沒有時鐘覆寫；權限仍與 `293589f` 相同。
+
+已核對 e2e 實際輸出路徑：
+
+- `docs/v1.0-quickfix-real-detected.png`
+- `docs/v1.0-quickfix-real-filled.png`
+- `docs/v1.0-quickfix-year-missing.png`
+- `docs/v1.0-quickfix-rollback.png`
+
+截圖由外部產生，全部使用 2027 年以後的假資料。舊情境另存 quickfix 前綴，既有 gate0 與 v1.0-quick 截圖不覆寫。這輪沒有 commit／push；仍待完整 e2e、另一 session 複審及老闆真頁逐欄驗收，**尚未 READY**。總覽沒有帶入此分支。
 
 ## 老闆實測（≤5步）
 

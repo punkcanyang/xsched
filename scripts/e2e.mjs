@@ -1214,6 +1214,9 @@ async function main() {
     console.log('  ✓ quick slots: four local future choices, 2027+ two-world clocks, native changes, zero send/submit, missing/partial/unsupported atomic failure');
 
     // ── 0.1.1: masked picker structure, fake values, 2027+ clocks ──────────────
+    // These fixtures hide the date picker indicator: Chrome otherwise emits a
+    // built-in data:image/svg+xml icon request in CDP. The date input stays intact;
+    // production behavior and the strict zero-extension-request guard are unchanged.
     async function realPickerState() {
       return page.evaluate(()=>({values:Object.fromEntries(['month','day','year','hour','minute','period'].map(key=>[key,document.getElementById('fake-select-'+key).value])),counts:{...window.fixtureSend},date:document.querySelector('input[type=date]').value,status:document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-status').textContent}));
     }

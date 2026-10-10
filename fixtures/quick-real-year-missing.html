@@ -1,4 +1,6 @@
 <!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>Fake skeleton picker</title><style>
+/* Fixture only: suppress Chrome's built-in date icon and its CDP data: SVG request. */
+input[type=date]::-webkit-calendar-picker-indicator{display:none}
 body{background:#0f1419;color:#eee;font:16px system-ui;padding:20px}[role=dialog][aria-modal]{width:540px;border:1px solid #536471;border-radius:16px;padding:16px}select{padding:8px;margin:4px}label{display:block}[role=group]{display:flex;gap:12px;margin:12px 0}button{padding:8px;margin:6px}</style></head><body>
 <p>All labels, dates, IDs and values are synthetic. Structure follows the masked picker skeleton.</p>
 <form id="fixture-composer"><button type="submit" id="post">Post fixture</button></form>
