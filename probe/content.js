@@ -1,5 +1,5 @@
 // xsched quick slots — independent draggable UI, native field fill, local diagnostics.
-// All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
+// All UI stays in shadow DOM. Overview may only scroll to a reader-certified row.
 (() => {
 "use strict";
 if (location.hostname !== "x.com" && location.hostname !== "twitter.com") return;
@@ -9,6 +9,9 @@ const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 const { stringsFor, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition } = globalThis.XSCHED_UI;
 const positionStore = globalThis.XSCHED_POSITION;
 const quick = globalThis.XSCHED_QUICK;
+const overview = globalThis.XSCHED_OVERVIEW;
+const overviewController = overview.createController({window,resolveRow:globalThis.XSCHED_READER.nativeRowFor});
+let overviewOpen = false;
 let quickSignature = "";
 let quickStatus = "";
 
@@ -457,7 +460,7 @@ function render(report, items) {
   }).replace("\n", "\n" + quick.diagnostic(detected.counts) + "\n");
 
   const strings = stringsFor(document.documentElement.lang, navigator.language);
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, quickStatus, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, quickStatus, overviewOpen, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
     positionUI();
@@ -468,6 +471,7 @@ function render(report, items) {
   lastReport = report;
   lastItems = items;
 
+  if (effectiveCollapsed || !report.onScheduled) overviewController.clearHighlight();
   const panel = node.shadowRoot.querySelector("section");
   while (panel.firstChild) panel.removeChild(panel.firstChild);
   css(panel, { display:effectiveCollapsed ? "none" : "flex" });
@@ -505,6 +509,7 @@ function render(report, items) {
   panel.append(header, body, controls);
 
   if (!effectiveCollapsed) {
+    if (!overviewOpen) {
     const labels = globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language);
     const slots = css(document.createElement('div'),{display:'flex',gap:'6px','flex-wrap':'wrap',margin:'0 0 8px'});
     slots.className = 'quick-slots';
@@ -530,7 +535,20 @@ function render(report, items) {
       });
       slots.append(button);
     });
-    if (report.onScheduled) {
+    }
+    const overviewLabels = overview.stringsFor(document.documentElement.lang,navigator.language);
+    const overviewToggle = makeButton(overviewOpen ? overviewLabels.list : overviewLabels.title, 'xschedOverview');
+    overviewToggle.title=overviewToggle.textContent;
+    overviewToggle.setAttribute('aria-label',overviewToggle.textContent);
+    overviewToggle.setAttribute('aria-expanded',String(overviewOpen));
+    overviewToggle.addEventListener('click',event=>{
+      event.preventDefault();event.stopPropagation();
+      if (!event.isTrusted) return;
+      overviewOpen=!overviewOpen; overviewController.clearHighlight(); render(lastReport,lastItems);
+    });
+    body.append(overviewToggle);
+    if (overviewOpen) overviewController.render(body,items,{doclang:document.documentElement.lang,navlang:navigator.language,onScheduled:Boolean(report.onScheduled)});
+    if (report.onScheduled && !overviewOpen) {
       const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" });
       hint.className = "hint";
       body.append(hint);
@@ -551,7 +569,7 @@ function render(report, items) {
         row.append(preview);
         body.append(row);
       }
-    } else {
+    } else if (!report.onScheduled) {
       const go = makeButton(strings.goto, "xschedGoto");
       go.title = strings.goto;
       go.setAttribute("aria-label", strings.goto);
@@ -695,6 +713,7 @@ function start() {
 }
 
 function stop() {
+  overviewController.clearHighlight();
   if (drag) { cancelDrag(); applyAnchor(false); }
   if (panelDrag) { cancelPanelDrag(); positionUI(); }
   observer?.disconnect();

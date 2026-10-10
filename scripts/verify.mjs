@@ -21,6 +21,8 @@ const PROBE = join(ROOT, "probe");
 const DOCS = join(ROOT, "docs");
 // Fail closed: only this exact audited numeric-only position module may persist.
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
+// Only the exact reviewed overview may invoke its sole native scroll function.
+const OVERVIEW_SOURCE_SHA256 = "f8c906467fc244a9bb6611f6d4a345b2b0469398b8f563a43eb5c505dba29884";
 const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d699da92e15bee335";
 
 // Exact-source exception only for the sole native select input/change writer.
@@ -210,7 +212,8 @@ const BANNED = [
   { name: "history patch/navigation", re: /\b(?:pushState|replaceState)\b/ },
   { name: "persistent storage", re: /\b(?:localStorage|sessionStorage|indexedDB)\b|\bchrome\s*\.\s*storage\b/ },
   { name: "storage accessor/alias", re: /\b(?:getItem|setItem|removeItem)\b/ },
-  { name: "programmatic click/scroll", re: /\.\s*(?:click|scroll|scrollBy|scrollTo|scrollIntoView)\s*\(|\.\s*(?:scrollTop|scrollLeft)\s*=/ },
+  { name: "programmatic click/scroll", re: /\.\s*(?:click|scroll|scrollBy|scrollTo)\s*\(|\.\s*(?:scrollTop|scrollLeft)\s*=/ },
+  { name: "native scroll outside audited overview", re: /\bscrollIntoView\b/ },
   { name: "resource URL/sink", re: /\b(?:src|href|srcset)\s*=|\burl\s*\(/i },
   { name: "resource attribute", re: /\.\s*setAttribute\s*\(\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
   { name: "CSS import", re: /@import\b/i },
@@ -257,14 +260,17 @@ function listFiles(dir, base = dir) {
   return out;
 }
 
-export function scanSource(text, label, { positionModule = false, quickModule = false } = {}) {
+export function scanSource(text, label, { positionModule = false, quickModule = false, overviewModule = false } = {}) {
   const errors = [];
   const canonical = canonicalSource(text);
   const auditedPosition = positionModule && createHash('sha256').update(text).digest('hex') === POSITION_SOURCE_SHA256;
   const auditedQuick = quickModule && createHash('sha256').update(text).digest('hex') === QUICK_SOURCE_SHA256;
+  const auditedOverview = overviewModule && createHash('sha256').update(text).digest('hex') === OVERVIEW_SOURCE_SHA256;
+  if (overviewModule && !auditedOverview) errors.push(`${label}: overview differs from audited read-only scroll boundary`);
   if (quickModule && !auditedQuick) errors.push(`${label}: native writer differs from audited input/change-only boundary`);
   if (positionModule && !auditedPosition) errors.push(`${label}: position module differs from audited numeric-only storage boundary`);
   for (const rule of BANNED) {
+    if (auditedOverview && rule.name === "native scroll outside audited overview") continue;
     if (auditedQuick && rule.name === "native event dispatch outside audited writer") continue;
     if (auditedPosition && ['persistent storage','storage accessor/alias'].includes(rule.name)) continue;
     if (rule.re.test(text) || rule.re.test(canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
@@ -342,7 +348,7 @@ export function checkProbeDir(dir) {
     const rel = relative(ROOT, file);
     const text = readFileSync(file, "utf8");
     scanned += 1;
-    errors.push(...scanSource(text, rel, { positionModule: relative(dir,file) === 'position.js', quickModule:relative(dir,file) === 'quick.js' }));
+    errors.push(...scanSource(text, rel, { positionModule: relative(dir,file) === 'position.js', quickModule:relative(dir,file) === 'quick.js', overviewModule:relative(dir,file) === 'overview.js' }));
     if (file.endsWith("manifest.json") || /[\\/]manifest\.json$/.test(file)) {
       let manifest;
       try {
@@ -583,6 +589,30 @@ export function nativeWriterSelfTest() {
   return attacks.length+edits.length+1;
 }
 
+export function overviewSelfTest() {
+  const source=readFileSync(join(PROBE,'overview.js'),'utf8');
+  if (scanSource(source,'probe/overview.js',{overviewModule:true}).length) throw new Error('overview self-test: reviewed source rejected');
+  const attacks=[
+    'row.scrollIntoView()', 'const jump=row.scrollIntoView; jump.call(row)',
+    'row["scroll"+"IntoView"]()', 'const {scrollIntoView:jump}=row',
+    'Reflect.get(row,"scrollIntoView")(row)',
+    'row.remove()', 'row.removeChild(row.firstChild)', 'row.replaceWith(other)',
+    'row.setAttribute("style","color:red")', 'row.textContent="changed"',
+    'row.style.color="red"', 'row.append(document.createElement("div"))',
+    'row.click()', 'form.submit()', 'row.dispatchEvent(new MouseEvent("click"))',
+  ];
+  for (const attack of attacks) {
+    // New native writes, even without banned keywords, invalidate the digest.
+    if (!scanSource(source+'\n'+attack,'probe/overview.js',{overviewModule:true}).length) throw new Error('overview self-test: edited module accepted');
+  }
+  for (const attack of attacks.slice(0,5)) {
+    if (!scanSource(attack,'other.js').length) throw new Error('overview self-test: external scroll accepted');
+  }
+  if (!scanSource(source,'nested/overview.js').length) throw new Error('overview self-test: renamed module accepted');
+  if (!scanSource(source.replace("behavior:'instant'","behavior:'smooth'"),'probe/overview.js',{overviewModule:true}).length) throw new Error('overview self-test: altered scroll accepted');
+  return attacks.length+5+2;
+}
+
 function selfTest() {
   const violations = [
     'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
@@ -605,6 +635,7 @@ function selfTest() {
   }
   const storageCases = positionStorageSelfTest();
   const nativeCases = nativeWriterSelfTest();
+  const overviewCases = overviewSelfTest();
   // Prove the scanner fails closed: a synthetic probe with a network call AND a bad
   // manifest must produce errors, while a clean synthetic probe must not.
   const dir = mkdtempSync(join(tmpdir(), "xsched-verify-selftest-"));
@@ -667,7 +698,7 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, overview:overviewCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -695,7 +726,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.overview} read-only overview self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call

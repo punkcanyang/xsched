@@ -8,6 +8,7 @@ await import('../probe/reader.js');
 await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 await import('../probe/quick.js');
+await import('../probe/overview.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
 const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
 function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com', startReady = true) {
@@ -16,7 +17,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.1.0';
+  let manifest = '0.2.0';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -40,7 +41,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   document.createElement = (...args) => { const el = create(...args); el.getBoundingClientRect = rect; return el; };
   const context = vm.createContext({
     XSCHED_READER: clock ? { ...reader, readSnapshot(doc, options) { return reader.readSnapshot(doc, { ...options, now: clock() }); } } : reader,
-    XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: ui, XSCHED_QUICK:clock ? {...globalThis.XSCHED_QUICK,fillSlot(doc,id){return globalThis.XSCHED_QUICK.fillSlot(doc,id,clock());}} : globalThis.XSCHED_QUICK,
+    XSCHED_OVERVIEW: globalThis.XSCHED_OVERVIEW, XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: ui, XSCHED_QUICK:clock ? {...globalThis.XSCHED_QUICK,fillSlot(doc,id){return globalThis.XSCHED_QUICK.fillSlot(doc,id,clock());}} : globalThis.XSCHED_QUICK,
     document, window, navigator: { language: 'en-US' }, location, innerWidth: 1100, innerHeight: 820,
     chrome: { runtime: { id: 'local-test', getManifest() { if (invalidated) throw new Error('private exception'); return { version: manifest }; } } },
     getComputedStyle() { return { position: 'static' }; },
@@ -293,10 +294,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.0 (manifest 0.1.0)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.2.0 (manifest 0.2.0)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.0 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.2.0 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -305,7 +306,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.0/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.2\.0/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -495,7 +496,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.0/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.2\.0/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -505,4 +506,21 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true');
   assert.equal(f.shadow().querySelector('section').style.display,'flex');
   assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,4);
+});
+
+test('overview wiring preserves accumulated count, independent anchors, switching and non-Scheduled hint',()=>{
+  const f=fixture(undefined,'en','../fixtures/overview.html');
+  assert.equal(f.host().dataset.xschedCount,'7');assert.equal(f.shadow().querySelectorAll('.time').length,7);
+  const anchor=f.host().style.cssText;
+  f.click('[data-xsched-overview]');
+  assert.equal(f.shadow().querySelectorAll('.overview-day').length,6);
+  assert.equal(f.shadow().querySelectorAll('.overview-empty').length,2);
+  assert.equal(f.shadow().querySelectorAll('.overview-item').length,7);
+  assert.equal(f.shadow().querySelector('.quick-slots'),null,'overview uses existing scroll space');
+  assert.equal(f.host().style.cssText,anchor,'view switch does not move button');
+  f.click('[data-xsched-overview]');assert.equal(f.shadow().querySelectorAll('.time').length,7);
+  f.click('[data-xsched-overview]');f.click('.shortcut');f.click('.shortcut');assert.equal(f.shadow().querySelectorAll('.overview-day').length,6);
+  f.location.pathname='/home';f.poll();assert.equal(f.shadow().querySelectorAll('.overview-day').length,0);
+  assert.match(f.shadow().querySelector('.overview-hint').textContent,/Go to Scheduled/);
+  assert.ok(f.shadow().querySelector('[data-xsched-goto]'));
 });

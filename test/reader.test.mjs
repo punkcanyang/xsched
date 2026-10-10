@@ -216,7 +216,7 @@ test("mergeItems accumulates across a virtualized window swap and dedups", () =>
 test("buildDiagnostic has counters and calendar-only fmt, no tweet body/account/url", () => {
   const report = snap(fixture("en.html"));
   const diag = R.buildDiagnostic({ ...report, scrolled: 1 });
-  assert.match(diag, /^xsched probe v0\.1\.0 \(manifest unknown\)\n/);
+  assert.match(diag, /^xsched probe v0\.2\.0 \(manifest unknown\)\n/);
   assert.match(diag, /onScheduled=1 /);
   assert.match(diag, /layer=1 /);
 

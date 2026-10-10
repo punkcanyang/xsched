@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Fake overview fixture</title>
+<style>body{margin:0;padding:24px;background:#000;color:#eee;font:16px system-ui} [role=dialog]{width:600px;max-width:70vw} [data-testid=cellInnerDiv]{padding:16px;border:1px solid #536471;margin:12px 0;min-height:160px}.when{color:#8b98a5}.tail{height:900px}button{padding:8px}</style></head><body>
+<p>All dates, posts and identifiers are synthetic fixture data.</p>
+<div role="dialog"><div role="tablist"><div role="tab" aria-selected="false">Drafts</div><div role="tab" aria-selected="true">Scheduled</div></div>
+<!-- translateY marks this synthetic list as virtualized for the recycled-row test. -->
+<div id="sched-list" style="transform:translateY(0px)">
+<div data-testid="cellInnerDiv" id="fake-row-0"><div role="button"><div class="when">Will send on Sun, Feb 28, 2027 at 8:00 AM</div><div data-testid="tweetText">Synthetic overview post 1 for testing only</div><button type="button">Edit fixture</button><button type="button">Delete fixture</button></div></div>
+<div data-testid="cellInnerDiv" id="fake-row-1"><div role="button"><div class="when">Will send on Mon, Mar 1, 2027 at 9:00 AM</div><div data-testid="tweetText">Synthetic overview post 2 for testing only</div><button type="button">Edit fixture</button><button type="button">Delete fixture</button></div></div>
+<div data-testid="cellInnerDiv" id="fake-row-2"><div role="button"><div class="when">Will send on Mon, Mar 1, 2027 at 8:00 PM</div><div data-testid="tweetText">Synthetic overview post 3 for testing only</div><button type="button">Edit fixture</button><button type="button">Delete fixture</button></div></div>
+<div data-testid="cellInnerDiv" id="fake-row-3"><div role="button"><div class="when">Will send on Wed, Mar 3, 2027 at 12:30 PM</div><div data-testid="tweetText">Synthetic overview post 4 for testing only</div><button type="button">Edit fixture</button><button type="button">Delete fixture</button></div></div>
+<div data-testid="cellInnerDiv" id="fake-row-4"><div role="button"><div class="when">Will send on Fri, Mar 5, 2027 at 8:00 AM</div><div data-testid="tweetText">Synthetic overview post 5 for testing only</div><button type="button">Edit fixture</button><button type="button">Delete fixture</button></div></div>
+<div data-testid="cellInnerDiv" id="fake-row-5"><div role="button"><div class="when">Will send on Fri, Mar 5, 2027 at 12:30 PM</div><div data-testid="tweetText">Synthetic overview post 6 for testing only</div><button type="button">Edit fixture</button><button type="button">Delete fixture</button></div></div>
+<div data-testid="cellInnerDiv" id="fake-row-6"><div role="button"><div class="when">Will send on Fri, Mar 5, 2027 at 8:00 PM</div><div data-testid="tweetText">Synthetic overview post 7 for testing only</div><button type="button">Edit fixture</button><button type="button">Delete fixture</button></div></div>
+</div><form id="native-form"><button type="submit">Schedule fixture</button></form><div class="tail"></div></div>
+<button type="button" id="native-post">Post fixture</button>
+<script>
+window.overviewFixture={clicks:0,submit:0,mutations:0};
+document.addEventListener('click',event=>{if(event.target.closest('button,[role=button]'))window.overviewFixture.clicks++;});
+document.getElementById('native-form').addEventListener('submit',event=>{event.preventDefault();window.overviewFixture.submit++;});
+window.overviewObserver=new MutationObserver(records=>{window.overviewFixture.mutations+=records.length;});
+window.overviewObserver.observe(document.getElementById('sched-list'),{subtree:true,childList:true,attributes:true,characterData:true});
+</script></body></html>

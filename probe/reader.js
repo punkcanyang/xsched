@@ -23,7 +23,7 @@
 (() => {
 "use strict";
 
-const PROBE_VERSION = "0.1.0";
+const PROBE_VERSION = "0.2.0";
 
 // Tab labels that mean "Scheduled". en / ja are from public sources; zh-Hant, zh-Hans
 // and ko are *guesses* (no public source found) and are marked as such in GATE0.md.
@@ -412,6 +412,23 @@ function parseSchedule(raw, { allowLoose = true, now = new Date(), reference = n
   return parseTimeLabel(text, { now, reference, lang });
 }
 
+// Out-of-band references only: item fields, JSON, diagnostics and read results are
+// unchanged. WeakRefs do not keep virtualized, detached X subtrees alive.
+const nativeRows = new WeakMap();
+function rememberRow(item, row, scope) {
+  if (item) nativeRows.set(item, { row: new WeakRef(row), scope: new WeakRef(scope),
+    text: row.textContent, aria: row.getAttribute("aria-label") });
+  return item;
+}
+function nativeRowFor(item) {
+  const record = nativeRows.get(item);
+  const row = record?.row.deref(), scope = record?.scope.deref();
+  if (!row?.isConnected || !scope?.isConnected || !scope.contains(row)
+      || row.textContent !== record.text || row.getAttribute("aria-label") !== record.aria
+      || !readable(row, scope)) return null;
+  return row;
+}
+
 function toItem(parsed) {
   const preview = previewText(parsed.body);
   return {
@@ -528,12 +545,13 @@ function textFallback(scope) {
   for (const el of leaves) {
     let hit = parseSchedule(scheduleText(el), { allowLoose: true });
     const parent = el.parentElement;
+    let row = el;
     if (hit && !hit.body && parent && scope.contains(parent) && parent !== scope && readable(parent, scope) && !parent.querySelector(COMPOSER)) {
       const parentHit = parseSchedule(scheduleText(parent), { allowLoose: true });
       const body = normalize(parent.querySelector(READ_CONFIG.selectors.tweet)?.textContent);
-      if (parentHit && (body || parentHit.body)) hit = { ...parentHit, body: body || parentHit.body };
+      if (parentHit && (body || parentHit.body)) { hit = { ...parentHit, body: body || parentHit.body }; row = parent; }
     }
-    if (hit && hit.body) items.push(toItem(hit));
+    if (hit && hit.body) items.push(rememberRow(toItem(hit), row, scope));
   }
   return dedup(items);
 }
@@ -674,7 +692,7 @@ function readSnapshot(doc, { pathname = "", now = new Date() } = {}) {
     return rows.map(el => {
       const item = parseElement(el, true, { now, reference, lang: doc.documentElement?.lang || "" });
       if (item?.at) reference = item.at;
-      return item;
+      return rememberRow(item, el, scope);
     }).filter(Boolean);
   };
   const fromCells = dedup(parseRows(cells));
@@ -754,6 +772,10 @@ function readSnapshot(doc, { pathname = "", now = new Date() } = {}) {
 // `replace` is used on non-virtual pages where one snapshot already holds the whole list.
 function mergeItems(previous, next, { replace = false } = {}) {
   if (replace) return dedup(next);
+  // Refresh the reference for the same accumulated key without changing which
+  // item object/value wins deduplication (including the existing time semantics).
+  const latest = new Map((next || []).map(item => [item.key, nativeRows.get(item)]));
+  for (const item of previous || []) if (latest.get(item.key)) nativeRows.set(item, latest.get(item.key));
   return dedup([...(previous || []), ...(next || [])]);
 }
 
@@ -823,6 +845,7 @@ globalThis.XSCHED_READER = {
   findScheduledTab,
   readSnapshot,
   mergeItems,
+  nativeRowFor,
   buildDiagnostic,
   maskSample,
   sanitizeLang,
