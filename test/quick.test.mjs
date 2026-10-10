@@ -99,13 +99,13 @@ test('hidden, disabled, ambiguous and non-x.com pickers fail closed',()=>{
   ];
   for(const edit of edits){const f=fixture();edit(f.document);const before=f.values();assert.equal(Q.fillSlot(f.document,'morning',now),false);assert.deepEqual(f.values(),before);assert.equal(f.sends.change,0);}
 });
-test('setter failure rolls back silently; no native setter means no write',()=>{
+test('setter failure restores all values and emits restoration events; missing native setter never writes',()=>{
   const f=fixture();const before=f.values();
   Object.defineProperty(prototype,'value',{...Object.getOwnPropertyDescriptor(prototype,'value'),set:undefined});
   assert.equal(Q.fillSlot(f.document,'lunch',now),false);assert.deepEqual(f.values(),before);assert.equal(f.sends.change,0);
   // Restore the test-only browser model for the remaining cases.
   Object.defineProperty(prototype,'value',{configurable:true,get(){return original.get.call(this) ?? this.querySelector('option')?.getAttribute('value');},set(value){if(this.name==='year'&&value==='2028')throw Error('refuse');for(const o of this.querySelectorAll('option'))o.removeAttribute('selected');for(const o of this.querySelectorAll('option'))if(o.getAttribute('value')===value)o.setAttribute('selected','');}});
-  assert.equal(Q.fillSlot(f.document,'lunch',now),false);assert.deepEqual(f.values(),before);assert.equal(f.sends.input,0);
+  assert.equal(Q.fillSlot(f.document,'lunch',now),false);assert.deepEqual(f.values(),before);assert.equal(f.sends.input,6);assert.equal(f.sends.change,6);assert.equal(f.sends.click+f.sends.submit,0);
 });
 test('nine localized slot/status labels, aria/title sources and language fallback',()=>{
   const U=globalThis.XSCHED_UI;assert.deepEqual(Object.keys(U.QUICK_STRINGS).sort(),Object.keys(U.STRINGS).sort());
@@ -120,7 +120,7 @@ test('skeleton visits native dialog; option labels/values never become calendar 
   assert.ok(!result.includes('calendar='));
 });
 test('native event writer guard accepts only exact audited file and catches activation attacks',()=>{
-  assert.equal(nativeWriterSelfTest(),33);
+  assert.equal(nativeWriterSelfTest(),39);
   const source=readFileSync(new URL('../probe/quick.js',import.meta.url),'utf8');
   assert.deepEqual(scanSource(source,'probe/quick.js',{quickModule:true}),[]);
   assert.ok(scanSource(source,'probe/other.js').length);

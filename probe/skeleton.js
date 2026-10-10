@@ -13,7 +13,7 @@
 (() => {
 "use strict";
 
-const SKELETON_VERSION = "0.1.0";
+const SKELETON_VERSION = "0.1.1";
 const MAX_NODES = 6000;
 const MAX_DEPTH = 60;
 
@@ -91,6 +91,16 @@ function classValue(raw) {
   return `[${tokens.map(classToken).join(",")}]`;
 }
 
+// New picker-only export boundary. No arbitrary identifier is considered safe:
+// calendar UI vocabulary only, no identities/URLs/numeric IDs or opaque hashes.
+function pickerTestid(value) {
+  const text=String(value || '');
+  if (!text || text.length>48 || !/^[A-Za-z_-]+$/.test(text) || looksLikeUuid(text)) return 'x';
+  const vocabulary=new Set('select label schedule scheduled date time month day year hour minute period am pm ampm field dropdown option picker'.split(' '));
+  const tokens=text.replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase().split(/[-_\s]+/).filter(Boolean);
+  return tokens.length && tokens.every(token=>vocabulary.has(token)) ? text : 'x';
+}
+
 function attrToken(el, name) {
   if (name === "class") {
     const rendered = classValue(el.getAttribute("class"));
@@ -98,6 +108,7 @@ function attrToken(el, name) {
   }
   const raw = el.getAttribute(name);
   if (raw === null || raw === "") return name;
+  if (name==='data-testid' && ['select','label'].includes(tagOf(el))) return `${name}=${pickerTestid(raw)}`;
   if (!VALUE_KEEP.has(name)) return `${name}=x`;
   return `${name}=${enumValue(raw, name)}`;
 }
