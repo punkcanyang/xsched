@@ -15,7 +15,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.0.5';
+  let manifest = '0.0.6';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -60,9 +60,9 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
     emit(type) { for (const fn of listeners.get(type) || []) fn({}); flush(); },
     resize(width,height) { context.innerWidth=width; context.innerHeight=height; for (const fn of listeners.get('resize') || []) fn(); flush(); },
     pointer(type,x,y,extras={}) {
-      const event = new document.defaultView.Event(type, {cancelable:true});
+      const event = new document.defaultView.Event(type, {cancelable:true,bubbles:true});
       Object.assign(event,{clientX:x,clientY:y,pointerId:1,button:0,isPrimary:true,...extras});
-      shadow().querySelector('.shortcut').dispatchEvent(event);
+      shadow().querySelector(extras.selector || '.shortcut').dispatchEvent(event);
     },
     mutate(records) { mutationCallback(records); flush(); },
     setManifest(value) { manifest = value; }, invalidate() { invalidated = true; } };
@@ -196,17 +196,18 @@ test('pointer drag persists numeric position, reload/restored viewport preserves
 test('pointer threshold, cancellation and secondary pointers never persist accidental moves',()=>{
   const f=fixture();const point=()=>[f.host().style.left,f.host().style.top];const start=point();
   f.pointer('pointerdown',100,100);f.pointer('pointermove',102,102);f.pointer('pointerup',102,102);
-  assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+  assert.deepEqual(point(),start);assert.equal(f.stored.has('xsched.probe.pos'),false);
   f.click('.shortcut');assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   f.pointer('pointerdown',100,100);f.pointer('pointermove',200,200,{pointerId:2});assert.deepEqual(point(),start);
-  f.pointer('pointermove',200,200);f.pointer('pointercancel',200,200);assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+  f.pointer('pointermove',200,200);f.pointer('pointercancel',200,200);assert.deepEqual(point(),start);assert.equal(f.stored.has('xsched.probe.pos'),false);
   f.pointer('pointerdown',100,100,{button:2});f.pointer('pointermove',300,300);f.pointer('pointerup',300,300);
-  assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+  assert.deepEqual(point(),start);assert.equal(f.stored.has('xsched.probe.pos'),false);
 });
 test('interrupted drags immediately release capture without persisting or allowing stale movement', () => {
   for (const reason of ['resize', 'reset', 'pagehide', 'dispose', 'pointercancel', 'lostpointercapture']) {
     const f = fixture();
     const shortcut = f.shadow().querySelector('.shortcut');
+    const originalPanel=f.stored.get('xsched.probe.panelPos');
     const captures = new Set();
     shortcut.setPointerCapture = id => captures.add(id);
     shortcut.releasePointerCapture = id => {
@@ -223,12 +224,13 @@ test('interrupted drags immediately release capture without persisting or allowi
     else if (reason === 'dispose') f.context.XSCHED_PROBE_SESSION.dispose();
     else f.pointer(reason, 160, 160);
     assert.equal(captures.size, 0, reason);
-    assert.equal(f.stored.size, 0, reason);
+    assert.equal(f.stored.has('xsched.probe.pos'), false, reason);
+    assert.equal(f.stored.get('xsched.probe.panelPos'),reason==='reset'?undefined:originalPanel,reason);
     if (f.host()) {
       const point = [f.host().style.left, f.host().style.top];
       f.pointer('pointermove', 300, 300); f.pointer('pointerup', 300, 300);
       assert.deepEqual([f.host().style.left, f.host().style.top], point, reason);
-      assert.equal(f.stored.size, 0, reason);
+      assert.equal(f.stored.has('xsched.probe.pos'), false, reason);
     }
   }
 });
@@ -248,7 +250,7 @@ test('another primary pointer cannot replace an active drag or take its capture'
   assert.notDeepEqual([f.host().style.left, f.host().style.top], initial);
   f.pointer('pointercancel', 80, 80);
   assert.deepEqual([f.host().style.left, f.host().style.top], initial);
-  assert.equal(captures.size, 0); assert.equal(f.stored.size, 0);
+  assert.equal(captures.size, 0); assert.equal(f.stored.has('xsched.probe.pos'), false);
 });
 test('twitter.com retains its matching probe UI without accessing position storage', () => {
   const stored = new Map([['xsched.probe.pos', JSON.stringify({ x: 200, y: 100 })]]);
@@ -289,10 +291,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.0.5 (manifest 0.0.5)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.0.6 (manifest 0.0.6)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.0.5 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.0.6 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -301,7 +303,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.0\.5/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.0\.6/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -362,4 +364,78 @@ test('unparsed UI sample uses only authenticated calendar mask, never body or ra
   label.textContent='https://fake.invalid/2026年11月3日週二下午11:19';
   f.location.search='?identity';f.poll();
   assert.match(f.shadow().querySelector('.sample').textContent,/無可安全匯出的樣本/);
+});
+
+
+function coordinates(f, selector) {
+  const el=selector?f.shadow().querySelector(selector):f.host();
+  return {x:parseFloat(el.style.left),y:parseFloat(el.style.top),height:el.style.height};
+}
+test('button and panel drags, toggles, polls, modal mutations and remount keep independent anchors',()=>{
+  const f=fixture();const originalPanel=coordinates(f,'section');
+  const storedPanel=f.stored.get('xsched.probe.panelPos');
+  const button=coordinates(f);
+  f.pointer('pointerdown',button.x+22,button.y+22);
+  f.pointer('pointermove',222,122);f.pointer('pointerup',222,122);f.click('.shortcut');
+  assert.deepEqual(coordinates(f,'section'),originalPanel);
+  assert.equal(f.stored.get('xsched.probe.panelPos'),storedPanel);
+  const movedButton=coordinates(f);
+  f.pointer('pointerdown',originalPanel.x+20,originalPanel.y+20,{selector:'.panel-header'});
+  f.pointer('pointermove',120,100,{selector:'section'});f.pointer('pointerup',120,100,{selector:'section'});
+  assert.deepEqual(coordinates(f),movedButton);
+  assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.panelPos')),{x:100,y:80});
+  const movedPanel=coordinates(f,'section');
+  // The synthetic browser compatibility click is suppressed before buttons see it.
+  f.click('.panel-header');
+  for(let n=0;n<3;n++) {f.click('.shortcut');f.click('.shortcut');f.poll();assert.deepEqual(coordinates(f),movedButton);assert.deepEqual(coordinates(f,'section'),movedPanel);}
+  const modal=f.document.createElement('div');modal.setAttribute('role','dialog');f.document.body.append(modal);
+  f.mutate([{type:'childList',target:f.document.body,addedNodes:[modal],removedNodes:[]}]);
+  assert.deepEqual(coordinates(f,'section'),movedPanel);
+  f.host().remove();f.poll();assert.deepEqual(coordinates(f,'section'),movedPanel);assert.deepEqual(coordinates(f),movedButton);
+  const reload=fixture(undefined,undefined,undefined,null,undefined,undefined,f.stored);
+  assert.deepEqual(coordinates(reload),movedButton);assert.deepEqual(coordinates(reload,'section'),movedPanel);
+  reload.click('[data-xsched-reset-position]');assert.equal(f.stored.has('xsched.probe.pos'),false);assert.equal(f.stored.has('xsched.probe.panelPos'),false);
+  assert.deepEqual(coordinates(reload),button);assert.deepEqual(coordinates(reload,'section'),originalPanel);
+  reload.poll();assert.equal(f.stored.size,0,'reset preview cannot repopulate keys on poll');
+  reload.click('.shortcut');reload.click('.shortcut');assert.ok(f.stored.has('xsched.probe.panelPos'),'next explicit open commits the default panel only');
+});
+test('panel handle excludes buttons, threshold and stale pointers; capture survives rerender and cleans every interruption',()=>{
+  for(const reason of ['resize','reset','pagehide','dispose','pointercancel','lostpointercapture','remount']) {
+    const f=fixture();const panel=f.shadow().querySelector('section');const origin=coordinates(f,'section');
+    const stored=f.stored.get('xsched.probe.panelPos');const captures=new Set();
+    panel.setPointerCapture=id=>captures.add(id);
+    panel.releasePointerCapture=id=>{captures.delete(id);f.pointer('lostpointercapture',0,0,{selector:'section',pointerId:id});};
+    f.pointer('pointerdown',50,50,{selector:'[data-xsched-minimize]'});
+    f.pointer('pointermove',100,100,{selector:'section'});f.pointer('pointerup',100,100,{selector:'section'});
+    assert.equal(captures.size,0);assert.deepEqual(coordinates(f,'section'),origin);
+    f.pointer('pointerdown',50,50,{selector:'.panel-header'});f.pointer('pointermove',52,52,{selector:'section'});
+    assert.deepEqual(coordinates(f,'section'),origin);f.pointer('pointerup',52,52,{selector:'section'});assert.equal(captures.size,0);
+    f.pointer('pointerdown',50,50,{selector:'.panel-header'});
+    f.pointer('pointerdown',80,80,{selector:'.panel-header',pointerId:2});assert.deepEqual([...captures],[1]);
+    f.pointer('pointermove',300,300,{selector:'section',pointerId:2});assert.deepEqual(coordinates(f,'section'),origin);
+    f.pointer('pointermove',20,20,{selector:'section'});assert.notDeepEqual(coordinates(f,'section'),origin);
+    f.setManifest('0.0.2');f.poll();assert.equal(f.shadow().querySelector('section'),panel);assert.ok(captures.has(1),'render replaces header, not captured section');
+    if(reason==='resize')f.resize(1100,820);
+    else if(reason==='reset')f.click('[data-xsched-reset-position]');
+    else if(reason==='pagehide')f.emit('pagehide');
+    else if(reason==='dispose')f.context.XSCHED_PROBE_SESSION.dispose();
+    else if(reason==='remount'){f.host().remove();f.poll();}
+    else f.pointer(reason,20,20,{selector:'section'});
+    assert.equal(captures.size,0,reason);
+    assert.equal(f.stored.has('xsched.probe.pos'),false);
+    assert.equal(f.stored.get('xsched.probe.panelPos'),reason==='reset'?undefined:stored,reason);
+    if(f.host()) {
+      const point=coordinates(f,'section');f.pointer('pointermove',400,400,{selector:'section'});f.pointer('pointerup',400,400,{selector:'section'});
+      assert.deepEqual(coordinates(f,'section'),point,reason);
+    }
+  }
+});
+test('offscreen saved panel clamps across resize and disconnected host without overwriting storage',()=>{
+  const stored=new Map([['xsched.probe.pos','{"x":1000,"y":700}'],['xsched.probe.panelPos','{"x":5000,"y":5000}']]);
+  const f=fixture(undefined,undefined,undefined,null,undefined,undefined,stored);
+  assert.deepEqual(coordinates(f,'section'),{x:740,y:312,height:'492px'});
+  f.host().remove();f.resize(390,600);
+  assert.deepEqual(coordinates(f,'section'),{x:30,y:224,height:'360px'});
+  assert.equal(stored.get('xsched.probe.panelPos'),'{"x":5000,"y":5000}');
+  f.resize(1100,820);assert.deepEqual(coordinates(f,'section'),{x:740,y:312,height:'492px'});
 });

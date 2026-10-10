@@ -694,3 +694,69 @@ verify原persistent storage禁令保留。只對根目錄position.js、且來源
 本輪修改5檔：`probe/content.js`、`test/content.test.mjs`、`scripts/e2e.mjs`、`notes/HANDOFF-gate0.4.md`、`notes/GATE0.md`。未commit／push／merge／改main；position.js、verify、manifest及日期讀法未改。
 
 **VERDICT: APPROVE（阻擋問題已修並有回歸；合併前外部最新三測試須全過）。** 仍有有限幾何取樣／closed shadow／極小視窗、初始化後新外掛不自動搬鈕、手動位置可覆蓋其他控制項、同origin頁面可改位置key與儲存禁用不保存等既有明列限制。原生title方向由Chrome決定；探針累加不能當即時權威總數。真機位置驗收不由本session代替。
+
+
+# 閘 0.5：浮層可拖、鈕與浮層位置獨立（probe 0.0.6）
+
+## 根因（先讀原碼，尚未改production）
+
+基準93ed233／開工a43a152，0.0.5 `content.js:194–202`在shortcut pointermove更新anchor後呼叫positionUI，pointerup:209–214也呼叫；positionUI:341–345每次都以最新anchor執行panelPlacement並寫panel.left/top。poll:522同樣重算，面板沒有自己的位置state／storage。因此鈕位置不被面板影響，但面板仍單向跟鈕走；不是DOM掛載點的問題。
+
+離線`node /tmp/xsched-gate05-root.mjs`直接呼叫未改的ui.panelPlacement，以1100×820、假幾何、無障礙、測試高度350重現：anchor(1040,664)→panel(740,302)；anchor(200,100)→panel(16,156)。這是純函式計算，非真機畫面；不記錄任何老闆真日期／本文。
+
+
+## 修法／位置模型
+
+快捷鈕錨點與panelAnchor完全獨立，panel初次真正展開才用既有多方向panelPlacement在鈕旁找空位。初始面板使用固定≤60vh高度，不依本文長短縮放，body可捲／header與操作列固定。只有第一次放置讀鈕的anchor；之後開關、拖鈕、poll、X mutation／modal及重掛只套用panel自己的座標，不再次跟鈕定位。位置以視窗CSS像素存x,y。首次成功定點即寫panel key，刷新後使用同一點。
+
+標題列是拖動把手，6px門檻；任何button／a／input／textarea／select／role=button按下都不啟動拖動。pointer capture放在不隨render重建的section，避免poll重畫header時丟capture；clear state在release之前，防capture loss重入。單一active drag（鈕或浮層）、有效座標與primary pointer保護；pointercancel／loss／resize／reset／pagehide／dispose／remount取消會釋放capture、回原錨點、不寫入未完成位置；跨門檻抑制相容click，之後普通按鈕按下重新清除抑制旗標。標題列按鈕的正常click照舊有效。
+
+拖浮層只更新panel座標，拖鈕只更新鈕座標；浮層拖動結束才保存、重新決定此位置的可用高度。resize夾兩個位置（包含host斷線時），不覆寫原始存值；放大恢復存值。浮層寬≤344、高≤60vh，整個矩形夾在視窗內。reload／resize時只在固定x,y縮短面板來避開原生／外掛元件；若縮短將使header／操作列不可用，使用者存的位置優先，保留必要高度而允許與控制項重疊。poll／mutation／modal不再改面板位置或避讓高度。極小視窗連固定操作列也容不下時面板暫藏，鈕仍可用，resize重試。
+
+「重設位置」先取消兩種拖動，再清兩個key、鈕回自動避讓、面板用鈕旁邏輯重新預覽。**重設後的poll不會立即再寫key**；下一次明確展開浮層或完成拖動才提交panel預設點。重設後立刻刷新仍從空key算同一套預設；保存被禁止時本頁定點正常，刷新只能重新算預設。
+
+## 兩個localStorage key／隱私與守門
+
+只有probe/position.js可存取x.com的window.localStorage：`xsched.probe.pos`、`xsched.probe.panelPos`，各只存經驗證的有限數字`{x,y}`，不存大小／本文／診斷／路徑／帳號。集中internal read／write／erase也檢查key為這兩個常數，對外只提供固定button／panel介面，不能傳第三個key。保留128字元JSON上限、多鍵拒絕、getter複製再驗證、throw捕捉与hostname檢查。原manifest matching host相容性保留，但twitter.com仍完全不存位置；沒有新增權限／chrome.storage。
+
+verify只更新經逐行核對的position模組來源SHA-256授權边界，其他模組storage、第三key／錯前綴、非數字、sessionStorage／indexedDB／chrome.storage、網路與DOM注入全禁止。18→21 storage攻擊自測，額外包含別處使用panelPos與panel常數改成第三key／非xsched key；舊18項全保留，並讓失效的mutation replacement直接失敗。原30 API／14 icon／9 SVG／39洩漏自測保留。本輪reader／skeleton只升0.0.6，不改日期文法／讀法／樣本規則。
+
+同origin頁面腳本可讀／改這兩個數字位置，原始偏好不跨裝置同步，localStorage受阻時刷新不能留位置；不把任何位置或storage錯誤文字寫進診斷。測試／截圖只用既有假fixtures與假幾何，本節沒有老闆真機日期、樣本或帳號。
+
+## 驗證與外部交付
+
+新增position雙key／clamp與真content雙錨點拖動、toggle／reload／modal／poll／remount、不把header按鈕當把手、capture跨render與每種中斷、超窗保存值回歸。原鈕取消測試對新的初始panel key改為驗證鈕key不寫且panel值不變；reset仍檢查整個兩key儲存清空，沒有放寬為只檢查UI。
+
+本session實跑npm test退出0（9檔）；細項`node --test --test-isolation=none test/` **138過／0敗／0跳過**。npm run verify退出0：**10 probe檔／4 Logo SVG；30 API／14 icon／9 SVG／39 leak／21 storage自測**。Chrome e2e實跑仍因本機fixture server listen EPERM:127.0.0.1退出1，未開始Chrome斷言／沒有本輪截圖，外部不能沿用0.0.5數字當本輪驗收。
+
+e2e保留全部舊時間、診斷、host／lifecycle、原生控制項與網路斷言；擴大DM情境在resize後顯式重設兩個位置（新面板不因resize任意移向別處），其非重疊／elementFromPoint／物理Post／widget點擊斷言不變。新增雙rect精確不變／header物理拖動／reload／兩key數字／超窗實際header命中／header按鈕不capture且仍可點／重設雙rect、93ed233基準manifest比較。0擴充資源／背景請求守門保持，只接受既有一次可信使用者點擊固定Scheduled導覽。
+
+外部請跑npm test → npm run verify → npm run e2e，產生docs/gate0.5-{panel-dragged,button-dragged,reload-both,clamped,reset-both}.png與沿用情境gate0.5前綴截圖／骨架；舊gate0／0.1／0.2／0.3／0.4完全保留。完成最新外部三測試後提交／複審；本session不commit／push／main／PR／打包zip。完整檔案／命令見HANDOFF-gate0.5.md。
+
+## 老闆實測（≤5步）
+
+1. `git pull main`。
+2. `chrome://extensions`重新載入probe/，確認0.0.6。
+3. 重新整理x.com、打開浮層，拖鈕與浮層標題列，確認互不跟著動。
+4. 重新整理確認兩者各留原位，開關浮層也不動。
+5. 按「重設位置」確認兩者回預設；有問題截圖並按「複製診斷」貼回。
+
+## 已知限制
+
+- 保存位置優先，手動拖動或resize可能讓浮層覆蓋原生／其他擴充元件；不因新元件出現而搬動，可拖到空處或重設。初始化避讓有界，closed shadow只看外層wrapper，原生title方向由Chrome決定。
+- 極小視窗無法同時容納60vh與固定操作列時收起面板；回到較大視窗即可再開。resize只改可見夾位，不改兩個原存值；尺寸以CSS像素計，沒有跨裝置同步。
+- 頁面可改／刪同origin數字位置；storage失敗不妨礙本頁操作，但刷新不能保存。重設預覽直到下一次明確展開或完成拖動才重新保存panel key。
+- 新Chrome物理拖动／rect／網路證據與老闆自己的Chrome實測仍待外部跑；既有reader虛擬累加／真DOM變動限制沿用，不宣稱即時權威總數。
+
+## 閘 0.5 Codex 複審
+
+獨立複審 session，與寫碼 session 01a1212e 不同。審查基準 `93ed233...8edc4e5` 全部差異；親讀 AGENTS、HANDOFF、上述根因與實作／測試。**未發現阻擋合併的問題，APPROVE**；本輪只補本節，不改 production、守門規則或測試。
+
+- **根因有原碼證據**：基準的 shortcut pointermove／pointerup 與 poll 都呼叫 positionUI，該函式直接用當時的 button anchor 重算 panelPlacement。新版只有 panelAnchor 尚未建立時才依鈕定點；之後兩個錨點分開。拖鈕、開關、poll／mutation／modal／重掛不重算浮層錨點；浮層完成拖動、resize／reload 的高度避讓仍有界，手動位置優先的限制已揭露。
+- **拖動與夾位**：6px 門檻、互斥 active pointer、標題列互動元素排除、section capture 跨 render、先清 state 再 release、防相容 click 均成立。取消／capture loss／resize／reset／pagehide／dispose／重掛回復未完成拖動且不保存；兩方向獨立、首次保存、reload、reset 預覽後 poll 不補寫、斷線 resize 保留原存值有回歸保護。Chrome 測試另外斷言完整 rect、標題列實際可見且命中，不只比 style 數字。
+- **儲存與硬規矩**：逐行核對 position.js 及已審 SHA-256，只在 x.com 存兩個固定 key 的有限數字 x/y；第三 key、非數字／額外欄位、變動 getter、儲存例外與 twitter.com 拒絕路徑安全。verify 的來源摘要豁免只涵蓋集中模組的 storage 規則，其他網路／注入／權限禁令未放寬；舊 18 項 storage 攻擊保留並增至 21。manifest 除版本／描述外與基準相同，reader／skeleton 只升版，診斷與樣本隱私規則未改。
+- **公開資料與文件**：新增文字、骨架及 41 張 PNG 對照本機 fixture／e2e 生成流程，另檢視截圖；皆為合成資料／遮罩結構，PNG 無附加 metadata，未引入老闆真日期、原始時間樣本、真帳號或密鑰。全工作樹排除 .git／node_modules 後未命中既定禁用身分字串。老闆實測為 5 步。上方與 HANDOFF 的「外部待跑」是寫碼當時的歷史狀態，以下補上本輪收到的外部結果。
+
+**本複審實跑**：`npm test` 退出 0（9 檔），細項 `node --test --test-isolation=none test/` 為 **138 過／0 敗／0 跳過**；`npm run verify` 退出 0（10 probe 檔／4 SVG，30 API／14 icon／9 SVG／39 洩漏／21 storage 自測）；PR diff 空白檢查通過。**外部結果由产品开发提供**：8edc4e5 的 npm test 138/138、verify OK、e2e **548 斷言通過**；本複審未在沙箱重跑 Chrome，不把外部數字記為自己實跑。文件提交後，依最新分支三測試規則由外部補跑 e2e／提交；本輪沒有程式差異需要重新產生截圖。
+
+剩餘風險沿用上述限制：保存位置可能覆蓋新出現的原生／其他擴充元件，極小視窗可能暫藏浮層，同 origin 可改數字偏好，storage 禁用時不能跨刷新保存；老闆自己的 Chrome 仍須按 5 步確認。沒有新增權限、網路、真機資料或讀法風險。

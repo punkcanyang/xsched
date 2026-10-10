@@ -50,6 +50,16 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 
 **尚未READY**：本輪沒有node_modules，npm ci ENOTCACHED／registry DNS EAI_AGAIN；無依賴位置測試5/5、实际静態守門與18項storage自測已過，完整npm test／verify／e2e未通過驗收。外部已有WIP `16f6228`，後續修改待提交；需外部安裝lockfile依賴並跑三測試／gate0.4假資料截圖，另由另一session複審與老闆真機位置驗收。根因、策略、5步實測與限制見notes/GATE0.md「閘0.4」；完整環境結果及外部命令見HANDOFF。
 
+狀態更新：PR #9已合main93ed233（0.0.5）；上述依賴阻擋為歷史，閘0.4複審與capture／resize修正已合。
+
+## 閘 0.5：浮層可拖、鈕與浮層位置獨立（probe 0.0.6，實作完成、待外部e2e／複審）
+
+2026-10-10 12:40（UTC+8）。老闆回報 0.0.5 拖鈕時浮層跟著跑。分支 `gate0.5/draggable-panel`。交接見 `notes/HANDOFF-gate0.5.md`。
+
+0.0.5仍在每次pointermove／poll用鈕錨點重算panel，造成單向跟隨。本輪改獨立panel位置，首次展開選鈕旁空位並保存第二個固定xsched key，標題列6px拖動／section capture／按鈕排除，兩位置互不跟隨，reset清兩key後預覽。resize夾位但保留原存值；60vh／body捲動／固定操作區、權限與網路限制不變。只用假資料，reader只升版。
+
+本機npm test 9檔通過，細項138/138；verify30／14／9／39 leak／21 storage全過。npm run e2e仍listen EPERM，0個新Chrome斷言／截圖；需外部最新三測試、gate0.5假資料截圖與另一session複審，尚未READY。根因／兩key儲存與重設預覽模型／5步實測／限制見notes/GATE0.md「閘0.5」，檔案清單與外部命令見HANDOFF。
+
 ## 1.0（閘 0 過才做）
 
 1. **快速選時段**：發文框旁加按鈕，預設時段（例如 9:00／12:30／20:00，可自訂、可設星期）。一按＝打開 X 原生排程視窗並填入「下一個空時段」，老闆確認後照原流程按 Schedule。
