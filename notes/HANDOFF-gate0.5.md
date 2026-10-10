@@ -27,3 +27,8 @@
 - [ ] PR
 - [ ] 複審
 - [ ] merge --no-ff main
+
+## 卡在 Codex 額度（2026-10-10 12:43 UTC+8）
+
+- 寫碼 session `01a1212e` resume 一啟動就回「You've hit your usage limit … try again at 2:09 PM」，沒有讀改任何檔。依指示停下、不掛等待腳本。
+- 接回：14:09（UTC+8）後 `codex exec resume 01a1212e-3e31-74f3-ba55-1c3c643723cb "$(cat /workspace/bd-punkcan/xsched-gate0.5-write-prompt.txt)" </dev/null`。
