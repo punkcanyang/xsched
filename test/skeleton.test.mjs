@@ -27,9 +27,9 @@ function build(document, pathname = SCHEDULED) {
 
 test("header names the version and only says whether the path is scheduled", () => {
   const out = build(doc("<html><body><div></div></body></html>"));
-  assert.match(out.split("\n")[0], /^xsched-skeleton v0\.0\.5 path=scheduled nodes=\d+$/);
+  assert.match(out.split("\n")[0], /^xsched-skeleton v0\.0\.6 path=scheduled nodes=\d+$/);
   const other = build(doc("<html><body></body></html>"), "/home");
-  assert.match(other.split("\n")[0], /^xsched-skeleton v0\.0\.5 path=other nodes=\d+$/);
+  assert.match(other.split("\n")[0], /^xsched-skeleton v0\.0\.6 path=other nodes=\d+$/);
   assert.ok(!out.includes("/compose"), "must not echo the URL/path");
 });
 

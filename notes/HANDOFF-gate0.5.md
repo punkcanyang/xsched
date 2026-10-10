@@ -32,3 +32,8 @@
 
 - 寫碼 session `01a1212e` resume 一啟動就回「You've hit your usage limit … try again at 2:09 PM」，沒有讀改任何檔。依指示停下、不掛等待腳本。
 - 接回：14:09（UTC+8）後 `codex exec resume 01a1212e-3e31-74f3-ba55-1c3c643723cb "$(cat /workspace/bd-punkcan/xsched-gate0.5-write-prompt.txt)" </dev/null`。
+
+
+## 本輪計畫
+
+先記0.0.5單向錨點根因，保留閘0.4複審的capture取消／active pointer保護／斷線resize／matching host相容性。位置模組只增加固定panelPos有限數字介面；panel初次開啟定點保存，後續只套用自己的位置。標題列拖動排除按鈕，capture放在不重建的section，重設清兩個key並預覽默认位置。補unit／verify攻擊／Chrome精確rect與reload／clamp情境，升0.0.6並更新文件；commit／Chrome外部跑。node_modules本輪已存在。

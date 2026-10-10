@@ -67,7 +67,7 @@ test('panel avoids native controls without moving the button; placement ignores 
   assert.ok(panel.clear && !U.overlaps(panel,obstacle));
   assert.deepEqual(anchor,{x:1040,y:664});
 });
-test('actual verify scanner locks storage to the exact audited root module, including 18 bypass self-tests',()=>{
+test('actual verify scanner locks storage to the exact audited root module, including 21 bypass self-tests',()=>{
   // Execute the actual static guard functions without its DOM leak-test imports.
   // This leaves the full npm verify path and all its existing checks unchanged.
   const url=new URL('../scripts/verify.mjs',import.meta.url);
@@ -77,9 +77,33 @@ test('actual verify scanner locks storage to the exact audited root module, incl
   const context=vm.createContext({...fs,dirname,join,relative,fileURLToPath,inflateSync,createHash,Buffer,console});
   vm.runInContext(code+'\nglobalThis.guard={scanSource,checkProbeDir,positionStorageSelfTest};',context);
   const guard=context.guard;
-  assert.equal(guard.positionStorageSelfTest(),18);
+  assert.equal(guard.positionStorageSelfTest(),21);
   assert.equal(guard.scanSource(source,'probe/position.js',{positionModule:true}).length,0);
   assert.ok(guard.scanSource(source,'probe/other.js').length>0);
   const result=guard.checkProbeDir(fileURLToPath(new URL('../probe',import.meta.url)));
   assert.equal(result.errors.length,0,Array.from(result.errors).join('\n'));
+});
+
+
+test('panel and button have separate numeric keys; reset deletes both and no unrelated key',()=>{
+  const f=storage();const panelKey='xsched.probe.panelPos';
+  f.data.set('unrelated','keep');
+  assert.equal(f.api.loadPanel(),null);
+  assert.equal(f.api.save({x:300,y:200}),true);
+  assert.equal(f.api.savePanel({x:100,y:80}),true);
+  assert.deepEqual({...f.api.load()},{x:300,y:200});
+  assert.deepEqual({...f.api.loadPanel()},{x:100,y:80});
+  for(const value of [null,[],{x:'private',y:2},{x:Infinity,y:3},{x:1,y:2,body:'private'}]) assert.equal(f.api.savePanel(value),false);
+  f.data.set(panelKey,'{"x":1,"y":2,"body":"private"}');assert.equal(f.api.loadPanel(),null);
+  assert.equal(f.api.reset(),true);assert.equal(f.data.size,1);assert.equal(f.data.get('unrelated'),'keep');
+  assert.ok(f.calls.every(([,key])=>['xsched.probe.pos',panelKey].includes(key)));
+  const other=storage('twitter.com');assert.equal(other.api.loadPanel(),null);assert.equal(other.api.savePanel({x:1,y:2}),false);assert.equal(other.api.reset(),false);assert.equal(other.calls.length,0);
+});
+test('independent panel clamping keeps the whole rectangle visible and retains raw preference',()=>{
+  for(const size of [[1100,820],[390,600],[1280,600]]) {
+    const raw={x:1e30,y:1e30};const clamped=U.clampPanelPosition(raw,...size),bounds=U.panelSize(...size);
+    assert.ok(clamped.x>=0&&clamped.y>=0&&clamped.x+bounds.width<=size[0]&&clamped.y+bounds.height<=size[1]);
+    assert.deepEqual(raw,{x:1e30,y:1e30});
+    assert.deepEqual(U.clampPanelPosition({x:-100,y:-100},...size),{x:16,y:16});
+  }
 });

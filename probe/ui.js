@@ -1,4 +1,4 @@
-// Gate 0.4: button anchor and panel geometry are independent of reader assumptions.
+// Gate 0.5: button anchor and panel geometry are independent of reader assumptions.
 (() => {
 "use strict";
 const STRINGS = Object.freeze({
@@ -114,6 +114,15 @@ function clampPosition(pos, width, height) {
   const maxX = Math.max(0, width - 44 - 16), maxY = Math.max(0, height - 44 - 16);
   return { x: Math.min(maxX, Math.max(Math.min(16, maxX), pos.x)), y: Math.min(maxY, Math.max(Math.min(16, maxY), pos.y)) };
 }
+// Clamp an independent panel without rewriting its original saved coordinates.
+function panelSize(width, height) {
+  return { width:Math.max(0,Math.min(344,width-32)), height:Math.max(0,Math.min(Math.floor(height*.6),height-32)) };
+}
+function clampPanelPosition(pos, width, height) {
+  const size = panelSize(width,height);
+  const maxX=Math.max(0,width-size.width-16), maxY=Math.max(0,height-size.height-16);
+  return {x:Math.min(maxX,Math.max(Math.min(16,maxX),pos.x)),y:Math.min(maxY,Math.max(Math.min(16,maxY),pos.y))};
+}
 // Only the panel moves. Try above/below, then beside the immutable button anchor.
 function panelPlacement(width, height, anchor, obstacles, naturalHeight, minimum) {
   const panelWidth = Math.min(344, Math.max(0, width - 32));
@@ -145,5 +154,5 @@ function panelPlacement(width, height, anchor, obstacles, naturalHeight, minimum
   }
   return { clear:false };
 }
-globalThis.XSCHED_UI = { STRINGS, stringsFor, overlaps, placement, collectObstacles, clampPosition, panelPlacement };
+globalThis.XSCHED_UI = { STRINGS, stringsFor, overlaps, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition };
 })();

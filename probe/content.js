@@ -1,4 +1,4 @@
-// xsched gate 0.4 — stable draggable shortcut, read-only panel, local diagnostics.
+// xsched gate 0.5 — stable draggable shortcut, read-only panel, local diagnostics.
 // All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
 (() => {
 "use strict";
@@ -6,7 +6,7 @@ if (location.hostname !== "x.com" && location.hostname !== "twitter.com") return
 const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted, versionLine, formatTime, maskSample } = globalThis.XSCHED_READER;
 const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 
-const { stringsFor, placement, collectObstacles, clampPosition, panelPlacement } = globalThis.XSCHED_UI;
+const { stringsFor, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition } = globalThis.XSCHED_UI;
 const positionStore = globalThis.XSCHED_POSITION;
 
 const HOST_ID = "xsched-probe-root";
@@ -41,11 +41,32 @@ let savedPosition = positionStore.load();
 let anchor = null;
 let drag = null;
 let suppressClick = false;
+let savedPanelPosition = positionStore.loadPanel();
+let panelAnchor = savedPanelPosition ? clampPanelPosition(savedPanelPosition,innerWidth,innerHeight) : null;
+let panelDrag = null;
+let suppressPanelClick = false;
+let deferPanelSave = false; // reset previews must leave both keys deleted
+let panelHeight = 0;
+let panelNeedsLayout = true;
 
 function releaseDragCapture(active) {
   try { active.target.releasePointerCapture(active.id); } catch { /* already released or disconnected */ }
 }
 
+function cancelPanelDrag() {
+  if (!panelDrag) return;
+  const active = panelDrag;
+  panelDrag = null;
+  panelAnchor = active.origin;
+  suppressPanelClick = true;
+  releaseDragCapture(active);
+}
+function persistPanel() {
+  if (!panelAnchor) return;
+  savedPanelPosition = {x:panelAnchor.x,y:panelAnchor.y};
+  positionStore.savePanel(savedPanelPosition);
+  deferPanelSave = false;
+}
 function cancelDrag() {
   if (!drag) return;
   const active = drag;
@@ -104,7 +125,7 @@ function ensureHost() {
   if (retired) return null;
   for (const old of document.querySelectorAll("#xsched-probe-root")) if (old !== host) retireLegacy(old);
   if (host && host.isConnected) return host;
-  cancelDrag();
+  cancelDrag(); cancelPanelDrag();
   const now = Date.now();
   if (now - remountWindowStart >= REMOUNT_WINDOW_MS) {
     remountWindowStart = now;
@@ -184,9 +205,10 @@ function ensureHost() {
     if (!lastReport) return;
     collapsed = !(collapsed === null ? !lastReport.onScheduled : collapsed);
     render(lastReport, lastItems);
+    if (!collapsed && deferPanelSave) persistPanel();
   });
   shortcut.addEventListener('pointerdown', event => {
-    if (drag || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+    if (drag || panelDrag || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
     suppressClick = false;
     drag = { id:event.pointerId, target:shortcut, startX:event.clientX, startY:event.clientY, origin:{...anchor}, moved:false };
     try { shortcut.setPointerCapture(event.pointerId); } catch { /* mouse-only DOM fixtures */ }
@@ -210,6 +232,7 @@ function ensureHost() {
       suppressClick = true;
       savedPosition = {x:anchor.x,y:anchor.y};
       positionStore.save(savedPosition);
+      if (deferPanelSave) persistPanel();
       applyAnchor(true);
       positionUI();
     }
@@ -222,6 +245,40 @@ function ensureHost() {
   };
   shortcut.addEventListener('pointercancel', cancel);
   shortcut.addEventListener('lostpointercapture', cancel);
+  panel.addEventListener('pointerdown', event => {
+    if (!panelDrag) suppressPanelClick=false;
+    const target = event.target;
+    if (!target?.closest?.('.panel-header') || target.closest('button, a, input, textarea, select, [role="button"]') || drag || panelDrag
+      || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY) || !panelAnchor) return;
+    suppressPanelClick = false;
+    panelDrag = {id:event.pointerId,target:panel,startX:event.clientX,startY:event.clientY,origin:{...panelAnchor},moved:false};
+    try { panel.setPointerCapture(event.pointerId); } catch { /* DOM fixtures */ }
+  });
+  panel.addEventListener('pointermove', event => {
+    if (!panelDrag || event.pointerId !== panelDrag.id) return;
+    const dx=event.clientX-panelDrag.startX,dy=event.clientY-panelDrag.startY;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!panelDrag.moved && Math.hypot(dx,dy)<6)) return;
+    panelDrag.moved=true;event.preventDefault();
+    panelAnchor=clampPanelPosition({x:panelDrag.origin.x+dx,y:panelDrag.origin.y+dy},innerWidth,innerHeight);
+    positionUI();
+  });
+  panel.addEventListener('pointerup', event => {
+    if (!panelDrag || event.pointerId !== panelDrag.id) return;
+    const active=panelDrag;panelDrag=null;
+    if (active.moved) { suppressPanelClick=true;persistPanel();panelNeedsLayout=true;positionUI(); }
+    releaseDragCapture(active);
+  });
+  const cancelPanel = event => {
+    if (!panelDrag || event.pointerId !== panelDrag.id) return;
+    cancelPanelDrag();positionUI();
+  };
+  panel.addEventListener('pointercancel',cancelPanel);
+  panel.addEventListener('lostpointercapture',cancelPanel);
+  panel.addEventListener('click',event => {
+    if (suppressPanelClick && event.detail !== 0) {
+      suppressPanelClick=false;event.preventDefault();event.stopImmediatePropagation();
+    }
+  },true);
   shadow.append(panel, shortcut);
   (document.body || document.documentElement).append(host);
   applyAnchor(false);
@@ -326,23 +383,49 @@ function applyAnchor(recompute) {
   css(host, { left:`${anchor.x}px`, top:`${anchor.y}px`, right:'auto', bottom:'auto', visibility:anchor.clear?'visible':'hidden' });
 }
 
-// Panel-only placement. Clicks, polls and page mutations never move the button.
+// Decide the panel anchor once. Toggling, polling and button dragging only apply it.
 function positionUI() {
   if (!host?.isConnected) return;
   const panel = host.shadowRoot.querySelector("section");
   const shortcut = host.shadowRoot.querySelector(".shortcut");
   const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
-  const cap = Math.max(0, Math.min(Math.floor(innerHeight * .6), innerHeight - 32));
-  css(panel, { position:'fixed', right:'auto', bottom:'auto', width:`${Math.max(0,Math.min(344,innerWidth-32))}px`, display:wantsOpen ? "flex" : "none", "max-height":`${cap}px` });
-  if (!wantsOpen) { shortcut.setAttribute('aria-expanded','false'); return; }
-  const chromeHeight = (panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
-    + (panel.querySelector('.panel-actions')?.getBoundingClientRect().height || 0) + 40;
-  const minimum = chromeHeight + 32;
-  const obstacles = collectObstacles(document, element => getComputedStyle(element), innerWidth, innerHeight);
-  const position = panelPlacement(innerWidth,innerHeight,anchor,obstacles,panel.getBoundingClientRect().height,minimum);
-  shortcut.setAttribute('aria-expanded', String(position.clear));
-  if (position.clear) css(panel, { left:`${position.left}px`, top:`${position.top}px`, "max-height":`${position.maxHeight}px` });
-  else css(panel, { display:'none' });
+  const size=panelSize(innerWidth,innerHeight);
+  css(panel,{position:'fixed',right:'auto',bottom:'auto',width:`${size.width}px`,display:wantsOpen?'flex':'none'});
+  if (!wantsOpen) { shortcut.setAttribute('aria-expanded','false');return; }
+  const chromeHeight=(panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
+    +(panel.querySelector('.panel-actions')?.getBoundingClientRect().height || 0)+40;
+  const minimum=chromeHeight+32;
+  if (!panelAnchor) {
+    const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
+    // Full 60vh keeps size reproducible after reload with only numeric x/y persisted.
+    const chosen=panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,size.height);
+    if (!chosen.clear || size.height<minimum) {
+      css(panel,{display:'none'});shortcut.setAttribute('aria-expanded','false');return;
+    }
+    panelAnchor={x:chosen.left,y:chosen.top};
+    panelNeedsLayout=true;
+    if (!deferPanelSave) persistPanel();
+  }
+  if (panelNeedsLayout) {
+    panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight);
+    panelHeight=size.height;
+    // On resize/reload only, shorten at fixed x/y to avoid newly intersecting widgets.
+    // Never reposition the panel in response to button drag, polling or mutations.
+    const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
+    for (const rect of obstacles) {
+      if (panelAnchor.x<rect.right+8 && panelAnchor.x+size.width>rect.left-8 && rect.bottom>panelAnchor.y) {
+        panelHeight=Math.min(panelHeight,Math.max(0,rect.top-8-panelAnchor.y));
+      }
+    }
+    // Saved/manual coordinates win over collision avoidance. Keep the handle and
+    // fixed actions visible even when shortening cannot clear a widget at this point.
+    panelHeight=Math.max(Math.min(size.height,minimum),panelHeight);
+    panelNeedsLayout=false;
+  }
+  css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${size.height}px`});
+  const visible=panelHeight>=minimum;
+  shortcut.setAttribute('aria-expanded',String(visible));
+  if (!visible) css(panel,{display:'none'});
 }
 
 function render(report, items) {
@@ -392,7 +475,7 @@ function render(report, items) {
   badge.textContent = String(count);
   css(badge, { display:report.onScheduled ? "block" : "none" });
 
-  const header = css(document.createElement("div"), { "flex-shrink":"0" });
+  const header = css(document.createElement("div"), { "flex-shrink":"0", "touch-action":"none", "user-select":"none", cursor:"grab" });
   header.className = "panel-header";
   const heading = css(document.createElement("div"), { display:"flex", gap:"8px", "align-items":"start" });
   const kicker = textNode("div", versionLine(runtime.manifestVersion, runtime.runtimeInvalidated), { flex:"1", "min-width":"0", color:"#8b98a5", "font-size":"11px", "word-break":"break-word" });
@@ -403,6 +486,7 @@ function render(report, items) {
   css(minimize, { "font-size":"12px", padding:"3px 8px", "flex-shrink":"0" });
   minimize.addEventListener("click", event => {
     event.preventDefault(); event.stopPropagation();
+    cancelPanelDrag();
     collapsed = true;
     render(lastReport, lastItems);
   });
@@ -469,8 +553,10 @@ function render(report, items) {
     reset.setAttribute('aria-label', strings.reset);
     reset.addEventListener('click', event => {
       event.preventDefault(); event.stopPropagation();
-      positionStore.reset(); savedPosition = null;
-      cancelDrag(); applyAnchor(true); positionUI();
+      cancelDrag(); cancelPanelDrag();
+      positionStore.reset(); savedPosition=null;savedPanelPosition=null;panelAnchor=null;
+      deferPanelSave=true;panelNeedsLayout=true;
+      applyAnchor(true); positionUI();
     });
     controls.append(reset);
     body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
@@ -530,7 +616,9 @@ function pollLocation() {
 }
 
 function onResize() {
-  cancelDrag();
+  cancelDrag(); cancelPanelDrag();
+  if (panelAnchor) panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight);
+  panelNeedsLayout=true;
   applyAnchor(true); positionUI(); schedule();
 }
 
@@ -573,6 +661,7 @@ function start() {
 
 function stop() {
   if (drag) { cancelDrag(); applyAnchor(false); }
+  if (panelDrag) { cancelPanelDrag(); positionUI(); }
   observer?.disconnect();
   observer = null;
   window.clearInterval(pollId);
