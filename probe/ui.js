@@ -12,6 +12,19 @@ const STRINGS = Object.freeze({
   de: { shortcut: 'xsched: Bereich für geplante Beiträge öffnen oder schließen', goto: 'Zu geplanten Beiträgen', collapse: 'Minimieren', reset: 'Position zurücksetzen' },
   pt: { shortcut: 'xsched: abrir ou fechar o painel de publicações agendadas', goto: 'Ver publicações agendadas', collapse: 'Minimizar', reset: 'Redefinir posição' },
 });
+// One nine-language table for slot labels, status, aria-label and native title.
+const QUICK_STRINGS = Object.freeze({
+  'zh-Hant': { slots:['9:00','12:30','20:00','下個工作日 9:00'], heading:'快速選時段（原生欄位尚待驗證）', missing:'未偵測到排程欄位', ready:'只填欄位；請自行確認，不會送出', filled:'已填入欄位；尚未排程' },
+  'zh-Hans': { slots:['9:00','12:30','20:00','下个工作日 9:00'], heading:'快速选时段（原生字段尚待验证）', missing:'未检测到排程字段', ready:'只填字段；请自行确认，不会发送', filled:'已填入字段；尚未排程' },
+  en: { slots:['9:00','12:30','20:00','Next workday 9:00'], heading:'Quick slots (native fields unverified)', missing:'Schedule fields not detected', ready:'Fill fields only; confirm yourself. Nothing is sent.', filled:'Fields filled; not scheduled yet' },
+  ja: { slots:['9:00','12:30','20:00','次の平日 9:00'], heading:'時刻を選択（実画面の項目は未検証）', missing:'予約項目を検出できません', ready:'項目の入力のみ。確認・送信はご自身で。', filled:'項目を入力しました。未予約です' },
+  ko: { slots:['9:00','12:30','20:00','다음 평일 9:00'], heading:'빠른 시간 선택 (실제 필드 미검증)', missing:'예약 필드를 찾지 못했습니다', ready:'필드만 입력합니다. 직접 확인하세요. 전송하지 않습니다.', filled:'필드를 입력했습니다. 아직 예약하지 않았습니다' },
+  es: { slots:['9:00','12:30','20:00','Próximo día laborable 9:00'], heading:'Horarios rápidos (campos sin verificar)', missing:'No se detectaron campos de programación', ready:'Solo rellena campos; confirma tú. No se envía nada.', filled:'Campos rellenados; aún sin programar' },
+  fr: { slots:['9:00','12:30','20:00','Prochain jour ouvré 9:00'], heading:'Créneaux rapides (champs non vérifiés)', missing:'Champs de programmation non détectés', ready:'Remplit les champs seulement ; confirmez vous-même.', filled:'Champs remplis ; pas encore programmé' },
+  de: { slots:['9:00','12:30','20:00','Nächster Werktag 9:00'], heading:'Schnellzeiten (Felder ungeprüft)', missing:'Planungsfelder nicht erkannt', ready:'Füllt nur Felder; selbst bestätigen. Kein Versand.', filled:'Felder ausgefüllt; noch nicht geplant' },
+  pt: { slots:['9:00','12:30','20:00','Próximo dia útil 9:00'], heading:'Horários rápidos (campos não verificados)', missing:'Campos de agendamento não detectados', ready:'Só preenche campos; confirme você. Nada é enviado.', filled:'Campos preenchidos; ainda não agendado' },
+});
+function quickStringsFor(doclang,navlang) { return QUICK_STRINGS[languageKey(doclang) || languageKey(navlang) || 'en']; }
 function languageKey(value) {
   const tag = typeof value === 'string' ? value.toLowerCase() : '';
   if (/^zh(?:-|$)/.test(tag)) return /(?:-hant|-tw|-hk|-mo)(?:-|$)/.test(tag) ? 'zh-Hant' : 'zh-Hans';
@@ -154,5 +167,5 @@ function panelPlacement(width, height, anchor, obstacles, naturalHeight, minimum
   }
   return { clear:false };
 }
-globalThis.XSCHED_UI = { STRINGS, stringsFor, overlaps, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition };
+globalThis.XSCHED_UI = { STRINGS, QUICK_STRINGS, quickStringsFor, stringsFor, overlaps, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition };
 })();

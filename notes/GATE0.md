@@ -760,3 +760,101 @@ e2e保留全部舊時間、診斷、host／lifecycle、原生控制項與網路�
 **本複審實跑**：`npm test` 退出 0（9 檔），細項 `node --test --test-isolation=none test/` 為 **138 過／0 敗／0 跳過**；`npm run verify` 退出 0（10 probe 檔／4 SVG，30 API／14 icon／9 SVG／39 洩漏／21 storage 自測）；PR diff 空白檢查通過。**外部結果由产品开发提供**：8edc4e5 的 npm test 138/138、verify OK、e2e **548 斷言通過**；本複審未在沙箱重跑 Chrome，不把外部數字記為自己實跑。文件提交後，依最新分支三測試規則由外部補跑 e2e／提交；本輪沒有程式差異需要重新產生截圖。
 
 剩餘風險沿用上述限制：保存位置可能覆蓋新出現的原生／其他擴充元件，極小視窗可能暫藏浮層，同 origin 可改數字偏好，storage 禁用時不能跨刷新保存；老闆自己的 Chrome 仍須按 5 步確認。沒有新增權限、網路、真機資料或讀法風險。
+
+# 1.0 快速選時段（probe 0.1.0）
+
+## 先查證據（寫碼之前）
+
+本輪先讀 AGENTS、ROADMAP 第1項、開工卡、競品、HANDOFF與閘0依據表／0.2–0.5筆記，再查 repo 與未提交的遮罩骨架。`rg -n 'scheduledDateField|scheduledTimeField|scheduleOption|scheduleConfirm' fixtures probe` 無排程設定欄位命中；既有 fixture 的 dialog 是 Scheduled／草稿列表，不是日期時間選單。依據表第5列只是未親讀文章的未驗證線索，本輪沒有把它當真頁證據，也沒有引用新網頁。
+
+離線指令：Python逐行搜尋原始遮罩骨架，檔案340748 bytes／4110行，`role=dialog`在L36、L42；四個上述testid均0命中；`^\s*select\b`／`option`均0節點。一般`select`字串的4次命中在L86、93、507、520，都是aria-selected。另`rg -n '^\s*input\b'`只有L3461的type=text、role=combobox，位於背景分支，沒有date／time input。這份骨架只有排程列表／背景時間軸，不能證明排程設定對話框的控制項結構。原始骨架不提交，也不從它匯出任何真機資料。
+
+結論：**出快速填值原型，但真頁控制項尚未驗證**。老闆自己先打開X原生排程對話框，擴充只按明確、完整的假設選單填值；不打開X視窗、不點任何X控制項或送出鈕。缺欄位／有歧義／選项不匹配時整組不填。這是相對開工卡「一按打開」的刻意縮小：拿到老闆新骨架後才修偵測，開視窗功能另議，最終確認始終留給老闆。
+
+## 設計／未驗證選擇器表
+
+所有設定集中在`probe/quick.js:5–11`的QUICK_CONFIG，不修改reader的列表選擇器／讀法。只有x.com、由老闆可信點擊shadow內快速鈕，才會進填值入口；不點X的排程圖示，不代替確認。按既有Dagaz快捷鈕展開浮層才能看快速區；保留0.0.6的手動開關與雙位置模型，不因X開對話框自動移位。快速區在可捲body，診斷／骨架／重設等仍在固定操作列。九語的四個鈕文字、aria-label／title及狀態都在ui.js的QUICK_STRINGS。
+
+| 假設 | 選擇器／選項值 | 證據／狀態 |
+|---|---|---|
+| 設定視窗是可見dialog | `[role="dialog"]`，欄位必須直接歸屬同一最近dialog；拒絕隱藏與多個設定視窗 | 列表骨架有dialog，但**設定視窗此結構未驗證** |
+| 日期／時間容器 | `data-testid=scheduledDateField`／`scheduledTimeField` | 依據表#5未親讀公開文章；**未驗證假設** |
+| 日期選單 | 日期容器內`select[name="month"]`／`day`／`year` | 純合成fixture；**未驗證假設** |
+| 時間選單 | 時間容器內`select[name="hour"]`／`minute`／可選`period` | 純合成fixture；**未驗證假設** |
+| 選项值 | 月1–12、日／年／時／分為數字（允許零補齊）；period明確AM／PM。不看任意選項文字猜值 | 純合成fixture；**未驗證假設**。月0–11、數字AMPM或其他映射均拒絕 |
+| 12／24小時 | 有period需完整1–12及AM/PM；無period需完整0–23 | 保守的合成控制項合約，真頁尚待確認 |
+
+每次按鈕點擊重新偵測，不沿用render抓到的節點。欄位缺漏、重複、disabled／hidden／multiple、目標選項缺失／重複時整組拒絕。先算出所有目標值、預檢所有選項與原生setter，再把全部值設好，最後才送出原生input/change。setter拒絕時靜默回復原值、不發事件；找不到setter不改值。React受控選單的事件處理若重建或重設欄位，末尾检查連線及值，失敗明示不成功，不會再猜測／補點X按鈕。真X相容性仍需骨架與老闆欄位對照確認。
+
+預設9:00／12:30／20:00取下一次**至少晚於現在5分鐘**的本地時間，跨日／月／年按Date本地日曆計算；「下個工作日9:00」從明天開始找週一到週五，不包含今天、不判國定假日。遇DST造成小時正規化則跳過該日，不默默填另一時間。原生分鐘選單可精確表示就填（含零補齊）；不能表示就顯示「未偵測到排程欄位」，所有欄位不變，不私自四捨五入。
+
+這不是「下一個空時段」：本PR不避開已排推文（ROADMAP第3項）、不做自訂時段／星期、不存時段設定、不自動预排，也不聲稱填值代表已排成功。之後拿到真設定視窗DOM才修假設；開工卡的一按開視窗另議，最後送出始終由老闆操作。
+
+## 診斷／骨架與守門
+
+content診斷第一行`xsched probe v0.1.0 (manifest 0.1.0)`，新增獨立純計數行`schedDialog=N dateCtl=N timeCtl=N selects=N`：schedDialog只計含假設容器的可見設定候選；dateCtl/timeCtl計候選容器內select數；selects計所有可見dialog所屬的select數，不借用未知欄位的名稱／值猜用途。因此即使testid改名，也可能看到schedDialog=0／selects=6供比對。其他診斷及fmt／samples規則不變，這一行不含任何欄位值／本文／帳號／網址。
+
+skeleton.js原本根從body整棵走，非只走Scheduled列表；合成fixture證明開著的設定dialog及select／option會被走入。select／option文字只留#text長度，不走短日曆樣本出口，屬性照舊遮罩；不匯出選項日期值、名稱或本文。原始真機骨架不提交，新fixture與所有截圖情境皆是假資料。
+
+verify新增禁止click方法／別名、requestSubmit／submit方法／別名、MouseEvent／PointerEvent／KeyboardEvent／SubmitEvent、任何未審dispatchEvent。只有根目錄quick.js且SHA-256完全符合逐行核對的來源，才豁免dispatchEvent關鍵字一條；同檔其他網路／storage／激活／注入規則照掃。唯一writeNativeControls函式只對預檢後的原生select送input／change，不對dialog、button、form送事件。來源改動／改名／其他模組派送，即使只送change，也失敗。20項新攻擊自測，保留30 API／14 icon／9 SVG／21 storage；洩漏39項保留，加選項內容／日曆匯出路徑為41項。position.js與其授權摘要不變，仍只有兩個數字位置key，權限／host／resources／matches與2cceb5e一致。$0，0擴充網路請求由原e2e證據守門持續驗證。
+
+## 本輪實跑／外部待跑
+
+`npm test`退出0（Node隔離模式彙總10檔）；細項`node --test --test-isolation=none test/`：**154過／0敗／0跳過**。`npm run verify`退出0：11個probe檔、4 SVG，30 API／14 icon／9 SVG／41 leak／21 storage／20 native writer自測。new quick單元包含跨年／月／閏日／5分邊界、工作日、12／24h、原生setter批次值先於事件、缺漏／不支持分鐘／年份／歧義／hidden／disabled／非x.com、setter失敗回復、九語、診斷無值、選項遮罩；content VM測可信點擊及render後欄位消失的即時預檢，仍不觸發任何X送出。
+
+`npm run e2e`實跑退出1：`fixture server failed: Error: listen EPERM: operation not permitted 127.0.0.1`；**Chrome斷言0、新截圖0**。node_modules已存在，無須安裝。e2e腳本保留全部548基準情境的斷言，不把548寫成本輪已過；新增合成設定fixture、四時段逐欄比對、input/change計數、Confirm／Schedule／composer Post click=0及form submit=0、missing／partial／選項無法表示時完全不填、骨架／診斷物理複製與0額外網路證據。新設定情境在main與extension isolated world各以測試Date替換固定2027年時鐘，只有test腳本注入，不改production；獨立断言跨年到2028年及工作日跳週末，fixture年份選單從2027起。
+
+外部在最新分支依次跑`npm test`、`npm run verify`、`npm run e2e`（沿用Chrome for Testing／Xvfb及CHROME_PATH）。新截圖至少`docs/v1.0-quick-{dialog-detected,slot-filled,not-detected,partial-fields,diag}.png`；旧情境也另存v1.0-quick前綴，舊gate0–0.5截圖／骨架不覆寫。沙箱不commit／push／PR，外部WIP 2ac003b只是中途snapshot，後續差異還需外部提交與不同session複審。**未達READY：外部最新e2e與真設定DOM／老闆欄位對照待確認。**
+
+## 老闆實測（≤5步）
+
+1. `git pull main`。
+2. `chrome://extensions`重新載入probe/，確認版本0.1.0。
+3. 在x.com發文框自己打開X原生排程對話框，再點Dagaz展開浮層，看快速時段顯示「未偵測到排程欄位」或可用。
+4. 不論可用與否，保持X設定對話框開著，按「複製頁面結構」與「複製診斷」貼回。
+5. 若可用，按一個快速時段、逐欄確認原生日期／時間被填好，**不要按排程**。若一定要按送出測試，先手動把年份改到2027年以後，測完到Scheduled刪掉那則；有問題附範例化截圖回報，真機資料不入公開repo。
+
+## 已知限制／還缺什麼
+
+- 尚無排程設定真DOM；testid、name、選項值與受控事件處理都是假設，真頁可能全部顯示未偵測。還需老闆在**設定對話框開著**時貼0.1.0的骨架及schedDialog／dateCtl／timeCtl／selects診斷，不能用既有Scheduled列表骨架代替；只用遮罩資料修公開fixture。
+- X允許的最小提前量／可排上限未驗證；本地5分鐘僅本版安全餘量，不保證X接受，時區依本機Date而非X自行選的其他時區。AMPM數字值、零基月、非select／不完整或不能精確表示的選單均拒絕。遇原生事件重建欄位，不宣稱成功，老闆需自己對照。
+- 缺控件／不可表示都用同一「未偵測到排程欄位」訊息，不提供可能含值／私人錯誤的診斷；需骨架分辨原因。工作日只指週一到週五，沒有假日表。無自訂時段／星期／佔用避讓。
+- 雙位置、極小視窗、虛擬列表與同origin位置storage限制沿用0.0.6；快速鈕在body內可能需捲動，但複製操作固定可見。extension不開X對話框、不確認、不排程、不背景發文。
+
+## 1.0 快速時段 e2e 紅燈續修（32b769a之後）
+
+外部回報32b769a：npm test154/154、verify OK，全部舊gate0.5情境通過；quickFixture第一次toggle(true)逾時。**本輪定位到測試缺首次render等待的初始化競態，production不改。** Chrome紅燈當下沒有state快照，以下是原函式離線重現的證據，與回報相符；尚需外部重跑確認實際Chrome修復，不能宣稱e2e已過。
+
+程式證據：e2e的findExtensionContext（225–230）只查XSCHED_READER存在；open（236–240）只等domcontentloaded，原quickFixture（1119–1137）找context後改Date就直接toggle。content的start（693–694）先ensureHost再schedule；schedule以SETTLE_MS=60延後首次tick。快捷鈕click（208）在lastReport尚空時直接返回，不記開啟請求。模組／host已存在不等於首次報告已完成；早點一下被忽略，首次tick在非Scheduled路徑仍預設收合，所以後面的400ms poll不會自行開啟，toggle等待可一直失敗。這不是測試應接受「開或關都算過」的情況。
+
+離線實跑`node /tmp/xsched-quick-toggle-repro.mjs`：擷取test/content.test.mjs原fixture helper，只把初始flush留給呼叫端，載入真content.js及原quick-dialog假fixture，注入原2027年Date mock，先點再flush／poll；输出：
+
+```text
+before initial read {"ready":false,"expanded":null,"display":""}
+early click + tick + poll {"ready":true,"expanded":"false","display":"none"}
+click after first read {"ready":true,"expanded":"true","display":"flex"}
+geometry (no fixed obstacles) {"left":920,"top":160,"right":1264,"bottom":652,"width":344,"maxHeight":492,"clear":true}
+```
+
+ready依實際host的diagnostic是否存在判斷。fixture的dialog及子樹由原collectObstacles排除；剩餘原生Post是static，不構成fixed障礙。1280×820、快捷鈕(1220,664)、492px panelHeight由原panelPlacement計算可放下；是純幾何計算，非Chrome量測。此測試只改Date類別，沒有Emulation virtual time policy；VM中既有setTimeout／interval callback仍可flush執行，Date mock並不替換它們。
+
+最小修正：scripts/e2e.mjs quickFixture（1123–1130）先等當頁mounted=1、mode=other、0.1.0首次診斷完成，**另斷言expanded=false且panelVisible=false**，再照舊注入兩個世界的2027時鐘、只點一次shortcut。原toggle的expanded=true **且** panelVisible=true檢查完全不變，不用重試點擊／接受錯狀態／改production避讓。
+
+預查後續：第一次成功填值使quickStatus進render signature，60ms後重建body；若立刻抓下一個button handle，可能在物理click中被重畫移除。四時段循環首次填值後等待原quick-status節點已斷線，再抓下一顆鈕，等待實際重畫，不加任意sleep。四時段逐欄／獨立跨年期望、input/change、Confirm／Schedule／Post click=0及submit=0、缺欄位／部分欄位／不能表示完全不改值、骨架遮罩／複製與0網路斷言全部保留。
+
+新增test/content.test.mjs:486的真content VM回歸：不先flush，證明早點擊被忽略；2027 Date mock下完成tick後仍收合，再等診斷後點一次即展開且有四個快速鈕。fixture helper新增預設true的startReady參數，舊測試行為不變。
+
+本輪實跑npm test退出0（10檔）；`node --test --test-isolation=none test/` **155過／0敗／0跳過**。verify退出0（11 probe檔／4 SVG；30 API、14 icon、9 SVG、41 leak、21 storage、20 native writer自測），node --check與git diff --check通過。npm run e2e仍退出1：fixture server listen EPERM 127.0.0.1，Chrome斷言未開始，新截圖0。外部在最新工作樹再跑npm test → npm run verify → npm run e2e；不用沿用32b769a數字當本輪e2e驗收。沒有新增權限／依賴／真機資料，沒有commit／push。
+
+## 1.0 快速選時段 Codex 複審
+
+獨立複審 session，與寫碼 session 01a1212e 不同。已審 `2cceb5e...6f42f83` 全部差異、開工卡、ROADMAP、AGENTS、HANDOFF 與本節；**修正以下守門缺口後 APPROVE 此未驗證原型，不宣稱真 X 填值或 1.0 第一項已完成驗收**。
+
+- **高：原生激活別名守門漏擋，已修。** 複審實際呼叫原 scanSource，`const {click: activate}=button`、`Reflect.get(button,"click")`、解構 submit 與 Object.getOwnPropertyDescriptor 取得 submit 均回傳零錯誤；這是靜態守門缺口，沒有發現 production 在執行這些操作。scripts/verify.mjs 追加解構／反射取 click／submit、onclick／onsubmit 別名禁令，保留原規則與兩個已審來源摘要，不擴大任何豁免。原 20 個 native writer 攻擊保留，追加 prototype.call、label、focus＋Enter、dispatchEvent 別名、註解／拼接／跨行、反射／解構及直接 handler 攻擊，共 **33**；test/review.test.mjs 用真 CLI 的五個違規頁證明退出 1 且 stderr 指向新增規則，test/quick.test.mjs 更新自測數，AGENTS 同步規則與數字。
+- **送出與原生設值：親讀程式，符合限定範圍。** content 只有可信 shadow 快速鈕點擊才呼叫 fillSlot；唯一 writer 不匯出，只對整組預檢的 HTMLSelectElement 用 prototype value setter，再送 input／change。沒有 click／pointer／keyboard／submit、確認／發佈／Update 激活路徑或 requestSubmit／form.submit。缺欄位／歧義／hidden／disabled／不可表示選項在任何寫入前拒絕，setter 拒絕會嘗試靜默回復，不發事件；受控事件重建後的相容性仍未知，不把失敗當成功。e2e 對合成頁所有 Confirm／Schedule／Post 鈕與兩個 form 計數，逐個快速時段要求送出為 0；missing／partial／不可表示分鐘要求欄位不變且所有計數為 0，原網路守門保留。
+- **證據與範圍：親查原始骨架的結構計數。** 340748 bytes／4110 行、dialog 在 36／42 行；四個設定 testid 與 select／option 節點均 0，支持上述「沒有設定 DOM」結論，未提交或匯出原檔內容。QUICK_CONFIG 集中所有 testid／name／domain 假設，程式、九語 heading 與文件皆標未驗證；設定缺失會顯示未偵測。開工卡的一按開視窗、自訂／星期與佔用避讓未實作，理由與縮小範圍已寫清楚。遠端 PR 正文讀取失敗（Cache miss），未宣稱已核對其文案；产品开发須在 PR 保留「合成 fixture 原型／真設定 DOM 未驗證」及上述未做範圍。
+- **時間、隱私、權限：親讀與本機測試。** 本地 next 9:00／12:30／20:00、從明天開始的工作日 9:00、5 分鐘邊界、跨月年／閏日／DST、12／24h 及精確分鐘選項有測試。新設定 fixture／now 都在 2027+；舊列表假資料讀法不改。新診斷行只有四個非負安全整數，不匯出欄位值；骨架能走進設定 dialog，select／option 的文字只留長度。manifest 除名稱／描述／版本及本地 quick.js 外無新增權限／host／資源；position.js 與 storage 摘要不改，沒有新增儲存／網路或注入。核對 46 張新增截圖與本機生成流程、PNG 無附加 metadata；新增文字／fixture 為假資料或結構計數，未引入真機日期／原始樣本／真帳號／密鑰。老闆實測 5 步包含手動開設定視窗、複製結構及診斷貼回、逐欄確認、不送出或手動改 2027+ 後刪除。
+
+**本複審實跑**：npm test 退出 0（10 檔）；細項 **156 過／0 敗／0 跳過**。verify 退出 0：11 probe 檔／4 SVG，**30 API／14 icon／9 SVG／41 洩漏／21 storage／33 native writer 自測**；diff 空白檢查通過。**外部由产品开发提供**：6f42f83 原版 test 155/155、verify OK、e2e **622 斷言通過**；不是本沙箱執行結果。本輪不改 probe／fixture／e2e，只改 scripts/verify.mjs、兩個測試、AGENTS 與本節；外部在含修正的最新工作樹再跑三測試後提交，預期 e2e 仍保留原 622 斷言，不須為本輪重建截圖。
+
+仍待老闆的新設定骨架與真頁逐欄對照；原生 select／option 合約、React input/change 行為、X 可接受提前量／上限及時區設定都未驗證，合成測試不能代替真頁證據。靜態守門是保守文字掃描，不能當任意 JavaScript 的完整安全證明；本輪同時逐行核對唯一 writer。禁止自動開視窗／確認／送出與公開資料規矩不變。

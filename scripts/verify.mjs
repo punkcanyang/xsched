@@ -23,6 +23,10 @@ const DOCS = join(ROOT, "docs");
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
 const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d699da92e15bee335";
 
+// Exact-source exception only for the sole native select input/change writer.
+// All other activation, network, storage and markup rules still scan this file.
+const QUICK_SOURCE_SHA256 = "c24818395b41357f5ca2311bd5fd9aad0077409e07104c4ae3e2ce327443016e";
+
 // Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
 // on a hostile synthetic page, that no page content can reach the skeleton or the samples.
 let READER;
@@ -175,6 +179,14 @@ export function checkLogoDir(dir = DOCS) {
 
 // Things the probe must never contain. (Whole probe/ tree, any file type.)
 const BANNED = [
+  { name: "native event dispatch outside audited writer", re: /\bdispatchEvent\b/ },
+  { name: "activation event constructors/aliases", re: /\b(?:MouseEvent|PointerEvent|KeyboardEvent|SubmitEvent)\b/ },
+  { name: "form submission/aliases", re: /\brequestSubmit\b|\.\s*submit\b/ },
+  { name: "click alias", re: /\.\s*click\b/ },
+  // Dot/bracket checks alone miss destructuring and reflected method extraction.
+  // Match the same static property names after comment removal/string folding.
+  { name: "activation method extraction", re: /\{[^{};]*\b(?:click|submit)["']?\s*(?=[:,}])|\.\s*(?:get|getOwnPropertyDescriptor)\s*\([^;]*["'](?:click|submit)["']/ },
+  { name: "activation handler alias", re: /\.\s*on(?:click|submit)\b/ },
   { name: "namespaced resource attribute", re: /\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
   { name: "markup parsing", re: /\b(?:createContextualFragment|parseFromString)\b/ },
   { name: "fetch(", re: /\bfetch\s*\(/ },
@@ -245,12 +257,15 @@ function listFiles(dir, base = dir) {
   return out;
 }
 
-export function scanSource(text, label, { positionModule = false } = {}) {
+export function scanSource(text, label, { positionModule = false, quickModule = false } = {}) {
   const errors = [];
   const canonical = canonicalSource(text);
   const auditedPosition = positionModule && createHash('sha256').update(text).digest('hex') === POSITION_SOURCE_SHA256;
+  const auditedQuick = quickModule && createHash('sha256').update(text).digest('hex') === QUICK_SOURCE_SHA256;
+  if (quickModule && !auditedQuick) errors.push(`${label}: native writer differs from audited input/change-only boundary`);
   if (positionModule && !auditedPosition) errors.push(`${label}: position module differs from audited numeric-only storage boundary`);
   for (const rule of BANNED) {
+    if (auditedQuick && rule.name === "native event dispatch outside audited writer") continue;
     if (auditedPosition && ['persistent storage','storage accessor/alias'].includes(rule.name)) continue;
     if (rule.re.test(text) || rule.re.test(canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
   }
@@ -327,7 +342,7 @@ export function checkProbeDir(dir) {
     const rel = relative(ROOT, file);
     const text = readFileSync(file, "utf8");
     scanned += 1;
-    errors.push(...scanSource(text, rel, { positionModule: relative(dir,file) === 'position.js' }));
+    errors.push(...scanSource(text, rel, { positionModule: relative(dir,file) === 'position.js', quickModule:relative(dir,file) === 'quick.js' }));
     if (file.endsWith("manifest.json") || /[\\/]manifest\.json$/.test(file)) {
       let manifest;
       try {
@@ -500,7 +515,12 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   bodyTimeRow.setAttribute('aria-label', bodyTimeRow.firstElementChild.textContent + ' ' + bodyTimeRow.querySelector('[data-testid="tweetText"]').textContent);
   const ariaBodyReport = reader.readSnapshot(bodyTimePage, { pathname:'/compose/post/unsent/scheduled' });
   if (ariaBodyReport.items.length || ariaBodyReport.timeOk || ariaBodyReport.timeFail !== 1 || ariaBodyReport.fmt || ariaBodyReport.samples.length) throw new Error('self-test: accessible label borrowed tweet body date');
-  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6, fragments: maskedCount };
+  const optionPage = new DOMParser().parseFromString('<html><body><div role="dialog"><select name="year"><option value="2028" aria-label="private @decoy_handle decoy@example.invalid">Will send on Jan 1, 2028 at 9:00 AM private https://example.invalid/private</option></select></div></body></html>','text/html');
+  const optionOutput = mapper.buildSkeleton(optionPage,{pathname:'/compose/post'});
+  if (!/select /.test(optionOutput) || !/option /.test(optionOutput)) throw new Error('self-test: picker export not exercised');
+  for (const secret of ['2028','Jan','9:00','private','decoy_handle','decoy@example.invalid','https://example.invalid']) if (optionOutput.includes(secret)) throw new Error('self-test: picker option export leaked '+secret);
+  if (optionOutput.includes('calendar=')) throw new Error('self-test: option text became a calendar sample');
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6 + 2, fragments: maskedCount };
 }
 
 export function positionStorageSelfTest() {
@@ -536,6 +556,33 @@ export function positionStorageSelfTest() {
   return forbidden.length+mutations.length+1;
 }
 
+export function nativeWriterSelfTest() {
+  const source=readFileSync(join(PROBE,'quick.js'),'utf8');
+  if (scanSource(source,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: audited source rejected');
+  const attacks=[
+    'button.click()', 'const activate=button.click; activate.call(button)', 'button["cl"+"ick"]()',
+    'form.submit()', 'const send=form.submit; send.call(form)', 'form["sub"+"mit"]()', 'form.requestSubmit()',
+    'control.dispatchEvent(new Event("input"))', 'control["dispatch"+"Event"](new Event("change"))',
+    'control.dispatchEvent(new MouseEvent("click"))', 'control.dispatchEvent(new PointerEvent("pointerdown"))',
+    'control.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter"}))', 'form.dispatchEvent(new SubmitEvent("submit"))',
+    'HTMLElement.prototype.click.call(button)', 'label.click()',
+    'control.focus(); control.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter"}))',
+    'const {click:activate}=button; activate.call(button)', 'const {click}=button; click.call(button)',
+    'Reflect.get(button,"cl"+"ick").call(button)',
+    'Reflect.get(\n button,\n "click"\n).call(button)',
+    'const {"submit":send}=form; send.call(form)',
+    'Object.getOwnPropertyDescriptor(HTMLFormElement.prototype,"submit").value.call(form)',
+    'const dispatch=control.dispatchEvent; dispatch.call(control,new Event("click"))',
+    'button.onclick()', 'const send=form.onsubmit; send.call(form)',
+    'button[/* gap */"cl"+"ick"]()',
+  ];
+  for(const attack of attacks) if(!scanSource(attack,'probe/elsewhere.js').length) throw new Error('native writer self-test: activation allowed');
+  const edits=[source.replace("Event('input'","Event('click'"),source.replace("Event('change'","Event('submit'"),source.replace("if (!detected.ready || !at)","if (!at)"),source+'\nform.requestSubmit();',source+'\nbutton.click();',source+'\ncontrol.dispatchEvent(new Event("change"));'];
+  for(const edit of edits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: edited writer allowed');
+  if(!scanSource(source,'probe/renamed.js').length) throw new Error('native writer self-test: renamed writer allowed');
+  return attacks.length+edits.length+1;
+}
+
 function selfTest() {
   const violations = [
     'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
@@ -557,6 +604,7 @@ function selfTest() {
     if (!scanSource(source, "self-test").length) throw new Error(`self-test: missed ${source}`);
   }
   const storageCases = positionStorageSelfTest();
+  const nativeCases = nativeWriterSelfTest();
   // Prove the scanner fails closed: a synthetic probe with a network call AND a bad
   // manifest must produce errors, while a clean synthetic probe must not.
   const dir = mkdtempSync(join(tmpdir(), "xsched-verify-selftest-"));
@@ -619,7 +667,7 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -647,7 +695,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call

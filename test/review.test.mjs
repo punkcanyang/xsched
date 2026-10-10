@@ -152,7 +152,7 @@ test("diagnostic accepts only safe nonnegative integers and numeric enum codes",
   const secret = "@private https://private.example/ Oct 10 2026 9:00 AM private post";
   const report = Object.fromEntries(["onScheduled", "tab", "scope", "cell", "button", "listitem", "link", "tweetText", "phrase", "l1", "l2", "l3", "layer", "mounted", "timeOk", "timeFail", "unparsed", "loose", "needsScroll", "virtualized", "empty", "scrolled"].map((key) => [key, secret]));
   const diagnostic = R.buildDiagnostic(report);
-  assert.match(diagnostic, /^xsched probe v0\.0\.6 \(manifest unknown\)\n(?:\w+=[\w%|-]* ?)+\nfmt=none$/);
+  assert.match(diagnostic, /^xsched probe v0\.1\.0 \(manifest unknown\)\n(?:\w+=[\w%|-]* ?)+\nfmt=none$/);
   assert.ok(!diagnostic.includes(secret));
   for (const value of [-1, NaN, Infinity, 1.5, {}, () => secret]) {
     assert.match(R.buildDiagnostic({ cell: value }), /cell=0 /);
@@ -191,5 +191,24 @@ test("verify CLI exits nonzero for an actual synthetic violation; missing manife
     const result = runNode(["scripts/verify.mjs", directory], { timeout: 10000 });
     assert.equal(result.status, 1, result.stdout.toString() + result.stderr.toString());
     assert.match(result.stderr.toString(), /banned API/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('verify CLI rejects destructured, reflected and handler activation before executing code', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'xsched-activation-review-'));
+  try {
+    writeFileSync(join(directory, 'manifest.json'), JSON.stringify(goodManifest));
+    for (const [source, rule] of [
+      ['const {click: activate}=button; activate.call(button)', 'activation method extraction'],
+      ['Reflect.get(button,"cl"+"ick").call(button)', 'activation method extraction'],
+      ['const {"submit": send}=form; send.call(form)', 'activation method extraction'],
+      ['Object.getOwnPropertyDescriptor(HTMLFormElement.prototype,"submit").value.call(form)', 'activation method extraction'],
+      ['const send=form.onsubmit; send.call(form)', 'activation handler alias'],
+    ]) {
+      writeFileSync(join(directory, 'ok.js'), source);
+      const result = runNode(['scripts/verify.mjs', directory], { timeout: 10000 });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.ok(result.stderr.includes(rule), result.stderr);
+    }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
