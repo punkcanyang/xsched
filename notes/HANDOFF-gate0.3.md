@@ -119,4 +119,4 @@ e2e保留舊情境，全部產物改gate0.3前綴，舊gate0／0.1／0.2圖與�
 - PR：https://github.com/punkcanyang/xsched/pull/8
 - 複審 `01a12013` 第一輪：**VERDICT: APPROVE**，並修了「舊 cell 備援可能把 tweetText 內日期當排程時間」（高）。這批修正 commit 為本 commit 的前一個 WIP。修正後 npm test 117/117、verify OK（38），但 **e2e FAILED**：複審新增的情境 `legacy body schedule phrase cannot become a second row`（scripts/e2e.mjs:531–543）。實際狀態 count=2、times 仍含改寫前的 09:00、timeFail=1 但 samples=none；疑為同 scope 累加快取保留舊列（測試寫法），或 timeFail／samples 不一致（reader bug），未定。
 - 複審第二輪撞 Codex 額度：「try again at Oct 14th, 2026 12:50 PM」。**未合併**，main 仍 `fdc8096`（0.0.3）。依指示不掛等待腳本。
-- 接回：額度恢復後 `codex exec resume 01a12013-6780-77c1-9466-bb1e9f78097f "$(cat /tmp/g03-review2.txt)" </dev/null`（提示內容也在本節上方描述），修好 e2e 並給 VERDICT 後外部重跑三測試、`merge --no-ff`。
+- 接回：額度恢復後 `codex exec resume 01a12013-6780-77c1-9466-bb1e9f78097f "$(cat /workspace/bd-punkcan/xsched-gate0.3-review-prompt2.txt)" </dev/null`（提示內容也在本節上方描述），修好 e2e 並給 VERDICT 後外部重跑三測試、`merge --no-ff`。
