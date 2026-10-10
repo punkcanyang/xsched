@@ -69,6 +69,14 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 - `npm run e2e`保留全部舊情境與0網路證據；真骨架精簡合成picker要求schedDialog=1 dateCtl=3 timeCtl=3 selects=6、四時段逐欄／12h換算、兩世界2027假時鐘、缺年份零改／零事件、change handler拒絕目標後所有select原值復原且input/change各12次，所有Confirm／Schedule／Post／calendar click及form submit皆0。date input不直接寫、picker骨架安全匯出、權限與293589f相同。新截圖`docs/v1.0-quickfix-{real-detected,real-filled,year-missing,rollback}.png`及舊情境的新前綴副本；既有截圖不覆寫。原真機骨架禁止提交；新的value格式與React接受仍須老闆確認。
 - 0.1.1 的日期輸入框只存在於三份 `quick-real-*` fixture；測試頁用 `::-webkit-calendar-picker-indicator{display:none}` 隱藏 Chrome 內建日曆圖示，避免它在 CDP 產生 data: SVG 請求。保留 date input／min/max 與原生填值、還原及零送出斷言，擴充程式不變；網路政策不豁免 data:，仍要求 0 擴充資源／背景請求。外部 `737d242` 的兩個快速時段情境已過，但完整 e2e 曾在這筆圖示請求上失敗；修改 fixture 後外部重跑完整 e2e 已通過（686 斷言、0 擴充資源請求）。往後仍不能把單一情境通過當成完整 e2e 通過。
 
+## 快速時段 0.1.2 的受控欄位回歸
+
+- `npm test` 保留舊測試，另測 `test/quick-fill.test.mjs`：instance value 寫入被重繪還原、原生 setter＋input/change 才接受、年→月→日→上下午→時→分的事件順序、每欄重查／日 select 替換、同步與 rAF 重繪、1／01／0 起與中文上下午、閏月日數、上下午自動修正及最後事件改回先前欄位。失敗整組還原也重新辨識唯一 label 關聯並等待；缺欄、選項失效或拒絕還原不得宣稱成功。content VM 驗證成功 fill=ok、六欄失敗資訊及複製診斷，不只看事件次數。原同步 fill API 改為 Promise，測試須等待完整讀回與還原。
+- `npm run verify` 保留全部舊守門／自測，option 樣本共用 skeleton 的有限數字／固定上下午詞彙遮罩；新增 11 個 value 洩漏攻擊（55→66），新增 7 個非同步 writer 邊界改寫（39→46）。原 30 API／14 icon／9 SVG／21 storage／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測數量不減。修改 quick／content 後須重新核對並更新精確 SHA；ui 作者 factory 與 position 模組未改。新日曆欄位診斷只允許計算目標數字、1–4 位 value 數字或固定短上下午列舉；本文、長 ID、網址與身份仍不得匯出。
+- `npm run e2e` 新增受控 picker：年月重建日 select、四種 value 變體各填四時段、缺年份零寫入、上下午修正後全組還原、safe option-values 骨架樣本與實體複製六欄診斷。以完整非同步狀態和 readback 判定成功，不能用第六個 change 代替完成。所有 X/calendar/send click 及 form submit 仍 0，網路政策與 0 擴充資源／背景請求斷言不動，權限與 `162a838` 相同。日期 input 繼續只讀 min/max，fixture 隱藏內建日曆圖示；不增加 data: 豁免。截圖改存 `docs/v1.0-quickfill-*.png`，新增 picker／時鐘皆 2027+，舊列表仍是假資料，舊截圖保留。
+- `node scripts/build-quick-fixtures.mjs` 可重建八份 `fixtures/quick-real-*.html`；腳本只讀合成設定，不讀老闆骨架。真機截圖、骨架、日期與 option 真值不得放 repo。完整 Chrome e2e 在沙箱外跑，未跑前不能宣稱 0.1.2 已通過真頁驗收。
+- 0.1.2 Codex 複審另測晚到的月份編碼切換、原 raw 仍存在時的日曆值還原，以及 input 後控制項移出原 dialog 時禁止 change。讀回與還原都按當前唯一選項映射核對日曆值，不能只比較 raw token。原 46 項 writer 攻擊保留，追加上述邊界的三項來源改寫攻擊為 49；quick.js 摘要同步，AUTHOR_* 摘要與其他守門不變。
+
 ## READY 的標準（PR 說明裡要有）
 
 1. 做了什麼（閘 0 要附 DOM 依據、讀取方式、改版風險）。

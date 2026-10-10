@@ -17,7 +17,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.1.1';
+  let manifest = '0.1.2';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -329,10 +329,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.1 (manifest 0.1.1)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.2 (manifest 0.1.2)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.1 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.2 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -341,7 +341,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.1/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.2/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -479,7 +479,12 @@ test('offscreen saved panel clamps across resize and disconnected host without o
 });
 
 
-test('quick controls in real content: trusted fill only, nine-language status and fresh partial detection',()=>{
+async function waitFill(f) {
+ for(let i=0;globalThis.XSCHED_QUICK.isFilling(f.document)&&i<200;i++)await new Promise(resolve=>setTimeout(resolve,10));
+ await new Promise(resolve=>setTimeout(resolve,0)); f.flush();
+ assert.equal(globalThis.XSCHED_QUICK.isFilling(f.document),false,'bounded fill completed');
+}
+test('quick controls in real content: trusted fill only, nine-language status and fresh partial detection',async()=>{
   const now=()=>new Date(2027,11,31,21,0);
   const f=fixture('/compose/post','zh-Hant','../fixtures/quick-dialog.html',now);
   const proto=f.document.defaultView.HTMLSelectElement.prototype;
@@ -495,15 +500,18 @@ test('quick controls in real content: trusted fill only, nine-language status an
     let change=0,send=0;
     f.document.addEventListener('change',()=>change++);
     for(const el of f.document.querySelectorAll('button,form'))for(const type of ['click','submit'])el.addEventListener(type,()=>send++);
-    f.click('[data-xsched-slot="lunch"]');f.flush();
+    f.click('[data-xsched-slot="lunch"]');await waitFill(f);f.flush();
     assert.equal(f.document.querySelector('select[name=year]').value,'2028');
     assert.equal(f.document.querySelector('select[name=minute]').value,'30');
     assert.equal(change,6);assert.equal(send,0);
     assert.equal(f.shadow().querySelector('.quick-status').textContent,'已填入欄位；尚未排程');
+    assert.match(f.host().dataset.xschedDiag,/fill=ok y=2028 m=1 d=1 h=12 min=30 period=PM/);
+    const copies=[];f.context.navigator.clipboard={writeText(value){copies.push(value);return Promise.resolve();}};
+    f.click('[data-xsched-copy]');assert.equal(copies[0],f.host().dataset.xschedDiag,'copy includes safe successful fill summary');
     // DOM goes partial between render and click: preflight must re-read, not use stale selects.
     const minute=f.document.querySelector('select[name=minute]');minute.remove();
     const partial=[...f.document.querySelectorAll('select')].map(el=>el.value);
-    f.click('[data-xsched-slot="evening"]');
+    f.click('[data-xsched-slot="evening"]');await waitFill(f);
     assert.deepEqual([...f.document.querySelectorAll('select')].map(el=>el.value),partial);assert.equal(change,6);
     f.poll();
     assert.equal(f.shadow().querySelector('.quick-status').textContent,'未偵測到排程欄位');
@@ -531,7 +539,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.1/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.2/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -543,9 +551,9 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
   assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,4);
 });
 
-test('real picker wiring prefers document language, preserves counts, and exposes unavailable-year/rollback errors',()=>{
+test('real picker wiring prefers document language, preserves counts, and exposes unavailable-year/rollback errors',async()=>{
  const now=()=>new Date(2027,11,31,21,0);
- for(const [file,slot,status,changes] of [['year-missing','morning','目標年份不在 X 的選項中',0],['dialog','evening','填值失敗，已還原；請逐欄檢查',12]]) {
+ for(const [file,slot,status,changes] of [['year-missing','morning','目標年份不在 X 的選項中',0],['dialog','evening','填值失敗，已還原；請逐欄檢查',11]]) {
   const f=fixture('/compose/post','zh-Hant',`../fixtures/quick-real-${file}.html`,now);
   f.context.navigator.language='zh-CN';f.click('.shortcut');
   assert.match(f.host().dataset.xschedDiag,/schedDialog=1 dateCtl=3 timeCtl=3 selects=6/);
@@ -556,9 +564,13 @@ test('real picker wiring prefers document language, preserves counts, and expose
    for(const select of f.document.querySelectorAll('select'))select.addEventListener('change',()=>change++);
    f.document.getElementById('fake-select-hour').addEventListener('change',event=>{if(!refused&&event.target.value==='8'){refused=true;event.target.value='';}});
    const values=()=>[...f.document.querySelectorAll('select')].map(node=>node.value),before=values();
-   f.click(`[data-xsched-slot="${slot}"]`);
+   f.click(`[data-xsched-slot="${slot}"]`);await waitFill(f);
    assert.equal(f.shadow().querySelector('.quick-status').textContent,status);assert.deepEqual(values(),before);assert.equal(change,changes);
    f.flush();assert.equal(f.shadow().querySelector('.quick-status').textContent,status,'error survives render');
+   assert.match(f.host().dataset.xschedDiag,/fill=(yearMissing|failed) failed=(year|hour)/);
+   assert.equal(f.host().dataset.xschedDiag.split('\n').filter(line=>line.startsWith('field=')).length,6);
+   const copies=[];f.context.navigator.clipboard={writeText(value){copies.push(value);return Promise.resolve();}};
+   f.click('[data-xsched-copy]');assert.equal(copies[0],f.host().dataset.xschedDiag,'copy includes all six safe failure rows');
   }finally{Object.defineProperty(prototype,'value',original);}
  }
 });

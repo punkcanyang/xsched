@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "xsched quick slots",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "X native schedule field helper; never confirms or sends. No permissions or network; only positions stored locally.",
   "content_scripts": [
     {

@@ -1,4 +1,4 @@
-// 0.1.1: picker structure proven by a masked skeleton; option encodings unverified.
+// 0.1.2: picker structure proven by a masked skeleton; option encodings unverified.
 // No X control is activated. The user opens the picker and confirms it themselves.
 (() => {
 'use strict';
@@ -10,7 +10,9 @@ const QUICK_CONFIG = Object.freeze({
   // Picker skeleton L36/L42: nearest inner dialog owns the controls.
   realDialog: '[role="dialog"][aria-modal="true"]',
   group: '[role="group"]', select: 'select', option:'option',
-  ownHost:'[data-xsched-host="1"]', disabled:':disabled',
+  ownHost:'[data-xsched-host="1"]',
+  // Existing tweetText/article evidence: background/body controls are not a picker.
+  excluded:'[data-xsched-host="1"], article, [data-testid="tweetText"]', disabled:':disabled',
   // L88/101/114/141/154/165: preceding labels, linked by aria-labelledby.
   label: 'label', labelIds: '[id]', labelledBy: 'aria-labelledby',
   // L86/L132: date group contains three selects and a native calendar input.
@@ -43,7 +45,7 @@ function visible(node, doc) {
   return true;
 }
 function detectLegacy(doc) {
-  const candidates = [...doc.querySelectorAll(QUICK_CONFIG.dialog)].filter(el => !el.closest(QUICK_CONFIG.ownHost) && visible(el,doc));
+  const candidates = [...doc.querySelectorAll(QUICK_CONFIG.dialog)].filter(el => !el.closest(QUICK_CONFIG.excluded) && visible(el,doc));
   const dialogs = candidates.filter(dialog => [QUICK_CONFIG.date,QUICK_CONFIG.time].some(selector => [...dialog.querySelectorAll(selector)].some(el => el.closest(QUICK_CONFIG.dialog) === dialog)));
   // Even an unknown picker can report native select count, without guessing its roles.
   const counts = {schedDialog:dialogs.length,dateCtl:0,timeCtl:0,selects:candidates.reduce((sum,dialog)=>sum+[...dialog.querySelectorAll(QUICK_CONFIG.select)].filter(el=>el.closest(QUICK_CONFIG.dialog)===dialog).length,0)};
@@ -63,12 +65,16 @@ function detectLegacy(doc) {
     if (!(control instanceof doc.defaultView.HTMLSelectElement) || control.multiple || control.hasAttribute('multiple') || control.disabled || control.matches(QUICK_CONFIG.disabled) || !visible(control,doc)) return {counts,ready:false};
     fields[key] = control;
   }
-  const domain = (field,values) => values.every(value => optionValue(field,value) !== null);
-  // Require a complete, explicit domain so zero-based months / 12h without period cannot be mistaken for 1-based / 24h.
-  if (!domain(fields.month,Array.from({length:12},(_,i)=>i+1)) || optionValue(fields.month,0) !== null
-    || !domain(fields.hour,Array.from({length:fields.period ? 12 : 24},(_,i)=>fields.period ? i+1 : i))
-    || (fields.period && (optionValue(fields.hour,0) !== null || optionValue(fields.period,'AM') === null || optionValue(fields.period,'PM') === null))) return {counts,ready:false};
-  return {counts,ready:true,fields};
+  // Legacy synthetic selectors still identify roles, but option encodings use the
+  // same conservative value/text maps as the real skeleton path.
+  const maps={};
+  for(const key of Object.keys(fields)) {
+    maps[key]=realOptions(fields[key],key);
+    if(!maps[key])return {counts,ready:false,reason:'optionsMissing'};
+  }
+  const full=(map,start,size)=>map.size===size && Array.from({length:size},(_,i)=>start+i).every(value=>map.has(value));
+  if(!full(maps.month,1,12) || !full(maps.hour,fields.period?1:0,fields.period?12:24))return {counts,ready:false};
+  return {counts,ready:true,fields,maps,dialog};
 }
 const FIELD_LABELS = Object.freeze({
   month:['month','月','月份','月份选择','月份選擇','月の選択','월','mes','mois','monat','mês'],
@@ -79,8 +85,8 @@ const FIELD_LABELS = Object.freeze({
   period:['am/pm','上午/下午','午前/午後','오전/오후','period','période','tageszeit','período'],
 });
 const PERIOD_WORDS = Object.freeze({
-  AM:['am','a.m.','上午','午前','오전','a. m.','matin','vormittags','vormittag','manhã'],
-  PM:['pm','p.m.','下午','午後','오후','p. m.','après-midi','nachmittags','nachmittag','tarde'],
+  AM:['a','am','a.m.','上午','午前','오전','a. m.','matin','vormittags','vormittag','manhã'],
+  PM:['p','pm','p.m.','下午','午後','오후','p. m.','après-midi','nachmittags','nachmittag','tarde'],
 });
 const normalizeWord = text => String(text || '').trim().toLowerCase().replace(/[.\s]/g,'');
 const MONTH_WORDS = new Map();
@@ -97,7 +103,7 @@ function numericText(text, field) {
   const raw=String(text || '').trim();
   if (field==='month' && MONTH_WORDS.has(normalizeWord(raw))) return MONTH_WORDS.get(normalizeWord(raw));
   const suffix={month:'月월',day:'日일',year:'年년',hour:'時时시',minute:'分분'}[field] || '';
-  const match=new RegExp('^(\\d{1,4})(?:['+suffix+'])?$').exec(raw);
+  const match=new RegExp('^(\\d{1,4})\\s*(?:['+suffix+'])?$').exec(raw);
   return match ? Number(match[1]) : null;
 }
 function periodWord(text) {
@@ -112,19 +118,20 @@ function realOptions(select,field) {
     if (options.length!==2) return null;
     const pairs=options.map((option,index)=>{
       const expected=index===0?'AM':'PM', text=periodWord(option.textContent), value=periodWord(option.value);
-      return text===expected && (!value || value===expected) ? [expected,option.value] : null;
+      return (text===expected || (!text && value===expected)) && (!value || value===expected) ? [expected,option.value] : null;
     });
     return pairs.every(Boolean) && new Set(pairs.map(pair=>pair[1])).size===2 ? new Map(pairs) : null;
   }
   const entries=options.map(option=>({value:option.value,raw:/^\d{1,4}$/.test(option.value)?Number(option.value):null,text:numericText(option.textContent,field)}));
-  // A proven whole 0..11 domain + all twelve agreeing month labels can map
-  // zero-based values. A lone disagreement never implies an offset.
+  // A complete 0..11 value domain proves zero-based months; any readable
+  // month labels must agree. A lone disagreement never implies an offset.
   const zeroBased=field==='month' && entries.length===12 && new Set(entries.map(e=>e.raw)).size===12
-    && entries.every(e=>e.raw!==null && e.raw>=0 && e.raw<=11 && e.text===e.raw+1);
+    && entries.every(e=>e.raw!==null && e.raw>=0 && e.raw<=11)
+    && (entries.every(e=>e.text===null || e.text===e.raw+1) || entries.every(e=>e.text===null || e.text===e.raw));
   const result=new Map(), rawValues=new Set();
   for (const entry of entries) {
     if (entry.raw!==null && entry.text!==null && entry.raw!==entry.text && !zeroBased) return null;
-    const number=entry.text ?? entry.raw;
+    const number=zeroBased ? entry.raw+1 : entry.text ?? entry.raw;
     if (number===null || result.has(number) || rawValues.has(entry.value)) return null;
     const bounds={month:[1,12],day:[1,31],year:[2000,9999],hour:[0,23],minute:[0,59]}[field];
     if (!bounds || number<bounds[0] || number>bounds[1]) return null;
@@ -179,7 +186,7 @@ function usable(control,doc) {
 }
 function detectControls(doc) {
   const legacy=detectLegacy(doc);
-  const candidates=[...doc.querySelectorAll(QUICK_CONFIG.dialog)].filter(el=>!el.closest(QUICK_CONFIG.ownHost) && visible(el,doc));
+  const candidates=[...doc.querySelectorAll(QUICK_CONFIG.dialog)].filter(el=>!el.closest(QUICK_CONFIG.excluded) && visible(el,doc));
   const found=[];
   for (const dialog of candidates) {
     if (!dialog.matches(QUICK_CONFIG.realDialog)) continue;
@@ -210,7 +217,7 @@ function detectControls(doc) {
   }
   const full=(map,start,size)=>map.size===size && Array.from({length:size},(_,i)=>start+i).every(value=>map.has(value));
   if (!full(maps.month,1,12) || !full(maps.hour,fields.period?1:0,fields.period?12:24)) return {counts,ready:false,reason:'optionsMissing'};
-  return {counts,ready:true,fields,maps};
+  return {counts,ready:true,fields,maps,dialog:found[0].dialog};
 }
 function optionValue(select, wanted) {
   const matches = [...select.querySelectorAll(QUICK_CONFIG.option)].filter(option => {
@@ -237,47 +244,195 @@ function withinDateBounds(input,at) {
   }
   return true;
 }
-// Sole audited event writer. Native prototype setter; ALL fields/options validated
-// before any writes. Only ordinary bubbling input/change, no activation/submit events.
-function writeNativeControls(doc,values) {
-  const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype,'value')?.set;
-  if (typeof setter !== 'function') return 'failed';
-  const originals = values.map(([control])=>[control,control.value]);
-  function send(entries) {
-    for (const [control] of entries) {
-      if (!control.isConnected) continue;
-      control.dispatchEvent(new doc.defaultView.Event('input',{bubbles:true}));
-      control.dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));
-    }
+const FILL_ORDER = Object.freeze(['year','month','day','period','hour','minute']);
+const transactions = new WeakSet();
+const fillReports = new WeakMap();
+const safeValue = value => globalThis.XSCHED_SKELETON.safeOptionValue(value);
+function targetParts(fields, at) {
+  return {year:at.getFullYear(),month:at.getMonth()+1,day:at.getDate(),period:fields.period ? at.getHours()<12?'AM':'PM' : null,hour:fields.period ? at.getHours()%12||12 : at.getHours(),minute:at.getMinutes()};
+}
+function mappedValue(detected, key, wanted) {
+  return detected.maps ? detected.maps[key]?.get(wanted) ?? null : optionValue(detected.fields[key],wanted);
+}
+function matchesTarget(detected,key,wanted) {
+  if(!detected)return false;
+  const value=mappedValue(detected,key,wanted);
+  return value!==null && detected.fields[key]?.value===value;
+}
+// Always re-identify a unique control in the SAME original dialog. A new dialog
+// or an ambiguous/incomplete group is never a continuation of the transaction.
+function currentPicker(doc, dialog) {
+  const detected=detectControls(doc);
+  return detected.ready && detected.dialog===dialog && dialog.isConnected ? detected : null;
+}
+function restoreField(doc, initial, key) {
+  const dialog=initial.dialog, original=initial.fields[key];
+  if(!dialog.isConnected || !visible(dialog,doc) || detectControls(doc).counts.schedDialog!==1)return null;
+  const anchor=initial.anchors?.[key];
+  const group=anchor ? anchor.group : original.closest(QUICK_CONFIG.group);
+  const labelId=anchor ? anchor.labelId : original.getAttribute(QUICK_CONFIG.labelledBy);
+  const candidates=[...dialog.querySelectorAll(QUICK_CONFIG.select)].filter(control=>{
+    if(control.closest(QUICK_CONFIG.dialog)!==dialog || !usable(control,doc))return false;
+    if(labelId && group?.isConnected) return control.closest(QUICK_CONFIG.group)===group && control.getAttribute(QUICK_CONFIG.labelledBy)===labelId && Boolean(linkedLabel(control,group,doc));
+    return !labelId && control.matches(QUICK_CONFIG.fields[key]) && control.parentElement===(anchor ? anchor.parent : original.parentElement);
+  });
+  return candidates.length===1 ? candidates[0] : null;
+}
+async function settle(doc) {
+  await Promise.resolve();
+  const view=doc.defaultView;
+  if (typeof view.requestAnimationFrame==='function') {
+    await new Promise(resolve=>{
+      let finished=false, frame=null;
+      const done=()=>{if(finished)return;finished=true;view.clearTimeout(timer);if(frame!==null)view.cancelAnimationFrame?.(frame);resolve();};
+      const timer=view.setTimeout(done,80); // hidden tabs must not wait forever
+      frame=view.requestAnimationFrame(done);
+    });
   }
-  const matches=entries=>entries.every(([control,value])=>control.isConnected && control.ownerDocument===doc && control.value===value);
+  await Promise.resolve();
+}
+async function readSettled(doc, matches) {
+  // Two matching reads on separate turns; at most six attempts (~250 ms plus
+  // bounded frames). This is observation only, never a repeated target write.
+  let stable=0;
+  for(let attempt=0;attempt<6;attempt++) {
+    await settle(doc);
+    stable=matches() ? stable+1 : 0;
+    if(stable===2)return true;
+    if(attempt<5)await new Promise(resolve=>doc.defaultView.setTimeout(resolve,25));
+  }
+  return false;
+}
+function captureRows(doc, initial, wanted, expected) {
+  const detected=currentPicker(doc,initial.dialog);
+  return FILL_ORDER.filter(key=>wanted[key]!==null).map(key=>{
+    const control=detected?.fields[key] || restoreField(doc,initial,key);
+    const raw=control?.value;
+    const value=control ? realOptions(control,key)?.get(wanted[key]) ?? null : null;
+    return {field:key,target:wanted[key],value:safeValue(value ?? expected[key]),read:safeValue(raw),options:control ? globalThis.XSCHED_SKELETON.optionSamples(control) : 'x',mismatch:value===null || raw!==value};
+  });
+}
+// Sole audited event writer. Every target is preflighted before any mutation.
+// Re-query before EACH field; only native select setter + input/change, no X clicks.
+async function writeNativeControls(doc, detected, wanted, expected, at) {
+  const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype,'value')?.set;
+  const dialog=detected.dialog;
+  const keys=FILL_ORDER.filter(key=>wanted[key]!==null);
+  const anchors=Object.fromEntries(keys.map(key=>{const control=detected.fields[key];return [key,{group:control.closest(QUICK_CONFIG.group),labelId:control.getAttribute(QUICK_CONFIG.labelledBy),parent:control.parentElement}];}));
+  const initial={...detected,anchors};
+  const originals=Object.fromEntries(keys.map(key=>[key,detected.fields[key].value]));
+  const logicalOriginals=Object.fromEntries(keys.map(key=>[key,[...detected.maps[key]].find(pair=>pair[1]===originals[key])?.[0] ?? null]));
+  let failedField='none',writtenAll=false;
+  function write(control,value) {
+    if(!control.isConnected || control.ownerDocument!==doc)throw new Error('detached');
+    if(control.closest(QUICK_CONFIG.excluded) || control.closest(QUICK_CONFIG.dialog)!==dialog)throw new Error('scope');
+    setter.call(control,value);
+    control.dispatchEvent(new doc.defaultView.Event('input',{bubbles:true}));
+    if(!control.isConnected || control.ownerDocument!==doc)throw new Error('detached');
+    if(control.closest(QUICK_CONFIG.excluded) || control.closest(QUICK_CONFIG.dialog)!==dialog)throw new Error('scope');
+    control.dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));
+  }
+  const matches=()=>{
+    const picker=currentPicker(doc,dialog);
+    return picker && keys.every(key=>matchesTarget(picker,key,wanted[key]));
+  };
+  // Raw values can survive a re-render while changing calendar meaning. Restore
+  // the original logical value through the CURRENT unique mapping, even if the
+  // old raw token still exists. A blank original can only return to one blank.
+  function originalValue(control,key) {
+    if(originals[key]==='')return [...control.querySelectorAll(QUICK_CONFIG.option)].filter(option=>option.value==='').length===1 ? '' : null;
+    return logicalOriginals[key]!==null ? realOptions(control,key)?.get(logicalOriginals[key]) ?? null : null;
+  }
+  function restoredFieldMatches(key) {
+    const control=restoreField(doc,initial,key);
+    const value=control ? originalValue(control,key) : null;
+    return value!==null && control.value===value;
+  }
+  if(typeof setter!=='function') {
+    fillReports.set(doc,{result:'failed',failed:keys,rows:captureRows(doc,initial,wanted,expected)});
+    return 'failed';
+  }
   try {
-    for (const [control,value] of values) setter.call(control,value);
-    if (!matches(values)) throw new Error('refused');
-    send(values);
-    if (!matches(values)) throw new Error('readback');
+    for(const key of keys) {
+      failedField=key;
+      const picker=currentPicker(doc,dialog);
+      const control=picker?.fields[key];
+      const value=picker ? mappedValue(picker,key,wanted[key]) : null;
+      if(!control || value===null || !withinDateBounds(picker.fields.dateInput,at))throw new Error('options');
+      expected[key]=value; // a re-render may change the option encoding
+      write(control,value);
+      if(!await readSettled(doc,()=>matchesTarget(currentPicker(doc,dialog),key,wanted[key])))throw new Error('readback');
+    }
+    writtenAll=true;
+    if(!await readSettled(doc,matches))throw new Error('readback');
+    fillReports.set(doc,{result:'ok',wanted});
     return 'filled';
   } catch {
-    // Restore the entire original group BEFORE restoration events. A controlled
-    // page may refuse restoration or replace nodes; report that explicitly.
-    for (const [control,value] of originals) { try { if(control.isConnected)setter.call(control,value); } catch { /* check below */ } }
-    try { send(originals); } catch { /* check below */ }
-    return matches(originals) ? 'failed' : 'rollbackFailed';
+    const rows=captureRows(doc,initial,wanted,expected);
+    const failed=writtenAll ? rows.filter(row=>row.mismatch).map(row=>row.field) : [failedField];
+    if(!failed.length)failed.push(failedField);
+    // Logical fields may be replaced by a controlled re-render. Restore only a
+    // freshly verified unique select in the same dialog, preserving calendar meaning.
+    let restored=true;
+    for(const key of keys) {
+      try {
+        const control=restoreField(doc,initial,key);
+        if(!control)throw new Error('restore');
+        const value=originalValue(control,key);
+        if(value===null)throw new Error('restore');
+        write(control,value);
+        if(!await readSettled(doc,()=>restoredFieldMatches(key)))restored=false;
+      } catch {restored=false;}
+    }
+    restored=Boolean(await readSettled(doc,()=>keys.every(restoredFieldMatches))) && restored;
+    const result=restored ? 'failed' : 'rollbackFailed';
+    fillReports.set(doc,{result,failed,rows});
+    return result;
   }
 }
-function fillSlotResult(doc,id,now = new Date()) {
+async function fillSlotResult(doc,id,now = new Date()) {
   if (doc.defaultView.location?.hostname !== 'x.com') return 'missing';
-  const detected = detectControls(doc), at = nextSlot(id,now);
-  if (!detected.ready || !at) return detected.reason || 'missing';
-  const year=detected.maps ? detected.maps.year.get(at.getFullYear()) : optionValue(detected.fields.year,at.getFullYear());
-  if (year===null || year===undefined) return 'yearMissing';
-  if (!withinDateBounds(detected.fields.dateInput,at)) return 'range';
-  const values = fieldValues(detected.fields,at,detected.maps);
-  return values ? writeNativeControls(doc,values) : 'optionsMissing';
+  if(transactions.has(doc))return 'failed';
+  transactions.add(doc);
+  try {
+    const detected = detectControls(doc), at = nextSlot(id,now);
+    if (!detected.ready || !at) {
+      const reason=detected.reason || 'missing';
+      // Without proven controls, do not sample unrelated DOM. Report unknown
+      // readbacks for all six logical fields, with numeric local targets only.
+      const target=at ? {year:at.getFullYear(),month:at.getMonth()+1,day:at.getDate(),period:at.getHours()<12?'AM':'PM',hour:at.getHours(),minute:at.getMinutes()} : {};
+      const rows=FILL_ORDER.map(field=>({field,target:target[field] ?? 'none',value:'x',read:'x',options:'x'}));
+      fillReports.set(doc,{result:reason,failed:[...FILL_ORDER],rows});
+      return reason;
+    }
+    const wanted=targetParts(detected.fields,at),expected={};
+    let reason='';
+    for(const key of FILL_ORDER) if(wanted[key]!==null) {
+      expected[key]=mappedValue(detected,key,wanted[key]);
+      if(expected[key]===null && !reason)reason=key==='year'?'yearMissing':'optionsMissing';
+    }
+    if (!withinDateBounds(detected.fields.dateInput,at)) reason='range';
+    if(reason) {
+      const rows=captureRows(doc,detected,wanted,expected);
+      fillReports.set(doc,{result:reason,failed:reason==='range'?['year','month','day']:rows.filter(row=>expected[row.field]===null).map(row=>row.field),rows});
+      return reason;
+    }
+    return await writeNativeControls(doc,detected,wanted,expected,at);
+  } finally {transactions.delete(doc);}
 }
-function fillSlot(doc,id,now = new Date()) {return fillSlotResult(doc,id,now)==='filled';}
+async function fillSlot(doc,id,now = new Date()) {return await fillSlotResult(doc,id,now)==='filled';}
+function fillDiagnostic(doc) {
+  const report=fillReports.get(doc);
+  if(!report)return '';
+  if(report.result==='ok') {
+    const w=report.wanted;
+    return `fill=ok y=${w.year} m=${w.month} d=${w.day} h=${w.hour} min=${w.minute} period=${w.period || '24h'}`;
+  }
+  return `fill=${report.result} failed=${report.failed.join('|') || 'none'}\n`+report.rows.map(row=>`field=${row.field} target=${row.target} value=${row.value} read=${row.read} options=${row.options}`).join('\n');
+}
+function isFilling(doc) {return transactions.has(doc);}
 function diagnostic(counts) {
   return ['schedDialog','dateCtl','timeCtl','selects'].map(key=>`${key}=${Number.isSafeInteger(counts?.[key]) && counts[key]>=0 ? counts[key] : 0}`).join(' ');
 }
-globalThis.XSCHED_QUICK = {QUICK_CONFIG,SLOT_IDS,nextSlot,detectControls,fillSlot,fillSlotResult,fieldValues,diagnostic};
+globalThis.XSCHED_QUICK = {QUICK_CONFIG,SLOT_IDS,nextSlot,detectControls,fillSlot,fillSlotResult,fieldValues,diagnostic,fillDiagnostic,isFilling};
 })();
