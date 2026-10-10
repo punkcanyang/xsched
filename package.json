@@ -1,9 +1,9 @@
 {
   "name": "xsched",
-  "version": "0.0.6",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Chrome extension that helps operate X's native scheduled-post window. Gate 0 probe: read the Scheduled list from the page DOM only.",
+  "description": "Chrome extension that helps operate X's native scheduled-post window. Quick slots fill native schedule fields only; the user confirms.",
   "scripts": {
     "test": "node --test test/",
     "verify": "node scripts/verify.mjs",

@@ -27,3 +27,11 @@
 - [ ] PR
 - [ ] 複審
 - [ ] merge --no-ff main
+
+## 本輪簡短計畫（先查後做）
+
+1. 已查：原骨架沒有select／option或設定欄位testid，證據先記GATE0。
+2. 集中未驗證選擇器，實作本地日期四個時段與整組預檢／原生setter，唯一事件出口僅input/change。
+3. shadow浮層九語快速鈕、純計數診斷、選項骨架隱私；不動舊讀法／拖動／位置。
+4. 合成2027+選單fixture、送出計數器、缺欄位／不可表示／時鐘回歸；verify加強，保留全部旧e2e斷言。
+5. 本機test／verify；e2e由外部跑，完成文件並交另一session複審。

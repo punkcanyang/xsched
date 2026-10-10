@@ -760,3 +760,13 @@ e2e保留全部舊時間、診斷、host／lifecycle、原生控制項與網路�
 **本複審實跑**：`npm test` 退出 0（9 檔），細項 `node --test --test-isolation=none test/` 為 **138 過／0 敗／0 跳過**；`npm run verify` 退出 0（10 probe 檔／4 SVG，30 API／14 icon／9 SVG／39 洩漏／21 storage 自測）；PR diff 空白檢查通過。**外部結果由产品开发提供**：8edc4e5 的 npm test 138/138、verify OK、e2e **548 斷言通過**；本複審未在沙箱重跑 Chrome，不把外部數字記為自己實跑。文件提交後，依最新分支三測試規則由外部補跑 e2e／提交；本輪沒有程式差異需要重新產生截圖。
 
 剩餘風險沿用上述限制：保存位置可能覆蓋新出現的原生／其他擴充元件，極小視窗可能暫藏浮層，同 origin 可改數字偏好，storage 禁用時不能跨刷新保存；老闆自己的 Chrome 仍須按 5 步確認。沒有新增權限、網路、真機資料或讀法風險。
+
+# 1.0 快速選時段（probe 0.1.0）
+
+## 先查證據（寫碼之前）
+
+本輪先讀 AGENTS、ROADMAP 第1項、開工卡、競品、HANDOFF與閘0依據表／0.2–0.5筆記，再查 repo 與未提交的遮罩骨架。`rg -n 'scheduledDateField|scheduledTimeField|scheduleOption|scheduleConfirm' fixtures probe` 無排程設定欄位命中；既有 fixture 的 dialog 是 Scheduled／草稿列表，不是日期時間選單。依據表第5列只是未親讀文章的未驗證線索，本輪沒有把它當真頁證據，也沒有引用新網頁。
+
+離線指令：Python逐行搜尋原始遮罩骨架，檔案340748 bytes／4110行，`role=dialog`在L36、L42；四個上述testid均0命中；`^\s*select\b`／`option`均0節點。一般`select`字串的4次命中在L86、93、507、520，都是aria-selected。這份骨架只有排程列表／背景時間軸，不能證明排程設定對話框的控制項結構。原始骨架不提交，也不從它匯出任何真機資料。
+
+結論：**出快速填值原型，但真頁控制項尚未驗證**。老闆自己先打開X原生排程對話框，擴充只按明確、完整的假設選單填值；不打開X視窗、不點任何X控制項或送出鈕。缺欄位／有歧義／選项不匹配時整組不填。這是相對開工卡「一按打開」的刻意縮小：拿到老闆新骨架後才修偵測，開視窗功能另議，最終確認始終留給老闆。

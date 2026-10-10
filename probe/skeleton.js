@@ -13,7 +13,7 @@
 (() => {
 "use strict";
 
-const SKELETON_VERSION = "0.0.6";
+const SKELETON_VERSION = "0.1.0";
 const MAX_NODES = 6000;
 const MAX_DEPTH = 60;
 
@@ -163,7 +163,7 @@ function buildSkeleton(target, options = {}) {
       if (!/\S/.test(text) || !reserve(depth)) return null;
       const reader = globalThis.XSCHED_READER;
       const parent = node.parentElement;
-      const sample = reader && parent && reader.isIsolatedTimeElement(parent) ? reader.timeSample(text) : "";
+      const sample = reader && parent && !parent.closest('select, option') && reader.isIsolatedTimeElement(parent) ? reader.timeSample(text) : "";
       return entry("#text(" + codePoints(text) + ")" + (sample ? " calendar=" + encodeURIComponent(sample) : ""), depth);
     }
     if (node.nodeType !== 1 || !reserve(depth)) return null;

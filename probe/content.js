@@ -1,4 +1,4 @@
-// xsched gate 0.5 — stable draggable shortcut, read-only panel, local diagnostics.
+// xsched quick slots — independent draggable UI, native field fill, local diagnostics.
 // All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
 (() => {
 "use strict";
@@ -8,6 +8,9 @@ const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 
 const { stringsFor, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition } = globalThis.XSCHED_UI;
 const positionStore = globalThis.XSCHED_POSITION;
+const quick = globalThis.XSCHED_QUICK;
+let quickSignature = "";
+let quickStatus = "";
 
 const HOST_ID = "xsched-probe-root";
 const POLL_MS = 400;
@@ -437,6 +440,7 @@ function render(report, items) {
   mounted = mountedNow;
 
   const runtime = runtimeState();
+  const detected = quick.detectControls(document);
   const diag = buildDiagnostic({
     ...report,
     ...runtime,
@@ -450,10 +454,10 @@ function render(report, items) {
     lang: typeof navigator !== "undefined" && navigator ? navigator.language : "",
     doclang: document.documentElement ? document.documentElement.lang : "",
     samples: report.samples || [],
-  });
+  }).replace("\n", "\n" + quick.diagnostic(detected.counts) + "\n");
 
   const strings = stringsFor(document.documentElement.lang, navigator.language);
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, quickStatus, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
     positionUI();
@@ -501,6 +505,31 @@ function render(report, items) {
   panel.append(header, body, controls);
 
   if (!effectiveCollapsed) {
+    const labels = globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language);
+    const slots = css(document.createElement('div'),{display:'flex',gap:'6px','flex-wrap':'wrap',margin:'0 0 8px'});
+    slots.className = 'quick-slots';
+    const status = textNode('p',quickStatus === 'filled' ? labels.filled : quickStatus === 'missing' || !detected.ready ? labels.missing : labels.ready,{color:'#ffd400',margin:'0 0 8px'});
+    status.className = 'quick-status';
+    status.setAttribute('role','status');
+    body.append(textNode('strong',labels.heading),status,slots);
+    quick.SLOT_IDS.forEach((id,index) => {
+      const label = labels.slots[index];
+      const button = makeButton(label);
+      button.dataset.xschedSlot = id;
+      button.disabled = !detected.ready;
+      button.title = detected.ready ? label + ' — ' + labels.ready : labels.missing;
+      button.setAttribute('aria-label',button.title);
+      if (button.disabled) css(button,{opacity:'.55',cursor:'default'});
+      button.addEventListener('click',event => {
+        event.preventDefault();event.stopPropagation();
+        if (!event.isTrusted) return;
+        // Re-detect and preflight at the instant of the user's click, never reuse old controls.
+        quickStatus = quick.fillSlot(document,id) ? 'filled' : 'missing';
+        status.textContent = quickStatus === 'filled' ? labels.filled : labels.missing;
+        schedule();
+      });
+      slots.append(button);
+    });
     if (report.onScheduled) {
       const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" });
       hint.className = "hint";
@@ -569,6 +598,10 @@ function render(report, items) {
 function tick() {
   const pathname = location.pathname || "";
   const report = readSnapshot(document, { pathname });
+  const detected = quick.detectControls(document);
+  const detectedSignature = JSON.stringify([detected.counts,detected.ready]);
+  if (detectedSignature !== quickSignature) quickStatus = "";
+  quickSignature = detectedSignature;
   const next = `${pathname}${location.search || ""}|${report.onScheduled}`;
   if (next !== session || scopeElement !== report.scopeElement || (report.empty && report.items.length === 0)) {
     session = next;
@@ -602,6 +635,8 @@ function onScroll(event) {
 }
 
 function pollLocation() {
+  const detected = quick.detectControls(document);
+  if (JSON.stringify([detected.counts,detected.ready]) !== quickSignature) schedule();
   const state = JSON.stringify(runtimeState());
   if (state !== runtimeSignature) { runtimeSignature = state; schedule(); }
   if (document.querySelectorAll("#xsched-probe-root").length > 1) schedule();

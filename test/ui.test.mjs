@@ -69,19 +69,19 @@ test('shortcut placement clears elevated FAB and open drawer in desktop/narrow v
   assert.ok(panel.clear && !U.overlaps(panel,drawer));
 });
 test('version header detects mismatch/invalidated runtime without echoing arbitrary values', () => {
-  assert.equal(R.versionLine('0.0.6'), 'xsched probe v0.0.6 (manifest 0.0.6)');
-  assert.match(R.versionLine('0.0.2'), /⚠ 版本不符：script 0.0.6 \/ manifest 0.0.2.*重新整理/);
+  assert.equal(R.versionLine('0.1.0'), 'xsched probe v0.1.0 (manifest 0.1.0)');
+  assert.match(R.versionLine('0.0.2'), /⚠ 版本不符：script 0.1.0 \/ manifest 0.0.2.*重新整理/);
   assert.match(R.versionLine(undefined, true), /擴充已重新載入，請重新整理頁面/);
   for (const value of ['@private https://private.example/', {}, null, '1.2.3\nsecret']) {
-    assert.equal(R.versionLine(value), 'xsched probe v0.0.6 (manifest unknown)');
+    assert.equal(R.versionLine(value), 'xsched probe v0.1.0 (manifest unknown)');
   }
-  assert.match(R.buildDiagnostic({ manifestVersion: '0.0.6' }), /^xsched probe v0\.0\.6 \(manifest 0\.0\.6\)\n/);
+  assert.match(R.buildDiagnostic({ manifestVersion: '0.1.0' }), /^xsched probe v0\.1\.0 \(manifest 0\.1\.0\)\n/);
 });
-test('all package and script versions are 0.0.6', async () => {
+test('all package and script versions are 0.1.0', async () => {
   await import('../probe/skeleton.js');
   for (const file of ['../package.json', '../package-lock.json', '../probe/manifest.json']) {
-    assert.equal(JSON.parse(readFileSync(new URL(file, import.meta.url))).version, '0.0.6');
+    assert.equal(JSON.parse(readFileSync(new URL(file, import.meta.url))).version, '0.1.0');
   }
-  assert.equal(R.PROBE_VERSION, '0.0.6');
-  assert.equal(globalThis.XSCHED_SKELETON.SKELETON_VERSION, '0.0.6');
+  assert.equal(R.PROBE_VERSION, '0.1.0');
+  assert.equal(globalThis.XSCHED_SKELETON.SKELETON_VERSION, '0.1.0');
 });
