@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { inflateSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { DOMParser } from "linkedom";
+import esprima from "esprima";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROBE = join(ROOT, "probe");
@@ -274,8 +275,58 @@ function listFiles(dir, base = dir) {
   return out;
 }
 
+// Esprima's tokenizer handles the probe's modern operators without attempting
+// its older ES2017 parser. Work on original tokens, never canonicalized code:
+// comments, strings, regex literals and templates cannot fake delimiters.
+// This deliberately rejects even member reads in destructuring defaults/keys.
+// No reviewed source needs them; a new pattern requires review, not an exception.
+function checkDestructuring(source, label) {
+  let tokens;
+  try { tokens = esprima.tokenize(source); }
+  catch (error) { return [`${label}: JS tokenization failed: ${error.message}`]; }
+  const groups = [], stack = [];
+  const opening = new Set(['(', '[', '{']);
+  const matching = { ')':'(', ']':'[', '}':'{' };
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    if (token.type !== 'Punctuator') continue;
+    if (opening.has(token.value)) {
+      const group = { start:index, kind:token.value, parent:stack.at(-1) };
+      groups.push(group); stack.push(group);
+    } else if (matching[token.value]) {
+      const group = stack.pop();
+      if (!group || group.kind !== matching[token.value]) return [`${label}: unbalanced JS delimiters`];
+      group.end = index;
+    }
+  }
+  if (stack.length) return [`${label}: unbalanced JS delimiters`];
+  const errors = new Set();
+  for (const group of groups) {
+    if (group.kind === '(') continue;
+    let after = group.end + 1;
+    while (tokens[after]?.value === ')' && tokens[after]?.type === 'Punctuator') after++;
+    let pattern = ['=', 'of', 'in'].includes(tokens[after]?.value);
+    // Destructured parameters (functions/methods/arrows/catch) may have no '='.
+    for (let parent = group.parent; !pattern && parent; parent = parent.parent) {
+      if (parent.kind !== '(') continue;
+      const next = tokens[parent.end + 1]?.value;
+      const before = tokens[parent.start - 1]?.value;
+      if (next === '=>' || (next === '{' && !['if', 'while', 'switch', 'with', 'for'].includes(before))) pattern = true;
+    }
+    if (!pattern) continue;
+    for (let index = group.start + 1; index < group.end; index++) {
+      const token = tokens[index], previous = tokens[index - 1];
+      if (token.type === 'Identifier' && ['document', 'createElement'].includes(canonicalSource(token.value))) errors.add(`${label}: destructuring document/createElement forbidden`);
+      if (token.type === 'Punctuator' && (token.value === '.' || (token.value === '[' &&
+          (['Identifier', 'String', 'Numeric', 'Boolean', 'Null', 'RegularExpression', 'Template'].includes(previous?.type) || [')', ']', '}', 'this', 'super'].includes(previous?.value))))) errors.add(`${label}: destructuring member access forbidden`);
+    }
+  }
+  return [...errors];
+}
+
 export function scanSource(text, label, { positionModule = false, quickModule = false } = {}) {
   const errors = [];
+  if (label.endsWith('.js')) errors.push(...checkDestructuring(text, label));
   const digest = createHash('sha256').update(text).digest('hex');
   const auditedAuthorUi = label === 'probe/ui.js' && digest === AUTHOR_UI_SHA256;
   const auditedAuthorContent = label === 'probe/content.js' && digest === AUTHOR_CONTENT_SHA256;
@@ -756,6 +807,66 @@ export function authorBoundarySelfTest() {
   return contentEdits.length + uiEdits.length + extraFiles.length;
 }
 
+export function destructuringSelfTest() {
+  const attacks = [];
+  const targets = ['href', 'search', 'hostname', 'host', 'pathname', 'protocol', 'port', 'hash', 'origin', 'username', 'password'].map(key => `author.${key}`);
+  targets.push('document', 'Document.prototype.createElement');
+  for (const target of targets) {
+    const pattern = `{first: ${target}, second: {value: other}}`;
+    attacks.push(
+      `(${pattern} = {first: '?x=1', second: {value: 0}});`,
+      `for (${pattern} of values) {}`,
+      `for (${pattern} in values) {}`,
+      `({outer: ${pattern}} = values);`,
+      `([{outer: ${pattern}}, ...rest] = values);`,
+      `({first: ${target} = fallback, second: {value: other = 0}} = values);`,
+      `for ({outer: ${pattern}} of values) {}`,
+      `for ([${pattern}] in values) {}`,
+      '`x${(' + pattern + ' = values)}`',
+      `({first: ${target}, second: {value: [other, {deep: tail}]}} = values);`,
+    );
+  }
+  for (const name of ['document', 'createElement']) {
+    const pattern = `{nested: {${name}, after: {value: other}}}`;
+    attacks.push(
+      `const ${pattern} = input;`, `let ${pattern} = input;`,
+      `for (const ${pattern} of values) {}`, `for (let ${pattern} in values) {}`,
+      `function f(${pattern}) {}`, `const f = (${pattern}) => 0;`,
+      `try {} catch (${pattern}) {}`, `function f(${pattern} = {}) {}`,
+    );
+  }
+  attacks.push(
+    '({nested:{docu\\u006dent, after:{value: other}}} = input)',
+    'const {nested:{create\\u0045lement, after:{value: other}}} = input',
+    '({nested:{value: author["search"]}, after:{value: other}} = input)',
+    '({nested:{value: author[key]}, after:{value: other}} = input)',
+    '({nested:{value: author["se"+"arch"]}, after:{value: other}} = input)',
+    '({value: author.search, ...rest} = input)',
+    '({value: other = (author.hostname = "evil.example"), after:{nested: tail}} = input)',
+    '({value: this["search"], after:{nested: tail}} = input)',
+    '({value: super[key], after:{nested: tail}} = input)',
+    '({value: /x/[key], after:{nested: tail}} = input)',
+    '({value: tag`x`[key], after:{nested: tail}} = input)',
+  );
+  let deep = '{value: author.search}';
+  for (let level = 0; level < 64; level++) deep = `{level: [${deep}]}`;
+  attacks.push(`(${deep} = input)`);
+  for (const source of attacks) {
+    if (!scanSource(source, 'probe/reader.js').some(error => /destructuring .* forbidden/.test(error))) throw new Error(`destructuring self-test: missed ${source}`);
+  }
+  for (const source of [
+    'const {first, second:{value: other}} = input;',
+    'for (const [key, value] of entries) {}',
+    'function f({first = 0, second: [value]}) {}',
+    'const data = {nested: {value: author.search}};',
+    'const text = "({value: author.search} = input)";',
+    'const pattern = /[{](author.search)[}]/;',
+    'const text = `({value: author.search} = input)`;',
+    '/* ({value: author.search} = input) */ const value = 0;',
+  ]) if (checkDestructuring(source, 'probe/reader.js').length) throw new Error('destructuring self-test: safe source rejected');
+  return attacks.length;
+}
+
 function selfTest() {
   const violations = [
     'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
@@ -781,6 +892,7 @@ function selfTest() {
   const authorCases = authorLinkSelfTest();
   const urlCases = urlMutationSelfTest();
   const boundaryCases = authorBoundarySelfTest();
+  const destructuringCases = destructuringSelfTest();
   // Prove the scanner fails closed: a synthetic probe with a network call AND a bad
   // manifest must produce errors, while a clean synthetic probe must not.
   const dir = mkdtempSync(join(tmpdir(), "xsched-verify-selftest-"));
@@ -843,23 +955,26 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases, destructuring:destructuringCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
 function main() {
-  const problems = [];
-  let selfTests;
-  try {
-    selfTests = selfTest();
-  } catch (err) {
-    problems.push(`SELF-TEST FAILED: ${err.message}`);
-  }
-
   const { errors, scanned } = checkProbeDir(PROBE);
-  problems.push(...errors);
+  const problems = [...errors];
+  let selfTests;
+  // Static failures already prevented pure-module imports. Report that failure
+  // without trying DOM self-tests against unavailable modules. Clean production
+  // sources still run every self-test before they can receive an OK result.
+  if (!errors.length) {
+    try {
+      selfTests = selfTest();
+    } catch (err) {
+      problems.push(`SELF-TEST FAILED: ${err.message}`);
+    }
+  }
   // Optional synthetic directory is checked in addition to the real probe. It must
   // never provide a way to skip the production guard.
   if (process.argv[2]) problems.push(...checkProbeDir(process.argv[2]).errors);
@@ -871,7 +986,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary, ${selfTests.destructuring} destructuring self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call

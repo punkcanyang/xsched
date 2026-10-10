@@ -56,6 +56,8 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 
 作者連結測試：`npm test` 驗證無參數factory以全域document的DOM API建立浮層anchor、錯誤元素在寫href前拒絕、固定屬性、在既有底部padding絕對定位且不新增固定操作列、骨架／診斷排除；`npm run verify` 以完整SHA-256鎖住根目錄 `probe/ui.js` 的factory與 `probe/content.js` 唯一固定無參數呼叫，僅豁免factory那句精確 `https://x.com/punkcan` href；任何UI／content修改須重審並更新摘要。另全域擋URL組件写入、反射寫入／方法提取及未審動態屬性寫入（原22項作者攻擊保留，新增160項URL改寫／28項factory邊界自測，main的30 API／14 icon／9 SVG／41 leak／21 storage／33 native writer全保留）；`npm run e2e` 另驗證 Scheduled 展開及短視窗捲到底後底部連結的屬性、可見矩形／命中與操作鈕不重疊，從不點作者連結，資源／背景請求仍須0，新增截圖用 `docs/author-link-*.png`。
 
+巢狀解構守門：明確devDependency `esprima@4.0.1`，用tokenizer（非舊版完整parser）在原始JS上配對各層括號，辨識解構賦值／for-of／for-in／函式及catch參數pattern；整個pattern內任何成員存取（含computed、this／super、預設值或computed key裡的成員讀取）及document／createElement都保守拒絕，字串／regex／模板純文字／註解不當成程式目標；tokenization失敗也拒絕。原規則／全部舊自測保留，另增158項解構攻擊及安全對照。`npm test`另在/tmp複製完整probe／scripts／Logo，先確認完整verify CLI退出0，再只在未鎖摘要的reader.js加入pointerover的search／hostname／雙重for-of攻擊，三變體均須以新解構規則退出1，不能用摘要不符或執行錯誤代替守門。正式probe靜態掃描失敗時不執行pure模組／DOM自測並退出1；乾淨來源要執行全部自測才能退出0。
+
 ## READY 的標準（PR 說明裡要有）
 
 1. 做了什麼（閘 0 要附 DOM 依據、讀取方式、改版風險）。

@@ -1,6 +1,6 @@
 # HANDOFF：xsched 作者連結
 
-2026-10-10。分支 `docs/author-link`，基準 main `293589f`（PR #11 快速選時段），本輪起點 HEAD `b147ca1`／PR #12，probe 0.1.0。寫碼：同一個 Codex session 續作；另一個 Codex session 複審 REQUEST_CHANGES，本輪修正 P1 白名單繞過。最新外部 e2e 與複審通過前不宣稱 READY。
+2026-10-10。分支 `docs/author-link`，基準 main `293589f`（PR #11 快速選時段），本輪起點 HEAD `6276e5c`／PR #12，probe 0.1.0。寫碼：同一個 Codex session 續作；另一個 Codex session 複審 REQUEST_CHANGES，本輪修正 P1 巢狀解構賦值繞過。最新外部 e2e 與複審通過前不宣稱 READY。
 
 ## 做了什麼
 
@@ -17,22 +17,22 @@ scanner標籤必須精確為根目錄 `probe/ui.js`，且**整檔**SHA-256必須
 
 新增規則全域禁止11個URL組件的寫入：href／search／hostname／host／pathname／protocol／port／hash／origin／username／password；涵蓋點／literal bracket／跳脫／字串拼接、複合賦值、增減、解構賦值、括號、for-of及delete。另禁止Reflect、Object.assign／defineProperty／defineProperties及相關反射提取／別名，未知computed key寫入也拒絕；document／createElement改寫及其他檔的factory引用拒絕。新反射規則僅保留原固定Scheduled導覽與摘要鎖住的quick原生select value descriptor讀取；新動態寫入規則僅保留完整摘要鎖住的quick既有寫入及content的既有dataset statement，均不能寫URL。所有舊規則仍逐條掃描。
 
-原22項作者連結攻擊自測全保留，改為對完整UI來源套用變體：不同帳號路徑、外域、http、尾斜線／query／fragment、img／src、修改元素建立、其他及巢狀檔案、單獨／重複statement，以及夾帶資源、網路、namespaced屬性、markup、storage。本輪write-5新增160項URL改寫與22項factory邊界攻擊；本輪另補6項document／元素建立邊界案例，現為160／28項（相對HEAD新增188項，作者相關共210項）。URL案例放在其他檔並檢查具體規則錯誤，避免被UI／content摘要不符掩蓋漏檢。main的30 API bypass、14 icon、9 SVG、41 leak、21 storage、33 native writer自測全保留。`probe/position.js` 未修改，SHA-256 仍為 `7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d699da92e15bee335`。
+原22項作者連結攻擊自測全保留，改為對完整UI來源套用變體：不同帳號路徑、外域、http、尾斜線／query／fragment、img／src、修改元素建立、其他及巢狀檔案、單獨／重複statement，以及夾帶資源、網路、namespaced屬性、markup、storage。本輪write-5新增160項URL改寫與22項factory邊界攻擊；本輪另補6項document／元素建立邊界案例，現為160／28項（相對b147ca1新增188項，作者相關共210項）。URL案例放在其他檔並檢查具體規則錯誤，避免被UI／content摘要不符掩蓋漏檢。main的30 API bypass、14 icon、9 SVG、41 leak、21 storage、33 native writer自測全保留。`probe/position.js` 未修改，SHA-256 仍為 `7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d699da92e15bee335`。
 
 ## 版本與權限
 
-維持main的0.1.0：這是作者標示的小變更，沒有新增資料格式、權限或流程上的升版需求；現有版本一致性測試通過，manifest／package.json／lockfile／版本常數不需變動。manifest 完全未改、沒有新增網路 API 或遠端資源、花費$0。普通 anchor 僅由使用者點擊開啟作者頁，不會主動請求。
+維持main的0.1.0：這是作者標示的小變更，沒有新增資料格式、權限或流程上的升版需求；現有版本一致性測試通過，manifest／版本常數不變；本輪package.json／lockfile僅明確加入既有esprima開發相依，版本欄位不變。manifest 完全未改、沒有新增網路 API 或遠端資源、花費$0。普通 anchor 僅由使用者點擊開啟作者頁，不會主動請求。
 
 ## 本 session 驗證
 
 | 命令 | 結果 |
 |---|---|
 | `npm test` | 退出0，10檔通過／0敗／0跳過 |
-| `node --test --test-isolation=none test/`（細項計數） | 退出0，162過／0敗／0跳過 |
-| `npm run verify` | 退出0，11 probe檔／4 Logo SVG；30 API／14 icon／9 SVG／41 leak／21 storage／33 native writer／22 author-link／160 URL mutation／28 author boundary自測全過 |
+| `node --test --test-isolation=none test/`（細項計數） | 退出0，164過／0敗／0跳過 |
+| `npm run verify` | 退出0，11 probe檔／4 Logo SVG；30 API／14 icon／9 SVG／41 leak／21 storage／33 native writer／22 author-link／160 URL mutation／28 author boundary／158 destructuring自測全過 |
 | `npm run e2e` | 依指示未執行：sandbox不能listen，留給外部跑；本輪無Chrome結果及新截圖 |
 
-最新完整來源的標準npm test與細項計數全過；既有159項保留，新增2項守門案例矩陣及1項真CLI拒絕測試，共162項。
+最新完整來源的標準npm test與細項計數全過；前輪162項保留，本輪新增解構矩陣與完整repo CLI攻擊測試，共164項。
 
 ## 修改檔案
 
@@ -68,7 +68,7 @@ Chrome真實排版、拖動、避讓、固定操作區仍需完整外部e2e確�
 
 採用無參數全域document＋A元素斷言，並額外鎖完整UI／content來源摘要，而非只數factory片段或呼叫次數。理由是別名、shadow、call／apply、重新排序和回傳值改寫容易繞過局部文字比對；完整摘要會一律拒絕未審改動。代價是未來UI／content任何修改（包含無關功能）都須複審與摘要同步，不能只更新factory片段。這是保守的靜態守門，不宣稱可證明任意混淆JavaScript安全；舊raw／canonical掃描不替換或放寬。
 
-單元測試改在VM全域document執行真UI來源，保留DOM／markup禁用斷言；額外證明外部參數無法換document、錯誤元素在寫href前拋錯。content VM保留既有幾何override，factory使用該VM的document。新增真CLI案例確認URL改寫、Object.assign與假document呼叫退出1，未執行違規模組。全部規則／原自測保留，相對HEAD新增188項安全自測；npm test細項162全過，verify全過。
+單元測試改在VM全域document執行真UI來源，保留DOM／markup禁用斷言；額外證明外部參數無法換document、錯誤元素在寫href前拋錯。content VM保留既有幾何override，factory使用該VM的document。新增真CLI案例確認URL改寫、Object.assign與假document呼叫退出1，未執行違規模組。全部規則／原自測保留，相對b147ca1新增188項安全自測；npm test細項162全過，verify全過。
 
 本輪改8檔：probe/ui.js、probe/content.js、scripts/verify.mjs、test/ui.test.mjs、test/content.test.mjs、test/review.test.mjs、AGENTS.md、本HANDOFF。沒有改連結位置、CSS或e2e斷言；quick.js／position.js／manifest未改，版本維持0.1.0。e2e依指示由外部跑，本輪未執行。
 
@@ -79,3 +79,19 @@ Chrome真實排版、拖動、避讓、固定操作區仍需完整外部e2e確�
 補強document／createElement寫入規則與解構document宣告，複用賦值尾端規則涵蓋shorthand欄位；新增6項邊界攻擊（直接／巢狀／含default的document解構宣告、createElement與document解構賦值、createElement的for-of寫入），28項邊界自測全過。UI單測保留DOM與錯誤元素驗證，追加惡意lexical document來源的掃描拒絕；真CLI測試也追加這一例。原160項URL、22項author-link及main所有規則／自測均保留，162項單測全過。
 
 本輪找到的具體繞過已封住；不把有限的靜態掃描當作任意混淆JavaScript的安全證明。UI／content來源摘要與固定呼叫契約仍不變；後續改動需複審摘要。quick.js／position.js／manifest與e2e腳本未動，版本仍0.1.0；e2e交外部。只改工作檔及執行測試，無Git寫入。
+
+## 6276e5c後複審：巢狀解構P1修正（本輪）
+
+外部已commit／push前輪修法，HEAD 6276e5c的npm test 162過、verify OK、e2e 638 OK。另一個Codex session再次REQUEST_CHANGES：targetEnd僅辨識平坦尾端，後續欄位有巢狀pattern時，author.search／hostname、document與Document.prototype.createElement都可被解構賦值改寫；未鎖的reader.js追加pointerover handler也能讓完整verify誤判通過。本輪不改任何probe來源或其摘要。
+
+修法不再延長targetEnd：保留全部舊規則，額外用Esprima tokenizer對原始JS建立完整成對括號與父層關係，在解構賦值、for-of／for-in、函式／method／arrow及catch參數pattern內，以任意深度檢查成員存取與document／createElement識別字（含跳脫）。computed member涵蓋identifier、this／super、呼叫／括號結果及literal／tagged template接收者。預設值或computed key裡的成員讀取也保守拒絕；正常來源不需要它們。tokenization／括號失敗即拒絕。字串、regex、模板純文字與註解不提供假的delimiter；模板插值內的程式仍掃描。
+
+取捨：Esprima 4的parseScript不支援現有optional chaining、optional catch binding等語法，不能把舊parser強套在production。tokenize可完整處理現有六份JS，故使用lexical token與delimiter結構的保守規則，不宣稱這是完整AST解析或任意JS沙箱。esprima原是間接相依，現在package.json與lockfile根devDependencies明確鎖4.0.1；既有lock中的版本／integrity不變，不增加production資源、權限或請求。離線npm install因無registry metadata cache失敗，直接同步現有鎖檔根相依；npm ls esprima --depth=0確認直接相依4.0.1。
+
+新增158項解構自測：11個URL組件、document、createElement的原例／多層object-array／for-of／for-in／預設值／rest／template插值，64層深度、escaped identifier、computed key、this／super與其他member接收者；另有安全的解構、資料object及文字／regex／註解對照。舊22 author-link／160 URL mutation／28 author boundary和main的30 API／14 icon／9 SVG／41 leak／21 storage／33 native writer全保留。
+
+完整CLI自測複製probe、scripts與4份Logo到/tmp，以原node_modules解析既有相依，先證明乾淨repo副本CLI退出0且全自測通過；再只在reader.js加pointerover handler抓shadowRoot的.panel-author，分別用巢狀解構改search、hostname及雙for-of改兩者。三個變體都退出1，錯誤必須是probe/reader.js的destructuring規則，不能是UI／content摘要不符、SELF-TEST FAILED或ReferenceError。靜態失敗已禁止pure模組載入，因此main改為先回報靜態失敗，不再對未載入模組執行DOM洩漏自測；乾淨repo全部自測依舊必跑，未跑完不會給OK。
+
+自行補查9種陣列／rest／預設值含分號／computed target／generator與async參數／escaped binding／template多插值／字串key寫法，全部拒絕；進一步發現computed receiver的this／super等token需納入，已補入規則與158項回歸。現有probe全部通過新規則，未發現仍可重現的巢狀pattern繞過；有限靜態守門仍不證明任意混淆JS安全。
+
+本輪7檔：scripts/verify.mjs、package.json、package-lock.json、test/position.test.mjs（真scanner VM提供esprima）、test/review.test.mjs、AGENTS.md、本HANDOFF。npm test 10檔全過、細項164過／0敗／0跳過，verify 11 probe／4 Logo全過；新增158解構攻擊與3個完整CLI攻擊變體。版本0.1.0，quick.js／position.js／manifest以及所有probe／e2e來源不變；無Git寫入。本輪e2e仍由外部跑，不能把HEAD 6276e5c的638結果當成本輪重跑證據。

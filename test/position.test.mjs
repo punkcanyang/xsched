@@ -6,6 +6,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
+import esprima from 'esprima';
 await import('../probe/ui.js');
 const U=globalThis.XSCHED_UI;
 const source=fs.readFileSync(new URL('../probe/position.js',import.meta.url),'utf8');
@@ -74,7 +75,7 @@ test('actual verify scanner locks storage to the exact audited root module, incl
   const code=fs.readFileSync(url,'utf8').split('// Run static checks before executing')[0]
     .replace(/^import[\s\S]*?;\n/gm,'').replace(/\bexport /g,'')
     .replaceAll('import.meta.url',JSON.stringify(url.href));
-  const context=vm.createContext({...fs,dirname,join,relative,fileURLToPath,inflateSync,createHash,Buffer,console});
+  const context=vm.createContext({...fs,dirname,join,relative,fileURLToPath,inflateSync,createHash,esprima,Buffer,console});
   vm.runInContext(code+'\nglobalThis.guard={scanSource,checkProbeDir,positionStorageSelfTest};',context);
   const guard=context.guard;
   assert.equal(guard.positionStorageSelfTest(),21);
