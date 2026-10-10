@@ -457,7 +457,7 @@ function render(report, items) {
   }).replace("\n", "\n" + quick.diagnostic(detected.counts) + "\n");
 
   const strings = stringsFor(document.documentElement.lang, navigator.language);
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, quickStatus, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quickStatus, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
     positionUI();
@@ -508,7 +508,7 @@ function render(report, items) {
     const labels = globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language);
     const slots = css(document.createElement('div'),{display:'flex',gap:'6px','flex-wrap':'wrap',margin:'0 0 8px'});
     slots.className = 'quick-slots';
-    const status = textNode('p',quickStatus === 'filled' ? labels.filled : quickStatus === 'missing' || !detected.ready ? labels.missing : labels.ready,{color:'#ffd400',margin:'0 0 8px'});
+    const status = textNode('p',labels[quickStatus || detected.reason] || (!detected.ready ? labels.missing : labels.ready),{color:'#ffd400',margin:'0 0 8px'});
     status.className = 'quick-status';
     status.setAttribute('role','status');
     body.append(textNode('strong',labels.heading),status,slots);
@@ -524,8 +524,8 @@ function render(report, items) {
         event.preventDefault();event.stopPropagation();
         if (!event.isTrusted) return;
         // Re-detect and preflight at the instant of the user's click, never reuse old controls.
-        quickStatus = quick.fillSlot(document,id) ? 'filled' : 'missing';
-        status.textContent = quickStatus === 'filled' ? labels.filled : labels.missing;
+        quickStatus = quick.fillSlotResult(document,id);
+        status.textContent = labels[quickStatus] || labels.missing;
         schedule();
       });
       slots.append(button);
@@ -599,7 +599,7 @@ function tick() {
   const pathname = location.pathname || "";
   const report = readSnapshot(document, { pathname });
   const detected = quick.detectControls(document);
-  const detectedSignature = JSON.stringify([detected.counts,detected.ready]);
+  const detectedSignature = JSON.stringify([detected.counts,detected.ready,detected.reason]);
   if (detectedSignature !== quickSignature) quickStatus = "";
   quickSignature = detectedSignature;
   const next = `${pathname}${location.search || ""}|${report.onScheduled}`;
@@ -636,7 +636,7 @@ function onScroll(event) {
 
 function pollLocation() {
   const detected = quick.detectControls(document);
-  if (JSON.stringify([detected.counts,detected.ready]) !== quickSignature) schedule();
+  if (JSON.stringify([detected.counts,detected.ready,detected.reason]) !== quickSignature) schedule();
   const state = JSON.stringify(runtimeState());
   if (state !== runtimeSignature) { runtimeSignature = state; schedule(); }
   if (document.querySelectorAll("#xsched-probe-root").length > 1) schedule();

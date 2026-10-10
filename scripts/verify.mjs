@@ -25,7 +25,7 @@ const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d
 
 // Exact-source exception only for the sole native select input/change writer.
 // All other activation, network, storage and markup rules still scan this file.
-const QUICK_SOURCE_SHA256 = "c24818395b41357f5ca2311bd5fd9aad0077409e07104c4ae3e2ce327443016e";
+const QUICK_SOURCE_SHA256 = "02dd0d5eafd18ed0ed9581ab92982efb06fcf2eea381ef7cd3aebba1fe887bb6";
 
 // Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
 // on a hostile synthetic page, that no page content can reach the skeleton or the samples.
@@ -520,7 +520,19 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   if (!/select /.test(optionOutput) || !/option /.test(optionOutput)) throw new Error('self-test: picker export not exercised');
   for (const secret of ['2028','Jan','9:00','private','decoy_handle','decoy@example.invalid','https://example.invalid']) if (optionOutput.includes(secret)) throw new Error('self-test: picker option export leaked '+secret);
   if (optionOutput.includes('calendar=')) throw new Error('self-test: option text became a calendar sample');
-  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6 + 2, fragments: maskedCount };
+  const pickerSecrets=['@decoy_handle','decoy@example.invalid','https://example.invalid/private','123456789012345','550e8400-e29b-41d4-a716-446655440000','decoy_handle','select-decoy_handle'];
+  let pickerCases=0;
+  for (const tag of ['select','label']) for (const secret of pickerSecrets) {
+    const doc=new DOMParser().parseFromString('<html><body></body></html>','text/html');
+    const node=doc.createElement(tag);node.setAttribute('data-testid',secret);doc.body.append(node);
+    const exported=mapper.buildSkeleton(doc,{pathname:'/compose/post'});
+    for (const fragment of secretFragments(secret)) if (!LEAK_ALLOWED.has(fragment) && exported.includes(fragment)) throw new Error('self-test: picker testid identity leaked');
+    pickerCases++;
+  }
+  const safePicker=new DOMParser().parseFromString('<html><body><label data-testid="month-label"></label><select data-testid="select-month"></select><div data-testid="select-month"></div></body></html>','text/html');
+  const safeExport=mapper.buildSkeleton(safePicker,{pathname:'/compose/post'});
+  if (!/label .*data-testid=month-label/.test(safeExport) || !/select .*data-testid=select-month/.test(safeExport) || !/div .*data-testid=x/.test(safeExport)) throw new Error('self-test: picker testid scope is incorrect');
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6 + 2 + pickerCases, fragments: maskedCount };
 }
 
 export function positionStorageSelfTest() {
@@ -579,8 +591,17 @@ export function nativeWriterSelfTest() {
   for(const attack of attacks) if(!scanSource(attack,'probe/elsewhere.js').length) throw new Error('native writer self-test: activation allowed');
   const edits=[source.replace("Event('input'","Event('click'"),source.replace("Event('change'","Event('submit'"),source.replace("if (!detected.ready || !at)","if (!at)"),source+'\nform.requestSubmit();',source+'\nbutton.click();',source+'\ncontrol.dispatchEvent(new Event("change"));'];
   for(const edit of edits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: edited writer allowed');
+  const realEdits=[
+    source.replace("if (!matches(values))", "if (false)"),
+    source.replace("if (!withinDateBounds(detected.fields.dateInput,at))", "if (false)"),
+    source.replace("text===expected && (!value || value===expected)", "true"),
+    source.replace("control.dispatchEvent(new doc.defaultView.Event('change'", "doc.body.dispatchEvent(new doc.defaultView.Event('change'"),
+    source.replace("setter.call(control,value)", "control.value=value"),
+    source+'\nconst activate=document.querySelector("button").click;activate();',
+  ];
+  for (const edit of realEdits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: altered real picker boundary accepted');
   if(!scanSource(source,'probe/renamed.js').length) throw new Error('native writer self-test: renamed writer allowed');
-  return attacks.length+edits.length+1;
+  return attacks.length+edits.length+1+realEdits.length;
 }
 
 function selfTest() {

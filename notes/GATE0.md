@@ -858,3 +858,24 @@ ready依實際host的diagnostic是否存在判斷。fixture的dialog及子樹由
 **本複審實跑**：npm test 退出 0（10 檔）；細項 **156 過／0 敗／0 跳過**。verify 退出 0：11 probe 檔／4 SVG，**30 API／14 icon／9 SVG／41 洩漏／21 storage／33 native writer 自測**；diff 空白檢查通過。**外部由产品开发提供**：6f42f83 原版 test 155/155、verify OK、e2e **622 斷言通過**；不是本沙箱執行結果。本輪不改 probe／fixture／e2e，只改 scripts/verify.mjs、兩個測試、AGENTS 與本節；外部在含修正的最新工作樹再跑三測試後提交，預期 e2e 仍保留原 622 斷言，不須為本輪重建截圖。
 
 仍待老闆的新設定骨架與真頁逐欄對照；原生 select／option 合約、React input/change 行為、X 可接受提前量／上限及時區設定都未驗證，合成測試不能代替真頁證據。靜態守門是保守文字掃描，不能當任意 JavaScript 的完整安全證明；本輪同時逐行核對唯一 writer。禁止自動開視窗／確認／送出與公開資料規矩不變。
+
+# 1.0 快速時段 0.1.1：真骨架
+
+## 寫碼前證據
+
+親讀0.1.0設定視窗遮罩骨架（3134節點）與原skeleton.js，不提交原檔或任何真機文字／值。離線以`nl -ba`讀L36–171，再核對attrToken：raw為null或空字串時只印屬性名稱；非空未知data-testid會印=x。**六個select的裸data-testid代表空值，不是前綴被遮掉**；本輪無testid前綴可用。aria-labelledby／label id被遮成x，只有關聯形狀，沒有真id或label詞證據。
+
+| 證據行 | 結構／路徑 | 可判定與不可判定 |
+|---|---|---|
+| L36／42 | 外dialog → role=group(L40) → aria-modal=true內dialog | 六個選單屬內dialog，不能讓外group重複計數 |
+| L86 | 內dialog → 日期group，四個子分支 | 三個select分別在label後，第四分支為日曆鈕＋date input |
+| L88–96／91 | 日期group → wrapper → label(id)／select(aria-labelledby)，c=13 | disabled空value＋12選項；文字長度3／4，符合月份，但月份名稱與value真值仍未知 |
+| L101–109／104 | 日期group第二wrapper，同關聯，c=32 | 空白＋31選項；文字長度1／2，符合日 |
+| L114–120／117 | 日期group第三wrapper，同關聯，c=4 | 空白＋3選項，文字長度4，符合年份；不匯出真年份 |
+| L124–132 | 日期group第四分支，label → button／input(type=date,min,max,value) | 另有日期input與日曆控制；是否為同步鏡像未知，不點鈕、不改input |
+| L135／139 | 內dialog → 時間group → 四個子wrapper的容器 | 一個提示分支＋三個label/select分支 |
+| L141–149／144 | 時間group第一select，c=13 | 空白＋12選項，文字長度1／2；12小時制 |
+| L154–160／157 | 第二select，c=61 | 空白＋60選項，文字長度2；分鐘 |
+| L165–170／168 | 第三select，c=2 | 兩個文字長度2的選項，無空白；上下午需以九語文字＋順序互相驗證 |
+
+0.1.0只查未驗證scheduledDateField／scheduledTimeField容器與name選單，因此真骨架雖有6個select，schedDialog仍0。修法必須加入真結構分支；不把未知class／遮罩id／空testid當成真選擇器。option value全部=x，**value格式未驗證**，不能直接假設月為1–12或上下午為AM/PM。

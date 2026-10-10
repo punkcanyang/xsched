@@ -14,3 +14,7 @@
 ## 工具
 
 寫碼 Codex gpt-6.1-sol high resume `01a1212e`；複審 resume `01a12013`。撞額度即停。
+
+## 本輪先查／計畫
+
+已確認分支v1.0/quick-fix、HEAD106661e、工作樹乾淨，總覽檔案不在此分支，不帶入。先親讀3134節點骨架及skeleton.js：裸data-testid是空屬性；非空未知值會=x，沒有可用前綴。以內層dialog、label關聯、日期／時間group與選項完整域辨識；保留原合成備援。原生select集中writer批次設值、input/change、讀回失敗整組還原並派送事件；date input不猜測同步，只讀min/max預檢。新fixture／日期／id／文字全部合成2027+。補九語錯誤、select／label testid安全匯出、原送出禁令及新攻擊自測，最後跑unit／verify，Chrome e2e與提交交外部。
