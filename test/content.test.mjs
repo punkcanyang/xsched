@@ -9,6 +9,7 @@ await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 await import('../probe/quick.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
+const uiSource = readFileSync(new URL('../probe/ui.js', import.meta.url), 'utf8');
 const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
 function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com', startReady = true) {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
@@ -48,6 +49,10 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   });
   function flush() { for (let n = 0; timers.size && n < 10; n++) { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()); } }
   function poll() { [...polls.values()].forEach((fn) => fn()); flush(); }
+  // Match the browser isolated world: the zero-argument factory closes over this
+  // document, while geometry overrides remain available to the existing fixtures.
+  vm.runInContext(uiSource, context);
+  context.XSCHED_UI = { ...ui, createAuthorLink: context.XSCHED_UI.createAuthorLink };
   vm.runInContext(positionSource, context);
   vm.runInContext(source, context); if (startReady) flush();
   const host = () => document.getElementById('xsched-probe-root');

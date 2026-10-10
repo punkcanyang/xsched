@@ -28,10 +28,14 @@ const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d
 const QUICK_SOURCE_SHA256 = "c24818395b41357f5ca2311bd5fd9aad0077409e07104c4ae3e2ce327443016e";
 
 // Owner-authorized exception: one exact DOM factory in root probe/ui.js only.
-// Its local const is created as an anchor; only its literal href statement is
-// omitted from resource-sink checks. All other code still faces every rule.
-const AUTHOR_LINK_SOURCE = `function createAuthorLink(doc) {
-  const link = doc.createElement('a');
+// Pin both definition and sole call site to full reviewed sources. This prevents
+// aliases, fake documents, shadowed bindings and changes to the returned element.
+// Any edit to either module requires review before updating these digests.
+const AUTHOR_UI_SHA256 = "da4515a9724ce050d758d5a0477bcd3864c2b6567485775f26e423fc91e97370";
+const AUTHOR_CONTENT_SHA256 = "c075c5f2d294c5c636b681f5aae8aab81d2f592645af834175c044a71d151952";
+const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
+  const link = document.createElement('a');
+  if (link.tagName !== 'A') throw new Error('Expected author anchor');
   link.setAttribute('href', 'https://x.com/punkcan');
   link.setAttribute('target', '_blank');
   link.setAttribute('rel', 'noopener');
@@ -272,7 +276,11 @@ function listFiles(dir, base = dir) {
 
 export function scanSource(text, label, { positionModule = false, quickModule = false } = {}) {
   const errors = [];
-  const checked = label === 'probe/ui.js'
+  const digest = createHash('sha256').update(text).digest('hex');
+  const auditedAuthorUi = label === 'probe/ui.js' && digest === AUTHOR_UI_SHA256;
+  const auditedAuthorContent = label === 'probe/content.js' && digest === AUTHOR_CONTENT_SHA256;
+  if ((label === 'probe/ui.js' && !auditedAuthorUi) || (label === 'probe/content.js' && !auditedAuthorContent)) errors.push(`${label}: author definition/call site differs from reviewed source`);
+  const checked = auditedAuthorUi
     ? text.replace(AUTHOR_LINK_SOURCE, AUTHOR_LINK_SOURCE.replace(AUTHOR_HREF_STATEMENT, ''))
     : text;
   const canonical = canonicalSource(text);
@@ -281,6 +289,28 @@ export function scanSource(text, label, { positionModule = false, quickModule = 
   const auditedQuick = quickModule && createHash('sha256').update(text).digest('hex') === QUICK_SOURCE_SHA256;
   if (quickModule && !auditedQuick) errors.push(`${label}: native writer differs from audited input/change-only boundary`);
   if (positionModule && !auditedPosition) errors.push(`${label}: position module differs from audited numeric-only storage boundary`);
+  // Additional rules only: original raw/canonical checks below remain unchanged.
+  // Bracket literals/escapes/concatenations are normalized before these checks.
+  const writeOperator = String.raw`(?:[+\-*/%&|^<>?]*=(?!=|>)|\+\+|--)`;
+  const targetEnd = String.raw`(?:[)}\]\s]*|(?:\s*,\s*(?:[\w$]+\s*:\s*)?[\w$.]+\s*)+[)}\]\s]*)`;
+  const component = String.raw`(?:href|search|hostname|host|pathname|protocol|port|hash|origin|username|password)`;
+  const componentWrite = new RegExp(String.raw`\.\s*${component}\b\s*(?:${targetEnd}${writeOperator}|[)}\]\s]*\b(?:of|in)\b)|(?:\+\+|--|delete\b)[^;]*?\.\s*${component}\b`);
+  if (componentWrite.test(canonical)) errors.push(`${label}: URL component write forbidden`);
+  // Methods and aliases are forbidden regardless of the receiver or property
+  // spelling. Preserve only the existing fixed Scheduled navigation and the
+  // exact audited native-select setter read; neither permits URL mutation.
+  let writes = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, '');
+  if (auditedQuick) writes = writes.replace("Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype,'value')", '');
+  if (/\b(?:Reflect|assign|defineProperty|defineProperties|setPrototypeOf|getOwnPropertyDescriptor|getOwnPropertyDescriptors|__defineSetter__|__defineGetter__|__lookupSetter__|__proto__)\b/.test(writes)) errors.push(`${label}: reflective property mutation/extraction forbidden`);
+  // Unknown computed keys could name any URL component. The only existing
+  // dynamic writes are the digest-locked native select map and DOM dataset keys.
+  const dynamicWrites = writes.replace(auditedAuthorContent ? 'button.dataset[datasetKey] = "1";' : /$^/, '');
+  if (!auditedQuick && new RegExp(String.raw`\]\s*${targetEnd}${writeOperator}|(?:\+\+|--|delete\b)[^;]*?\[[^;]*?\]|\b(?!const\b|let\b|var\b)[\w$.]+\s*\[[^\]]+\][)}\]\s]+(?:of|in)\b`).test(dynamicWrites)) errors.push(`${label}: dynamic property write forbidden`);
+  // A top-level destructured binding can shadow the isolated world's document
+  // too (including when another field follows it). Fail closed on these binding
+  // patterns; inspecting only a scalar `document = ...` misses that case.
+  if (new RegExp(String.raw`\b(?:document|createElement)\s*(?:${targetEnd}${writeOperator}|[)}\]\s]*\b(?:of|in)\b)|\b(?:const|let|var|function|class)\s+document\b|\b(?:const|let|var)\s*[\[{][^;]*\bdocument\b`).test(canonical)) errors.push(`${label}: document/element factory mutation forbidden`);
+  if (/\b(?:createAuthorLink|XSCHED_UI)\b/.test(canonical) && !auditedAuthorUi && !auditedAuthorContent) errors.push(`${label}: author factory references are restricted to reviewed UI/content`);
   for (const rule of BANNED) {
     if (auditedQuick && rule.name === "native event dispatch outside audited writer") continue;
     if (auditedPosition && ['persistent storage','storage accessor/alias'].includes(rule.name)) continue;
@@ -602,14 +632,15 @@ export function nativeWriterSelfTest() {
 }
 
 export function authorLinkSelfTest() {
-  if (scanSource(AUTHOR_LINK_SOURCE, 'probe/ui.js').length) throw new Error('author-link self-test: fixed anchor rejected');
+  const ui = readFileSync(join(PROBE, 'ui.js'), 'utf8');
+  if (!ui.includes(AUTHOR_LINK_SOURCE) || scanSource(ui, 'probe/ui.js').length) throw new Error('author-link self-test: fixed anchor rejected');
   const attacks = [
     ...['https://x.com/punkcan2', 'https://evil.example/', 'http://x.com/punkcan', 'https://x.com/punkcan/', 'https://x.com/punkcan?x=1', 'https://x.com/punkcan#x']
       .map(url => [AUTHOR_LINK_SOURCE.replace('https://x.com/punkcan', url), 'probe/ui.js']),
     [AUTHOR_LINK_SOURCE.replace("createElement('a')", "createElement('img')"), 'probe/ui.js'],
     [AUTHOR_LINK_SOURCE.replace("'href'", "'src'"), 'probe/ui.js'],
     [AUTHOR_LINK_SOURCE.replace("createElement('a')", "createElement('img')").replace("'href'", "'src'"), 'probe/ui.js'],
-    [AUTHOR_LINK_SOURCE.replace("const link = doc.createElement('a');", "const link = doc.createElement('a');\n  link = doc.createElement('img');"), 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE.replace("const link = document.createElement('a');", "let link = document.createElement('a');\n  link = document.createElement('img');"), 'probe/ui.js'],
     ...['probe/content.js', 'probe/other.js', 'probe/nested/ui.js', 'ui.js'].map(label => [AUTHOR_LINK_SOURCE, label]),
     [AUTHOR_HREF_STATEMENT, 'probe/ui.js'],
     [AUTHOR_LINK_SOURCE + '\n' + AUTHOR_LINK_SOURCE, 'probe/ui.js'],
@@ -621,9 +652,108 @@ export function authorLinkSelfTest() {
     [AUTHOR_LINK_SOURCE + "\nwindow.localStorage.setItem('x', 'y');", 'probe/ui.js'],
   ];
   for (const [source, label] of attacks) {
-    if (!scanSource(source, label).length) throw new Error('author-link self-test: unsafe href/source allowed');
+    // Mutate the complete approved UI, rather than rejecting only fragments
+    // because their digest differs. Other-file cases retain their actual label.
+    const fullSource = ui.replace(AUTHOR_LINK_SOURCE, source);
+    if (fullSource === ui && label === 'probe/ui.js') throw new Error('author-link self-test: unchanged attack');
+    if (!scanSource(fullSource, label).length) throw new Error('author-link self-test: unsafe href/source allowed');
   }
   return attacks.length;
+}
+
+export function urlMutationSelfTest() {
+  const cases = [];
+  for (const key of ['href', 'search', 'hostname', 'host', 'pathname', 'protocol', 'port', 'hash', 'origin', 'username', 'password']) {
+    for (const source of [
+      `author.${key} = 'x';`, `author['${key}'] = 'x';`,
+      `author['\\u${key.charCodeAt(0).toString(16).padStart(4, '0')}${key.slice(1)}'] = 'x';`,
+      `author['${key.slice(0, 1)}' + '${key.slice(1)}'] = 'x';`,
+      `author.${key} += 'x';`, `author.${key}++;`, `++author.${key};`,
+      `({value: author.${key}} = input);`, `(author.${key}) = 'x';`,
+      `for (author.${key} of values) {}`, `delete author.${key};`,
+    ]) cases.push([source, 'URL component write']);
+  }
+  for (const source of [
+    "author.search = '?x=1';", "author.hostname = 'evil.example';",
+    "author.search ||= '?x=1';", "author.search ??= '?x=1';", "author.search &&= '?x=1';",
+    '++(author).search', '--(getAuthor()).hostname', 'delete (getAuthor()).search',
+    '({first:author.search, second:other.value} = input)', 'for ((author.search) of values) {}',
+  ]) cases.push([source, 'URL component write']);
+  for (const source of [
+    'Reflect.set(author, "search", "?x=1")', 'Reflect["s"+"et"](author, key, value)',
+    'const {set: write}=Reflect; write(author,key,value)', 'const write=Reflect.set; write(author,key,value)',
+    'Reflect.defineProperty(author,"hostname",{value:"evil.example"})',
+    'Object.assign(author,{search:"?x=1"})', 'Object["ass"+"ign"](author,values)',
+    'const {assign: write}=Object; write(author,values)', 'const write=Object.assign; write(author,values)',
+    'Object.defineProperty(author,"search",{value:"?x=1"})',
+    'Object.defineProperties(author,{search:{value:"?x=1"}})',
+    'const {defineProperty: write}=Object; write(author,key,descriptor)',
+    'Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype,"search").set.call(author,"?x=1")',
+    'Object.getOwnPropertyDescriptors(HTMLAnchorElement.prototype).hostname.set.call(author,"evil.example")',
+    'author.__defineSetter__("search",write)', 'Object.setPrototypeOf(author,other)',
+  ]) cases.push([source, 'reflective property mutation/extraction']);
+  for (const source of [
+    'author[key] = value', 'author[key] += value', 'author[key]++', '++author[key]',
+    '(author[key]) = value', '({value:author[key]} = input)', 'for(author[key] of values) {}',
+    'delete author[key]', 'author[key] ??= value',
+    '++(author[key])', '--(getAuthor()[key])',
+    '({first:author[key], second:other.value} = input)', 'for ((author[key]) of values) {}',
+  ]) cases.push([source, 'dynamic property write']);
+  for (const [source, rule] of cases) {
+    // No UI/content digest failure can mask a missing global URL-write rule.
+    if (!scanSource(source, 'probe/elsewhere.js').some(error => error.includes(rule))) throw new Error(`URL mutation self-test: missed ${source}`);
+  }
+  if (scanSource('const name = address.hostname; const search = address.search;', 'probe/elsewhere.js').length) throw new Error('URL mutation self-test: reads rejected');
+  return cases.length;
+}
+
+export function authorBoundarySelfTest() {
+  const ui = readFileSync(join(PROBE, 'ui.js'), 'utf8');
+  const content = readFileSync(join(PROBE, 'content.js'), 'utf8');
+  if (scanSource(content, 'probe/content.js').length) throw new Error('author boundary self-test: approved call rejected');
+  const call = 'createAuthorLink()';
+  if (content.split(call).length !== 2) throw new Error('author boundary self-test: expected one zero-argument call');
+  const contentEdits = [
+    content.replace(call, "createAuthorLink({createElement: () => document.createElement('link')})"),
+    content.replace(call, 'createAuthorLink(document)'),
+    content.replace(call, 'createAuthorLink.call(fake)'),
+    content.replace(call, 'createAuthorLink.apply(null,[fake])'),
+    content.replace(call, 'Reflect.apply(createAuthorLink,null,[fake])'),
+    content.replace(call, 'globalThis.XSCHED_UI.createAuthorLink(fake)'),
+    content.replace(call, 'otherFactory()'),
+    content.replace(call, '(createAuthorLink(), createAuthorLink())'),
+    content.replace('panel.append(author);', "author.search = '?x=1'; panel.append(author);"),
+    content.replace('panel.append(author);', "author.hostname = 'evil.example'; panel.append(author);"),
+    content.replace('panel.append(author);', "author.rel = 'stylesheet'; document.head.append(author);"),
+    content + '\nconst factory = globalThis.XSCHED_UI.createAuthorLink; factory(fake);',
+  ];
+  const uiEdits = [
+    ui.replace('function createAuthorLink() {', 'function createAuthorLink(document) {'),
+    ui.replace("document.createElement('a')", "document.createElement('link')"),
+    ui.replace("  if (link.tagName !== 'A') throw new Error('Expected author anchor');\n", ''),
+    ui.replace('function createAuthorLink() {', "function createAuthorLink() {\n  const document = {createElement: () => globalThis.document.createElement('link')};"),
+    ui + "\ndocument.createElement = () => document.createElement('link');",
+  ];
+  for (const [sources, original, label] of [[contentEdits, content, 'probe/content.js'], [uiEdits, ui, 'probe/ui.js']]) {
+    for (const source of sources) {
+      if (source === original || !scanSource(source, label).some(error => error.includes('differs from reviewed source'))) throw new Error('author boundary self-test: modified definition/call allowed');
+    }
+  }
+  const extraFiles = [
+    'globalThis.XSCHED_UI.createAuthorLink()',
+    'const {createAuthorLink: factory}=globalThis.XSCHED_UI; factory(fake)',
+    'globalThis["XSCHED_"+"UI"]["createAuthor"+"Link"](fake)',
+    'document.createElement = fake',
+    'globalThis["document"] = fake',
+    'const {document, unused} = fake',
+    'let {value: {document, unused}} = fake',
+    'var {first = 1, document, unused} = fake',
+    '({method: Document.prototype.createElement, unused} = fake)',
+    '({document, unused} = fake)',
+    'for (Document.prototype.createElement of values) {}',
+  ];
+  for (const source of extraFiles) if (!scanSource(source, 'probe/other.js').length) throw new Error('author boundary self-test: alternate file/factory allowed');
+  return contentEdits.length + uiEdits.length + extraFiles.length;
 }
 
 function selfTest() {
@@ -649,6 +779,8 @@ function selfTest() {
   const storageCases = positionStorageSelfTest();
   const nativeCases = nativeWriterSelfTest();
   const authorCases = authorLinkSelfTest();
+  const urlCases = urlMutationSelfTest();
+  const boundaryCases = authorBoundarySelfTest();
   // Prove the scanner fails closed: a synthetic probe with a network call AND a bad
   // manifest must produce errors, while a clean synthetic probe must not.
   const dir = mkdtempSync(join(tmpdir(), "xsched-verify-selftest-"));
@@ -711,7 +843,7 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -739,7 +871,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call

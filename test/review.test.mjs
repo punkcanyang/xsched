@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runNode } from "../scripts/test-cli.mjs";
-import { scanSource, checkManifest, checkProbeDir, attackSelfTest, authorLinkSelfTest } from "../scripts/verify.mjs";
+import { scanSource, checkManifest, checkProbeDir, attackSelfTest, authorLinkSelfTest, urlMutationSelfTest, authorBoundarySelfTest } from "../scripts/verify.mjs";
 import { allowedRequest, hasExtensionInitiator } from "../scripts/network-policy.mjs";
 await import("../probe/reader.js");
 const R = globalThis.XSCHED_READER;
@@ -18,6 +18,14 @@ const goodManifest = { manifest_version: 3, content_scripts: [{ matches: ["https
 
 test('author-link guard rejects 22 URL, element, file and extra-sink attacks', () => {
   assert.equal(authorLinkSelfTest(), 22);
+});
+
+test('URL-write guard rejects 160 component, computed-key and reflection attacks in other files', () => {
+  assert.equal(urlMutationSelfTest(), 160);
+});
+
+test('author boundary rejects 28 fake-document, changed-call and changed-source attacks', () => {
+  assert.equal(authorBoundarySelfTest(), 28);
 });
 
 test("privacy self-test actually fails when skeleton or time masking leaks", () => {
@@ -213,6 +221,25 @@ test('verify CLI rejects destructured, reflected and handler activation before e
       const result = runNode(['scripts/verify.mjs', directory], { timeout: 10000 });
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.ok(result.stderr.includes(rule), result.stderr);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('verify CLI rejects URL mutation and factory substitution before executing code', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'xsched-author-review-'));
+  try {
+    writeFileSync(join(directory, 'manifest.json'), JSON.stringify(goodManifest));
+    for (const [source, rule] of [
+      ["author.search = '?x=1'; author.hostname = 'evil.example';", 'URL component write'],
+      ['Object.assign(author,{search:"?x=1"})', 'reflective property mutation'],
+      ["createAuthorLink({createElement: () => document.createElement('link')});", 'author factory references'],
+      ['const {document, unused} = fake;', 'document/element factory mutation'],
+    ]) {
+      writeFileSync(join(directory, 'ok.js'), source + '\nthrow new Error("unsafe module executed");');
+      const result = runNode(['scripts/verify.mjs', directory], { timeout: 10000 });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.ok(result.stderr.includes(rule), result.stderr);
+      assert.ok(!result.stderr.includes('unsafe module executed'), result.stderr);
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
