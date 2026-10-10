@@ -35,6 +35,17 @@ test('bounded geometry detects non-button fixed unread widget, excludes our host
   const panel=U.panelPlacement(1280,600,anchor,result,360,160);
   assert.ok(panel.clear && !U.overlaps(panel,rect));
 });
+test('geometry sees body/html injected wrappers but completely excludes modal content and backdrops',()=>{
+  const {document}=parseHTML('<html><body><div class="injected-square"></div><div role="dialog" aria-modal="true"><button>Fake draft</button></div><div class="backdrop"></div></body></html>');
+  const round=document.createElement('div');document.documentElement.append(round);
+  const square=document.querySelector('.injected-square');
+  const dialog=document.querySelector('[role="dialog"]'),backdrop=document.querySelector('.backdrop');
+  const rect={left:1040,right:1088,top:660,bottom:708,width:48,height:48};
+  for(const el of document.querySelectorAll('*')) el.getBoundingClientRect=()=>el===backdrop?{left:0,top:0,right:1100,bottom:820,width:1100,height:820}:rect;
+  document.elementsFromPoint=()=>[dialog.firstElementChild,dialog,backdrop,round,square];
+  const out=U.collectObstacles(document,()=>({position:'fixed',display:'block'}),1100,820);
+  assert.deepEqual(out,[rect,rect],'only two non-modal floating wrappers survive');
+});
 test('geometry query and ancestor inspection remain bounded on a large page', () => {
   const {document}=parseHTML('<html><body>'+Array.from({length:1500},()=>'<button>fake</button>').join('')+'</body></html>');
   let inspected=0;

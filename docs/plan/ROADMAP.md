@@ -40,9 +40,15 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 
 外部工作期間建立WIP `05242c5`，仍有最後收尾差異待提交。待外部 `npm test`／`npm run verify`／`npm run e2e`、gate0.3假資料截圖與0資源／背景請求證據；沙箱listen EPERM，沒有本輪Chrome斷言／新截圖。另待另一session複審及老闆自己的Chrome逐則日期時分與右下布局實測，尚未READY。無新增權限／網路API／遠端資源，$0、不打包zip。根因、5步實測與限制見 `notes/GATE0.md`「閘0.3」，外部交接見 `notes/HANDOFF-gate0.3.md`。
 
-## 閘 0.4：快捷鈕可拖動＋避讓其他擴充（probe 0.0.5，進行中）
+狀態更新（2026-10-10）：閘0.3已經由PR #8合main `4491b79`，老闆確認0.0.4繁中時間timeOk=1／timeFail=0、浮層可捲。下一輪修布局，不倒退時間讀法。
+
+## 閘 0.4：快捷鈕可拖動＋避讓其他擴充（probe 0.0.5，實作完成、驗證受阻）
 
 2026-10-10 11:35（UTC+8）。老闆實測 0.0.4：時間解析通過（timeOk=1、timeFail=0）、浮層可捲；但快捷鈕與其他擴充浮動鈕疊在一起、tooltip 蓋鈕。分支 `gate0.4/drag-avoid-extensions`；位置存 x.com localStorage（不加權限）。交接見 `notes/HANDOFF-gate0.4.md`。
+
+0.0.4跳鈕根因已用原函式VM證明：展開把面板矩形算入鈕避讓並回寫host，poll也重跑；不是掛在dialog內，modal子鈕仍能成障礙。本輪固定錨點／面板分離、modal排除、外掛root fixed有界偵測、6px pointer拖動／reload保存／resize夾位、九語重設與原生title已實作；位置只存x.com固定xsched key的兩個有限數字，不加權限。verify原禁令保留，以精確已審來源邊界開放唯一位置模組，增加18項storage攻擊自測。
+
+**尚未READY**：本輪沒有node_modules，npm ci ENOTCACHED／registry DNS EAI_AGAIN；無依賴位置測試5/5、实际静態守門與18項storage自測已過，完整npm test／verify／e2e未通過驗收。外部已有WIP `16f6228`，後續修改待提交；需外部安裝lockfile依賴並跑三測試／gate0.4假資料截圖，另由另一session複審與老闆真機位置驗收。根因、策略、5步實測與限制見notes/GATE0.md「閘0.4」；完整環境結果及外部命令見HANDOFF。
 
 ## 1.0（閘 0 過才做）
 

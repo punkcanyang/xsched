@@ -197,6 +197,7 @@ const BANNED = [
   { name: "Function constructor/alias", re: /\bFunction\b/ },
   { name: "history patch/navigation", re: /\b(?:pushState|replaceState)\b/ },
   { name: "persistent storage", re: /\b(?:localStorage|sessionStorage|indexedDB)\b|\bchrome\s*\.\s*storage\b/ },
+  { name: "storage accessor/alias", re: /\b(?:getItem|setItem|removeItem)\b/ },
   { name: "programmatic click/scroll", re: /\.\s*(?:click|scroll|scrollBy|scrollTo|scrollIntoView)\s*\(|\.\s*(?:scrollTop|scrollLeft)\s*=/ },
   { name: "resource URL/sink", re: /\b(?:src|href|srcset)\s*=|\burl\s*\(/i },
   { name: "resource attribute", re: /\.\s*setAttribute\s*\(\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
@@ -250,7 +251,7 @@ export function scanSource(text, label, { positionModule = false } = {}) {
   const auditedPosition = positionModule && createHash('sha256').update(text).digest('hex') === POSITION_SOURCE_SHA256;
   if (positionModule && !auditedPosition) errors.push(`${label}: position module differs from audited numeric-only storage boundary`);
   for (const rule of BANNED) {
-    if (auditedPosition && rule.name === 'persistent storage') continue;
+    if (auditedPosition && ['persistent storage','storage accessor/alias'].includes(rule.name)) continue;
     if (rule.re.test(text) || rule.re.test(canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
   }
   const navigation = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, "");
@@ -508,6 +509,7 @@ export function positionStorageSelfTest() {
   const forbidden = [
     'window.localStorage.setItem("xsched.probe.pos", "{}");',
     'const store=window["local"+"Storage"];',
+    'const a="local", b="Storage"; window[a+b].setItem("xsched.probe.pos","private");',
     'window.sessionStorage.setItem("xsched.probe.pos","{}");',
     'window.indexedDB.open("xsched.probe.pos");',
     'chrome.storage.local.set({x:1,y:2});',

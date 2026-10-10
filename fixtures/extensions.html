@@ -1,0 +1,67 @@
+<!-- 依公開來源重建，非真頁快照｜local fixture, not a real x.com page. All data is fake. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>xsched fixture — en (Scheduled)</title>
+<style>
+  body { font: 15px/1.45 system-ui, sans-serif; background:#000; color:#e7e9ea; margin:0; padding:16px; }
+  .banner { color:#ffd400; font-size:12px; margin:0 0 12px; }
+  [role="dialog"] { border:1px solid #2f3336; border-radius:16px; max-width:520px; padding:12px 14px; }
+  [role="tablist"] { display:flex; gap:16px; border-bottom:1px solid #2f3336; margin-bottom:6px; }
+  [role="tab"] { padding:8px 2px; color:#8b98a5; }
+  [role="tab"][aria-selected="true"] { color:#e7e9ea; box-shadow: inset 0 -2px 0 #1d9bf0; }
+  [data-testid="cellInnerDiv"] { display:block; padding:10px 2px; border-top:1px solid #2f3336; }
+  .when { color:#71767b; font-size:13px; }
+  .body { margin-top:2px; }
+
+  .native-post { position:fixed; left:16px; bottom:80px; width:160px; height:48px; background:#1d9bf0; color:white; border:0; border-radius:24px; }
+  .native-fab { display:none; position:fixed; right:20px; bottom:88px; width:56px; height:56px; background:#1d9bf0; color:white; border:0; border-radius:50%; }
+  .native-drawer { position:fixed; right:0; bottom:0; width:300px; height:48px; background:#202327; color:white; border:1px solid #536471; }
+  /* Geometry fixture: generic non-button unread circle and Grok control. */
+  .native-unread { position:fixed; right:24px; bottom:64px; width:48px; height:48px; border-radius:50%; display:grid; place-items:center; background:#38444d; color:white; cursor:pointer; }
+  .native-unread .dot { position:absolute; right:-2px; top:-2px; padding:0 4px; background:#f4212e; color:white; border-radius:8px; font-size:11px; }
+  .native-grok { position:fixed; right:104px; bottom:64px; width:44px; height:44px; border-radius:50%; background:#38444d; color:white; border:0; }
+  @media (max-width:600px) { .native-post { display:none; } .native-fab { display:block; } .native-drawer { width:190px; } }
+</style>
+</head>
+<body>
+<p class="banner">本機 fixture，依公開來源重建，非真頁快照（資料全為假）</p>
+<div role="dialog" aria-label="Unsent posts">
+  <div role="tablist">
+    <div role="tab" aria-selected="false">Drafts</div>
+    <div role="tab" aria-selected="true">Scheduled</div>
+  </div>
+  <div id="sched-list">
+    <div data-testid="cellInnerDiv">
+      <div role="button" aria-label="Will send on Fri, Oct 10, 2026 at 9:00 AM Local fixture morning product note">
+        <div class="when">Will send on Fri, Oct 10, 2026 at 9:00 AM</div>
+        <div class="body" data-testid="tweetText">Local fixture morning product note</div>
+      </div>
+    </div>
+    <div data-testid="cellInnerDiv">
+      <div role="button" aria-label="Will send on Mon, Nov 9, 2026 at 8:05 PM Local fixture evening weekly recap">
+        <div class="when">Will send on Mon, Nov 9, 2026 at 8:05 PM</div>
+        <div class="body" data-testid="tweetText">Local fixture evening weekly recap</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Mock control positions only: task-supplied Post/FAB testids, not live X DOM evidence. -->
+<button class="native-post" data-testid="SideNav_NewTweet_Button" onclick="window.fixturePostClicks=(window.fixturePostClicks||0)+1">Post (fixture)</button>
+<button class="native-fab" data-testid="FloatingActionButtons_Tweet_Button" onclick="window.fixturePostClicks=(window.fixturePostClicks||0)+1" aria-label="Post (fixture)">＋</button>
+<button class="native-drawer" onclick="window.fixtureDrawerClicks=(window.fixtureDrawerClicks||0)+1">Messages / Grok (fixture)</button>
+<div class="native-unread" onclick="window.fixtureWidgetClicks=(window.fixtureWidgetClicks||0)+1">DM<span class="dot">1</span></div>
+<button class="native-grok" onclick="window.fixtureWidgetClicks=(window.fixtureWidgetClicks||0)+1">Grok</button>
+<!-- Fake widgets from two extensions; created before document_idle, no remote assets. -->
+<button class="other-extension-square" style="position:fixed;right:16px;bottom:176px;width:52px;height:52px;border-radius:12px;background:#7c3aed;color:white;border:0" onclick="window.fixtureOtherClicks=(window.fixtureOtherClicks||0)+1">／</button>
+<script>
+  const round=document.createElement('button');
+  round.className='other-extension-round';round.textContent='NB';
+  Object.assign(round.style,{position:'fixed',right:'16px',bottom:'112px',width:'48px',height:'48px',borderRadius:'50%',background:'#059669',color:'white',border:'0'});
+  round.addEventListener('click',()=>{window.fixtureOtherClicks=(window.fixtureOtherClicks||0)+1;});
+  document.documentElement.append(round);
+</script>
+</body>
+</html>

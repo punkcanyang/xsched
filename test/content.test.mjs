@@ -158,6 +158,50 @@ test('legacy body dates never rescue rewritten metadata, including virtual accum
     }
   }
 });
+test('button anchor never changes on toggle, poll, SPA, modal mutations or remount', () => {
+  let placements=0;
+  const ui={...globalThis.XSCHED_UI,placement(...args){placements++;return globalThis.XSCHED_UI.placement(...args);}};
+  const f=fixture(undefined,undefined,undefined,null,ui);
+  const point=()=>({left:f.host().style.left,top:f.host().style.top});
+  const initial=point();assert.equal(placements,1);
+  for(let n=0;n<3;n++){f.click('.shortcut');f.poll();assert.deepEqual(point(),initial);}
+  const modal=f.document.createElement('div');modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');f.document.body.append(modal);
+  f.mutate([{type:'childList',target:f.document.body,addedNodes:[modal],removedNodes:[]}]);
+  f.click('.shortcut');f.poll();assert.deepEqual(point(),initial);
+  f.location.pathname='/home';f.poll();assert.deepEqual(point(),initial);
+  f.host().remove();f.poll();assert.deepEqual(point(),initial);
+  assert.equal(placements,1,'only initialization can auto-place before resize/reset');
+  assert.ok(['BODY','HTML'].includes(f.host().parentElement.tagName));assert.equal(f.host().closest('[role="dialog"]'),null);
+  f.resize(1280,600);assert.equal(placements,2);
+});
+test('pointer drag persists numeric position, reload/restored viewport preserves it, reset returns to auto',()=>{
+  const f=fixture();const shortcut=()=>f.shadow().querySelector('.shortcut');
+  const open=shortcut().getAttribute('aria-expanded');
+  const original={x:parseFloat(f.host().style.left),y:parseFloat(f.host().style.top)};
+  f.pointer('pointerdown',original.x+22,original.y+22);
+  f.pointer('pointermove',222,122);f.pointer('pointerup',222,122);
+  f.click('.shortcut'); // Browser's compatibility click after dragging is suppressed.
+  assert.equal(shortcut().getAttribute('aria-expanded'),open);
+  assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.pos')),{x:200,y:100});
+  const reloaded=fixture(undefined,undefined,undefined,null,undefined,undefined,f.stored);
+  assert.equal(reloaded.host().style.left,'200px');assert.equal(reloaded.host().style.top,'100px');
+  reloaded.resize(180,150);assert.equal(reloaded.host().style.left,'120px');assert.equal(reloaded.host().style.top,'90px');
+  assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.pos')),{x:200,y:100},'resize does not overwrite raw preference');
+  reloaded.resize(1100,820);assert.equal(reloaded.host().style.left,'200px');assert.equal(reloaded.host().style.top,'100px');
+  assert.equal(reloaded.shadow().querySelector('[role="tooltip"], .tooltip'),null);
+  reloaded.click('[data-xsched-reset-position]');assert.equal(f.stored.size,0);
+  assert.deepEqual({x:parseFloat(reloaded.host().style.left),y:parseFloat(reloaded.host().style.top)},original);
+});
+test('pointer threshold, cancellation and secondary pointers never persist accidental moves',()=>{
+  const f=fixture();const point=()=>[f.host().style.left,f.host().style.top];const start=point();
+  f.pointer('pointerdown',100,100);f.pointer('pointermove',102,102);f.pointer('pointerup',102,102);
+  assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+  f.click('.shortcut');assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
+  f.pointer('pointerdown',100,100);f.pointer('pointermove',200,200,{pointerId:2});assert.deepEqual(point(),start);
+  f.pointer('pointermove',200,200);f.pointer('pointercancel',200,200);assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+  f.pointer('pointerdown',100,100,{button:2});f.pointer('pointermove',300,300);f.pointer('pointerup',300,300);
+  assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+});
 test('home has only closed shortcut; localized goto navigates fixed target despite dataset tampering', () => {
   const f = fixture('/home', 'zh-Hant');
   assert.equal(f.shadow().querySelector('section').style.display, 'none');

@@ -342,8 +342,11 @@ async function main() {
     }
     await page.setViewport({ width: 1100, height: 820 });
     await sleep(600);
-    // An expanded lower-right drawer must cause both button and panel to shift.
+    // An explicit resize rechecks the anchor after expanding the lower-right drawer.
     await page.evaluate(() => Object.assign(document.querySelector('.native-drawer').style, { width: '400px', height: '620px' }));
+    // Gate 0.4 intentionally keeps the anchor stable on DOM mutation. Resize is
+    // an explicitly allowed auto-avoidance trigger; retain all native hit tests.
+    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
     await sleep(600);
     await checkNative('expanded Messages/Grok drawer');
     navigations.add(target);
@@ -426,7 +429,7 @@ async function main() {
       const hits=await page.evaluate(withGoto => {
         const host=document.getElementById('xsched-probe-root');
         const shadow=host.shadowRoot;
-        const selectors=['[data-xsched-copy]','[data-xsched-skeleton]',...(withGoto ? ['[data-xsched-goto]'] : [])];
+        const selectors=['[data-xsched-copy]','[data-xsched-skeleton]','[data-xsched-reset-position]',...(withGoto ? ['[data-xsched-goto]'] : [])];
         return selectors.map(selector => {
           const button=shadow.querySelector(selector);
           const r=button.getBoundingClientRect();
@@ -916,6 +919,91 @@ async function main() {
       assert(state.present && state.mode === "other", `${subpath}: selected tab must not override route (mode=${state.mode})`);
     }
     console.log("  ✓ non-Scheduled: home, Drafts, picker with adversarial selected tabs");
+
+    // ── 0.4: immutable anchor, foreign widgets, dragging and numeric persistence ──
+    const baselineManifest=JSON.parse(execFileSync('git',['show','4491b79:probe/manifest.json'],{encoding:'utf8'}));
+    const currentManifest=JSON.parse(readFileSync(join(PROBE,'manifest.json'),'utf8'));
+    for(const field of ['permissions','host_permissions','web_accessible_resources']) assert(JSON.stringify(currentManifest[field])===JSON.stringify(baselineManifest[field]),'0.0.4 baseline manifest unchanged: '+field);
+    assert(JSON.stringify(currentManifest.content_scripts[0].matches)===JSON.stringify(baselineManifest.content_scripts[0].matches),'no new content-script hosts');
+    await page.setViewport({width:1100,height:820});
+    await open('extensions');
+    await until(async () => (await probeState(page)).expanded==='true','foreign-widget fixture initially open');
+    async function buttonRect() {
+      return page.evaluate(()=>{
+        const r=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.shortcut').getBoundingClientRect();
+        return {x:r.x,y:r.y,left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};
+      });
+    }
+    const automatic=await buttonRect();
+    const foreign=await page.evaluate(()=>{
+      const host=document.getElementById('xsched-probe-root'),r=host.shadowRoot.querySelector('.shortcut').getBoundingClientRect();
+      return [...document.querySelectorAll('.other-extension-square, .other-extension-round')].map(el=>{
+        const b=el.getBoundingClientRect();
+        return {parent:el.parentElement.tagName,overlap:r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top,hit:document.elementFromPoint(b.left+b.width/2,b.top+b.height/2)===el};
+      });
+    });
+    assert(foreign.length===2 && foreign.some(el=>el.parent==='BODY') && foreign.some(el=>el.parent==='HTML'),'two fake extensions injected at body and documentElement');
+    for(const widget of foreign) assert(!widget.overlap && widget.hit,'foreign fixed button unobstructed and clickable');
+    await page.click('.other-extension-square');await page.click('.other-extension-round');
+    assert(await page.evaluate(()=>window.fixtureOtherClicks===2),'physical clicks reach both foreign extension widgets');
+    assert(await page.evaluate(()=>{
+      const shadow=document.getElementById('xsched-probe-root').shadowRoot;
+      return !shadow.querySelector('[role="tooltip"], .tooltip') && shadow.querySelector('.shortcut').title===shadow.querySelector('.shortcut').getAttribute('aria-label');
+    }),'uses native title only, with localized aria-label; no custom tooltip');
+    await page.screenshot({path:join(DOCS,'gate0.4-avoid-extensions.png')});
+    await page.mouse.move(automatic.x+automatic.width/2,automatic.y+automatic.height/2);
+    await sleep(800);
+    await page.screenshot({path:join(DOCS,'gate0.4-tooltip.png')});
+    assert(await page.evaluate(()=>window.localStorage.getItem('xsched.probe.pos')===null),'automatic placement never persists page data');
+    const expandedBeforeDrag=(await probeState(page)).expanded;
+    await page.mouse.move(automatic.x+automatic.width/2,automatic.y+automatic.height/2);
+    await page.mouse.down();await page.mouse.move(242,142,{steps:15});await page.mouse.up();
+    const dragged=await until(async()=>{
+      const r=await buttonRect();return r.x===220&&r.y===120?r:null;
+    },'pointer drag moves button to user anchor');
+    assert((await probeState(page)).expanded===expandedBeforeDrag,'drag compatibility click cannot toggle panel');
+    const saved=await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.pos')));
+    assert(Object.keys(saved).sort().join(',')==='x,y' && Object.values(saved).every(value=>typeof value==='number'&&Number.isFinite(value)) && saved.x===220 && saved.y===120,'fixed xsched key stores exactly numeric x/y');
+    await page.reload({waitUntil:'domcontentloaded'});
+    await until(async()=> (await probeState(page)).expanded==='true','dragged reload mounted');
+    assert(JSON.stringify(await buttonRect())===JSON.stringify(dragged),'reload preserves exact dragged button rectangle');
+    await page.screenshot({path:join(DOCS,'gate0.4-dragged-reload.png')});
+    await page.setViewport({width:180,height:150});await sleep(600);
+    const clamped=await buttonRect();
+    assert(clamped.left>=0&&clamped.top>=0&&clamped.right<=180&&clamped.bottom<=150,'resize clamps manual anchor inside viewport');
+    assert(await page.evaluate(()=>window.localStorage.getItem('xsched.probe.pos')===JSON.stringify({x:220,y:120})),'resize does not overwrite original saved preference');
+    await page.setViewport({width:1100,height:820});await sleep(600);
+    assert(JSON.stringify(await buttonRect())===JSON.stringify(dragged),'larger viewport restores original saved position');
+    await clickShadow('[data-xsched-reset-position]');
+    assert(await page.evaluate(()=>window.localStorage.getItem('xsched.probe.pos')===null),'reset removes only the position key');
+    assert(JSON.stringify(await buttonRect())===JSON.stringify(automatic),'reset returns to automatically avoided default');
+    await page.screenshot({path:join(DOCS,'gate0.4-reset.png')});
+    await toggle(false);const noModalClosed=await buttonRect();
+    await toggle(true);assert(JSON.stringify(await buttonRect())===JSON.stringify(noModalClosed),'no modal: toggle keeps exact button rectangle');
+    await page.screenshot({path:join(DOCS,'gate0.4-no-modal-open.png')});
+    await page.evaluate(()=>{
+      const backdrop=document.createElement('div');backdrop.className='fixture-draft-backdrop';
+      Object.assign(backdrop.style,{position:'fixed',inset:'0',background:'#0008',zIndex:'10000'});
+      const modal=document.createElement('div');modal.className='fixture-draft-modal';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');
+      Object.assign(modal.style,{position:'fixed',right:'70px',bottom:'48px',width:'400px',height:'420px',background:'#202327',zIndex:'10001'});
+      const button=document.createElement('button');button.textContent='Fake draft control';Object.assign(button.style,{position:'absolute',right:'16px',bottom:'16px'});modal.append(button);
+      document.body.append(backdrop,modal);
+    });
+    await sleep(600);
+    assert(JSON.stringify(await buttonRect())===JSON.stringify(noModalClosed),'opening X draft modal cannot auto-move anchor');
+    await toggle(false);const modalClosed=await buttonRect();
+    await page.screenshot({path:join(DOCS,'gate0.4-modal-closed.png')});
+    await toggle(true);
+    assert(JSON.stringify(await buttonRect())===JSON.stringify(modalClosed),'with full-screen backdrop and dialog control: toggle keeps exact rectangle');
+    assert(await page.evaluate(()=>{
+      const host=document.getElementById('xsched-probe-root');
+      return ['BODY','HTML'].includes(host.parentElement.tagName)&&!host.closest('[role="dialog"]')&&getComputedStyle(host).position==='fixed';
+    }),'host stays fixed at body/html level, never inside X dialog');
+    await page.screenshot({path:join(DOCS,'gate0.4-modal-open.png')});
+    await page.evaluate(()=>{document.querySelector('.fixture-draft-modal').remove();document.querySelector('.fixture-draft-backdrop').remove();});
+    await sleep(600);
+    assert(JSON.stringify(await buttonRect())===JSON.stringify(modalClosed),'closing modal cannot move anchor');
+    console.log('  ✓ gate0.4: foreign widgets, native title, drag/reload, clamp/reset, immutable modal/no-modal anchor');
 
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);

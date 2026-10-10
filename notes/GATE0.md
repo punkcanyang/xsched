@@ -608,7 +608,7 @@ production reader／content、verify與權限保持原狀。`scripts/e2e.mjs:535
 
 `ui.js:88–103`在展開時把width從44改成344，height從44改成44+panelHeight+12，對這個聯合矩形找位置，因而把浮層的避讓反過來移動鈕。`ui.js:75–81`雖忽略全螢幕modal矩形，仍把其button子節點列為障礙；非全屏fixed dialog本體也會被計入。modal出現時可以再次改變位置。真畫面上的「跳進modal右下角」是視窗坐標的避讓結果，不代表DOM被移入dialog；沒有真機DOM不能再斷言是哪個具體障礙造成那個落點。
 
-離線實跑：`node /tmp/xsched-gate04-position-vm.mjs`。從未改的content.js擷取完整positionUI函式，用VM執行原函式＋原ui.js；1100×820、panel測試高度44、固定障礙矩形(900,600)–(980,655)。輸出：
+離線實跑：`node /tmp/xsched-gate04-position-vm.mjs`。從未改的content.js擷取完整positionUI函式（收尾再用`git show 4491b79:probe/{ui,content}.js`各自匯出到/tmp，VM讀固定基準並重跑同一輸出），用VM執行原函式＋原ui.js；1100×820、panel測試高度44、固定障礙矩形(900,600)–(980,655)。輸出：
 
 ```text
 collapsed=false visibility=visible right=16px bottom=228px
@@ -618,3 +618,45 @@ modalObstacles=[{left:900,right:980,top:600,bottom:655,width:80,height:55}]
 ```
 
 最後一行用全螢幕fixed role=dialog模型與其靜態button子節點執行原collectObstacles，證明modal內容仍被當障礙。另直接呼叫原placement，closed={right:16,bottom:112,clear:true}、open={right:16,bottom:228,clear:true}。這是原函式VM的計算證據，不是真Chrome布局證據；本輪linkedom缺依賴且npm registry DNS EAI_AGAIN，不能把未完成的linkedom／Chrome實跑寫成通過。
+
+
+## 修法與位置策略
+
+`probe/content.js` 的 `applyAnchor` 是快捷鈕座標唯一寫入點。初始化時用44×44鈕本身找預設右16／下112的可用位置；開關／poll／X DOM mutation只跑面板定位。host仍直接掛body（不存在時html），position:fixed；重掛沿用錨點。自動錨點只在初始化、重設、resize重算；拖動結束以新使用者錨點重夾。不改X DOM、不點X控制項、不把modal當定位容器。明確保留外部display:none與mounted真實可見狀態。
+
+`probe/ui.js` 把快捷鈕`placement`與`panelPlacement`拆開。面板可向上／下／左／右找空間，寬≤344、總高≤60vh且小於可用高度；保留可捲body與不隨body捲走的header／操作列。找不到可放下固定操作列和至少32px內容的安全位置時收起面板，快捷鈕不因面板大小而移動。候選最多66組，每組最多14個高度，不做無界搜尋。
+
+障礙偵測增加最多64個body／html直接節點，保留最多96個控制項、320次右下取樣（每次最多8層命中）、總候選256、style讀取768、祖先深度12。只讀getComputedStyle／getBoundingClientRect，fixed／sticky可見矩形才計入；可讀到其他擴充的root wrapper（包括內含closed shadow的wrapper）。排除自家host、role=dialog／alertdialog整個子樹與85%以上全頁wrapper／遮罩。不猜X新testid，不改讀法。偵測後往上或左找空位；使用者位置不再自動避讓其他鈕，除非按重設。
+
+pointer拖動門檻6px，pointer capture保留跨鈕拖動；門檻前仍是普通點擊，跨門檻後抑制相容click，取消／capture失去／resize中斷時回原錨點且不寫位置。拖完刷新仍在同一視窗座標；縮小視窗只夾可見位置，放大回原保存位置。操作列新增九語重設，清位置key後回自動避讓。tooltip採既有九語原生title，沒有自訂tooltip DOM；瀏覽器決定提示框位置，擴充不另占一塊浮動區域。
+
+## localStorage與守門
+
+只有`probe/position.js`可讀寫x.com頁面`window.localStorage`，固定key `xsched.probe.pos`，只接受恰有兩個鍵的有限數字`{x,y}`。寫入前複製並再驗證，阻止getter在驗證後換成字串；讀取最多128字元，非數字／多鍵／破損JSON直接忽略。拒絕其他hostname；讀寫例外不帶私人訊息進診斷。禁止chrome.storage，沒有新增權限。manifest描述改為只保存本機按鈕位置。
+
+這是與x.com同origin的頁面儲存，X頁面及其他同origin腳本可能讀寫／刪掉此位置；只存兩個數字、不存本文／身份／路徑／診斷。原始保存值不被resize改寫；重設只刪固定key。儲存被禁用時本頁仍可拖動，但刷新不保留。
+
+verify原persistent storage禁令保留。只對根目錄position.js、且來源SHA-256與已審數字模組完全一致時豁免storage關鍵詞／方法名兩項；任何來源改動都必須重新審核並更新摘要。網路／注入／manifest等其他規則仍完整掃描此模組。另加禁止getItem／setItem／removeItem，抓別處變數拼接storage名稱的繞法。18項自測證明別處／改名、錯前綴與不同key、非數字內容、刪驗證、有限數字驗證移除、其他storage及混入網路均被擋；原30 API／14 icon／9 SVG／39洩漏攻擊項目全保留。
+
+## 測試與外部收尾
+
+新增`test/position.test.mjs`、真content拖動／錨點回歸、幾何modal排除／外掛wrapper測試與`fixtures/extensions.html`（兩個假外掛鈕分別掛body與html）。e2e保留舊情境及0擴充資源／背景請求斷言；增加實際mouse拖動、reload、數字key、resize原值、重設、無自訂tooltip、外掛鈕非重疊／elementFromPoint／物理點擊、modal／無modal開關前後精確矩形比較、body／html掛載和基準4491b79權限比較。舊擴大DM測試在改幾何後顯式發resize，符合新規格，非重疊斷言沒有放寬。
+
+本輪node_modules缺失；npm ci離線ENOTCACHED，線上registry DNS EAI_AGAIN。本session已實跑無依賴`node --test --test-isolation=none test/position.test.mjs`：**5過／0敗／0跳過**，其中實際verify靜態掃描10個probe檔／4個Logo通過，18項storage自測過。這不是完整npm test或verify，也沒有跑完39項DOM洩漏攻擊。完整npm test、npm run verify、Chrome e2e仍需恢復依賴後跑，不能宣稱全過或READY。完整命令／實際退出碼記在HANDOFF。
+
+外部請在最新工作樹依次跑`npm ci`、`npm test`、`npm run verify`、`npm run e2e`（Chrome for Testing／Xvfb與CHROME_PATH同前）。新增截圖目標：`docs/gate0.4-{dragged-reload,avoid-extensions,tooltip,reset,modal-closed,modal-open,no-modal-open}.png`；既有情境也改存gate0.4前綴，舊gate0／0.1／0.2／0.3截圖與骨架不覆寫。本session沒有生成新截圖／commit／push／PR／打包zip；外部工作中已建立WIP 16f6228，仍需提交後續差異並交另一session複審。
+
+## 老闆實測（≤5步）
+
+1. `git pull main`。
+2. `chrome://extensions`重新載入`probe/`，確認版本0.0.5。
+3. 重新整理x.com，拖快捷鈕到空處，再重新整理確認仍在原位。
+4. 開關浮層並開X草稿對話框，確認鈕都不跳、沒有蓋到其他浮動鈕。
+5. 浮層按「重設位置」確認回預設；有問題截圖並按「複製診斷」貼回。
+
+## 已知限制
+
+- 為位置穩定，初始化後才出現的外掛／DM幾何變動不會自動搬快捷鈕；可拖到空處、重設或resize重新避讓。手動位置優先，使用者拖到其他鈕上不會再跳走。
+- 有界取樣可能漏極小或候選上限外的元件；closed shadow只能看有尺寸的外層wrapper，不能枚舉內層。全頁wrapper／modal有意排除。極小或障礙過密視窗可能只能留快捷鈕；若自動鈕本身也無安全位置則暫藏，resize會重試。
+- 原生title由Chrome決定呈現方向，沒有自訂tooltip可驗證矩形；e2e驗證沒有自訂tooltip节点。真機不同外掛組合仍需老闆自己的Chrome確認。
+- 儲存例外只影響刷新保留；同origin儲存可被頁面更改。位置只按CSS像素保存，不跨裝置同步。舊虛擬列表累加／讀法／時間格式限制沿用0.0.4，本輪不改解析行為。
