@@ -642,9 +642,9 @@ verify原persistent storage禁令保留。只對根目錄position.js、且來源
 
 新增`test/position.test.mjs`、真content拖動／錨點回歸、幾何modal排除／外掛wrapper測試與`fixtures/extensions.html`（兩個假外掛鈕分別掛body與html）。e2e保留舊情境及0擴充資源／背景請求斷言；增加實際mouse拖動、reload、數字key、resize原值、重設、無自訂tooltip、外掛鈕非重疊／elementFromPoint／物理點擊、modal／無modal開關前後精確矩形比較、body／html掛載和基準4491b79權限比較。舊擴大DM測試在改幾何後顯式發resize，符合新規格，非重疊斷言沒有放寬。
 
-本輪node_modules缺失；npm ci離線ENOTCACHED，線上registry DNS EAI_AGAIN。本session已實跑無依賴`node --test --test-isolation=none test/position.test.mjs`：**5過／0敗／0跳過**，其中實際verify靜態掃描10個probe檔／4個Logo通過，18項storage自測過。這不是完整npm test或verify，也沒有跑完39項DOM洩漏攻擊。完整npm test、npm run verify、Chrome e2e仍需恢復依賴後跑，不能宣稱全過或READY。完整命令／實際退出碼記在HANDOFF。
+本輪node_modules缺失；npm ci離線ENOTCACHED，線上registry DNS EAI_AGAIN。本session已實跑無依賴`node --test --test-isolation=none test/position.test.mjs`：**5過／0敗／0跳過**，其中實際verify靜態掃描10個probe檔（含manifest與4個PNG圖示）通過，18項storage自測過。這不是完整npm test或verify，也沒有跑完39項DOM洩漏攻擊。完整npm test、npm run verify、Chrome e2e仍需恢復依賴後跑，不能宣稱全過或READY。完整命令／實際退出碼記在HANDOFF。
 
-外部請在最新工作樹依次跑`npm ci`、`npm test`、`npm run verify`、`npm run e2e`（Chrome for Testing／Xvfb與CHROME_PATH同前）。新增截圖目標：`docs/gate0.4-{dragged-reload,avoid-extensions,tooltip,reset,modal-closed,modal-open,no-modal-open}.png`；既有情境也改存gate0.4前綴，舊gate0／0.1／0.2／0.3截圖與骨架不覆寫。本session沒有生成新截圖／commit／push／PR／打包zip；外部工作中已建立WIP 16f6228，仍需提交後續差異並交另一session複審。
+外部請在最新工作樹依次跑`npm ci`、`npm test`、`npm run verify`、`npm run e2e`（Chrome for Testing／Xvfb與CHROME_PATH同前）。新增截圖目標：`docs/gate0.4-{dragged-reload,avoid-extensions,tooltip,reset,modal-closed,modal-open,no-modal-open}.png`；既有情境也改存gate0.4前綴，舊gate0／0.1／0.2／0.3截圖與骨架不覆寫。本session沒有生成新截圖／commit／push／PR／打包zip；外部工作中已建立WIP 16f6228／ec3c9f3，仍需提交最後文件差異並交另一session複審。
 
 ## 老闆實測（≤5步）
 
