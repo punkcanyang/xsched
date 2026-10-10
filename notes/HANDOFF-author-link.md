@@ -1,6 +1,6 @@
 # HANDOFF：xsched 作者連結
 
-2026-10-10。分支 `docs/author-link`，基準 main `293589f`（PR #11 快速選時段），本輪起點 HEAD `6276e5c`／PR #12，probe 0.1.0。寫碼：同一個 Codex session 續作；另一個 Codex session 複審 REQUEST_CHANGES，本輪修正 P1 巢狀解構賦值繞過。最新外部 e2e 與複審通過前不宣稱 READY。
+2026-10-10。分支 `docs/author-link`，基準 main `293589f`（PR #11 快速選時段），本輪起點 HEAD `eb945f7`／PR #12，probe 0.1.0。寫碼：同一個 Codex session 續作；另一個 Codex session 複審 REQUEST_CHANGES，本輪修正 P1 ping及資源IDL property寫入繞過。最新外部 e2e 與複審通過前不宣稱 READY。
 
 ## 做了什麼
 
@@ -28,11 +28,11 @@ scanner標籤必須精確為根目錄 `probe/ui.js`，且**整檔**SHA-256必須
 | 命令 | 結果 |
 |---|---|
 | `npm test` | 退出0，10檔通過／0敗／0跳過 |
-| `node --test --test-isolation=none test/`（細項計數） | 退出0，164過／0敗／0跳過 |
-| `npm run verify` | 退出0，11 probe檔／4 Logo SVG；30 API／14 icon／9 SVG／41 leak／21 storage／33 native writer／22 author-link／160 URL mutation／28 author boundary／158 destructuring自測全過 |
+| `node --test --test-isolation=none test/`（細項計數） | 退出0，165過／0敗／0跳過 |
+| `npm run verify` | 退出0，11 probe檔／4 Logo SVG；30 API／14 icon／9 SVG／41 leak／21 storage／33 native writer／22 author-link／160 URL mutation／28 author boundary／158 destructuring／514 resource property自測全過 |
 | `npm run e2e` | 依指示未執行：sandbox不能listen，留給外部跑；本輪無Chrome結果及新截圖 |
 
-最新完整來源的標準npm test與細項計數全過；前輪162項保留，本輪新增解構矩陣與完整repo CLI攻擊測試，共164項。
+最新完整來源的標準npm test與細項計數全過；前輪164項保留，本輪新增資源屬性矩陣，完整repo CLI測試增加15個攻擊變體，共165項。
 
 ## 修改檔案
 
@@ -95,3 +95,21 @@ Chrome真實排版、拖動、避讓、固定操作區仍需完整外部e2e確�
 自行補查9種陣列／rest／預設值含分號／computed target／generator與async參數／escaped binding／template多插值／字串key寫法，全部拒絕；進一步發現computed receiver的this／super等token需納入，已補入規則與158項回歸。現有probe全部通過新規則，未發現仍可重現的巢狀pattern繞過；有限靜態守門仍不證明任意混淆JS安全。
 
 本輪7檔：scripts/verify.mjs、package.json、package-lock.json、test/position.test.mjs（真scanner VM提供esprima）、test/review.test.mjs、AGENTS.md、本HANDOFF。npm test 10檔全過、細項164過／0敗／0跳過，verify 11 probe／4 Logo全過；新增158解構攻擊與3個完整CLI攻擊變體。版本0.1.0，quick.js／position.js／manifest以及所有probe／e2e來源不變；無Git寫入。本輪e2e仍由外部跑，不能把HEAD 6276e5c的638結果當成本輪重跑證據。
+
+## eb945f7後複審：ping與資源IDL寫入P1修正（本輪）
+
+前輪已由外部commit／push，HEAD eb945f7的npm test 164過、verify OK、e2e 638 OK。新P1根因是resource attribute規則只檢查setAttribute／setAttributeNS，而直接property寫入只檢查11個URL組件，漏掉HTMLAnchorElement.ping及其他資源IDL。只在未鎖的reader.js追加pointerover handler便能設ping且verify退出0。依[HTML hyperlink auditing標準](https://html.spec.whatwg.org/multipage/links.html#hyperlink-auditing)，跟隨帶ping的連結可以額外送POST；href白名單本身不應授權這項行為。
+
+修法使用一份RESOURCE_ATTRIBUTE_IDL對照表，產生setAttribute／setAttributeNS的禁單，同時把全部IDL名稱併入原URL寫入規則。原8個attribute完整保留：src、href、srcset、action、poster、data、ping、formaction（IDL formAction）；加attributionsrc（IDL attributionSrc）、background、referrerpolicy（IDL referrerPolicy）與srcdoc。理由是共用來源可避免兩份禁單再漂移。IDL點／literal bracket／Unicode與hex escape／字串拼接／複合賦值／增減／delete／for-of／for-in同一規則拒絕；反射、未知computed key與任意深度解構直接沿用已存在的保守禁令，不另開豁免。混合resource及URL改寫同時回報兩種錯誤，保留原URL診斷。安全property讀取、CSS的background資料／setProperty和現有probe都通過。
+
+對照來源：[HTML表單提交屬性](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#attributes-for-form-submission)、[HTMLImageElement的IDL](https://html.spec.whatwg.org/multipage/embedded-content.html#htmlimageelement)、[attributionsrc規格](https://wicg.github.io/attribution-reporting-api/#attributionsrc-html-attribute)、[舊body background](https://html.spec.whatwg.org/multipage/obsolete.html#dom-body-background)及[iframe srcdoc](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-srcdoc)。referrerPolicy本身不觸發請求，但影響請求資訊；srcdoc可建立會載入資源的iframe文件，故兩者也保守拒絕。
+
+新增514項resource property自測：12組attribute／IDL，每組41種写法，共492項；另8項ping原例、固定作者網址誤用、dynamic key、模板key、反射別名與resource／URL混合寫入，再加14項動態attribute／方法提取／Attr及NamedNodeMap setter攻擊。每項在未鎖reader.js標籤檢查具體規則，不能被摘要失敗掩蓋；明確對照表及514數量斷言防止漏映射造成矩陣縮水。另有4組安全來源對照（讀property／CSS背景／普通解構／安全attribute）。原30 API／14 icon／9 SVG／41 leak／21 storage／33 native writer／22 author-link／160 URL mutation／28 author boundary／158 destructuring全保留，舊7個自測函式與其他BANNED條目逐段比對HEAD未變；兩項resource attribute規則是原8項的嚴格擴充。
+
+完整repo CLI測試保留原3個search／hostname／for-of變體，新增15個reader.js pointerover攻擊：直接ping、Unicode bracket、拼接bracket、Reflect.set、Object.assign、defineProperty、巢狀解構ping、attributionSrc、formAction、srcdoc、referrerPolicy、background，以及setAttribute別名／call／動態名称。先驗證乾淨副本退出0且包含全部新舊自測，再驗證18個攻擊皆退出1且命中reader.js的resource／reflective／destructuring／dynamic-extracted attribute規則；無UI／content摘要失敗、SELF-TEST FAILED或ReferenceError。測試只寫/tmp副本，不載入違規模組、不點作者連結、不發請求。
+
+自行複核時另發現setAttribute方法別名、call及動態屬性名仍可繞過literal attribute檢查，已加入14項回歸及3個完整CLI案例，並補強方法守門：只允許非禁單的固定attribute名稱直接呼叫；拒絕方法提取／call／apply／bind與動態名稱，setAttributeNode／setAttributeNodeNS／setNamedItem／setNamedItemNS也拒絕。唯一非literal名字呼叫是完整SHA-256鎖住content的既有 `path.setAttribute(key, value);` SVG-key loop，key來源為原本固定的d／fill／stroke等資料，不能換成資源屬性；摘要不符即失敗，原資源禁單仍掃描全部來源。這不是新增資源網址白名單。
+
+另外自行補查144個變體（12個IDL×12種括號接收者、條件接收者、註解、模板literal key／插值、for-await、深層for-of、陣列default／rest、Unicode反射名與方法別名），全部拒絕。此次檢查範圍內未找到仍能重現的資源IDL寫入繞過；守門是有限靜態檢查，並非任意混淆JavaScript安全的證明。
+
+本輪只改4檔：scripts/verify.mjs、test/review.test.mjs、AGENTS.md、本HANDOFF。版本仍0.1.0，所有probe來源（包括quick.js／position.js／manifest）及SHA-256、package／lockfile、README、e2e腳本均未改。npm test 10檔全過；細項165過／0敗／0跳過；verify掃11 probe／4 Logo SVG全過，新增514資源自測及15完整CLI攻擊。e2e依指示交外部重跑，HEAD eb945f7的638是前輪證據。未執行Git寫入。

@@ -58,6 +58,8 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 
 巢狀解構守門：明確devDependency `esprima@4.0.1`，用tokenizer（非舊版完整parser）在原始JS上配對各層括號，辨識解構賦值／for-of／for-in／函式及catch參數pattern；整個pattern內任何成員存取（含computed、this／super、預設值或computed key裡的成員讀取）及document／createElement都保守拒絕，字串／regex／模板純文字／註解不當成程式目標；tokenization失敗也拒絕。原規則／全部舊自測保留，另增158項解構攻擊及安全對照。`npm test`另在/tmp複製完整probe／scripts／Logo，先確認完整verify CLI退出0，再只在未鎖摘要的reader.js加入pointerover的search／hostname／雙重for-of攻擊，三變體均須以新解構規則退出1，不能用摘要不符或執行錯誤代替守門。正式probe靜態掃描失敗時不執行pure模組／DOM自測並退出1；乾淨來源要執行全部自測才能退出0。
 
+資源屬性守門：`setAttribute`／`setAttributeNS` 與 IDL property 寫入共用一份對照表，完整保留原8項src／href／srcset／action／poster／data／ping／formaction，另禁attributionsrc／background／referrerpolicy／srcdoc及對應camelCase IDL（formAction／attributionSrc／referrerPolicy）。與URL組件共用直接／bracket／跳脫／拼接／複合賦值／for-of／for-in寫入規則，反射及任意深度解構沿用原禁令；另拒絕動態attribute名稱、setAttribute／setAttributeNS的方法提取與call／apply／bind、setAttributeNode與NamedNodeMap setter；只允許固定安全attribute直接呼叫，以及完整摘要鎖住content的既有SVG-key loop。資源網址僅原factory的精確href statement例外。新增514項資源屬性自測與安全讀取／CSS背景對照，所有舊自測數量不變。完整repo CLI保留原3個解構攻擊，再加15個reader.js pointerover資源寫入變體（含直接ping、跳脫／拼接bracket、Reflect.set／Object.assign／defineProperty及巢狀解構），乾淨副本退出0／全自測執行，18個攻擊皆須以具體守門規則退出1，不能靠摘要不符或執行錯誤。
+
 ## READY 的標準（PR 說明裡要有）
 
 1. 做了什麼（閘 0 要附 DOM 依據、讀取方式、改版風險）。

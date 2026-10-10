@@ -195,6 +195,20 @@ export function checkLogoDir(dir = DOCS) {
   return { errors, scanned: names.length };
 }
 
+// One table keeps forbidden content attributes and reflected IDL writes aligned.
+// Retain the original eight attributes; add attribution/legacy background/request
+// policy and inline iframe HTML. A name here grants no factory exception: only
+// its digest-locked href statement gets the existing resource-attribute exemption.
+const RESOURCE_ATTRIBUTE_IDL = {
+  src: 'src', href: 'href', srcset: 'srcset', action: 'action',
+  poster: 'poster', data: 'data', ping: 'ping', formaction: 'formAction',
+  attributionsrc: 'attributionSrc', background: 'background',
+  referrerpolicy: 'referrerPolicy', srcdoc: 'srcdoc',
+};
+const URL_COMPONENT_PROPERTIES = ['href', 'search', 'hostname', 'host', 'pathname', 'protocol', 'port', 'hash', 'origin', 'username', 'password'];
+const PROTECTED_WRITE_PROPERTIES = [...new Set([...URL_COMPONENT_PROPERTIES, ...Object.values(RESOURCE_ATTRIBUTE_IDL)])];
+const resourceAttributeRule = pattern => new RegExp(pattern.source.replace('RESOURCE_ATTRIBUTES', Object.keys(RESOURCE_ATTRIBUTE_IDL).join('|')), pattern.flags);
+
 // Things the probe must never contain. (Whole probe/ tree, any file type.)
 const BANNED = [
   { name: "native event dispatch outside audited writer", re: /\bdispatchEvent\b/ },
@@ -205,7 +219,7 @@ const BANNED = [
   // Match the same static property names after comment removal/string folding.
   { name: "activation method extraction", re: /\{[^{};]*\b(?:click|submit)["']?\s*(?=[:,}])|\.\s*(?:get|getOwnPropertyDescriptor)\s*\([^;]*["'](?:click|submit)["']/ },
   { name: "activation handler alias", re: /\.\s*on(?:click|submit)\b/ },
-  { name: "namespaced resource attribute", re: /\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
+  { name: "namespaced resource attribute", re: resourceAttributeRule(/\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*["'`](?:RESOURCE_ATTRIBUTES)["'`]/i) },
   { name: "markup parsing", re: /\b(?:createContextualFragment|parseFromString)\b/ },
   { name: "fetch(", re: /\bfetch\s*\(/ },
   { name: "XMLHttpRequest", re: /XMLHttpRequest/ },
@@ -230,7 +244,7 @@ const BANNED = [
   { name: "storage accessor/alias", re: /\b(?:getItem|setItem|removeItem)\b/ },
   { name: "programmatic click/scroll", re: /\.\s*(?:click|scroll|scrollBy|scrollTo|scrollIntoView)\s*\(|\.\s*(?:scrollTop|scrollLeft)\s*=/ },
   { name: "resource URL/sink", re: /\b(?:src|href|srcset)\s*=|\burl\s*\(/i },
-  { name: "resource attribute", re: /\.\s*setAttribute\s*\(\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
+  { name: "resource attribute", re: resourceAttributeRule(/\.\s*setAttribute\s*\(\s*["'`](?:RESOURCE_ATTRIBUTES)["'`]/i) },
   { name: "CSS import", re: /@import\b/i },
   { name: "network-capable constructors/workers", re: /\b(?:Image|Audio|Worker|SharedWorker|RTCPeerConnection|WebTransport)\b|\bserviceWorker\b/ },
   { name: "remote import", re: /\bimport\s*\(\s*["'`]\s*(?:https?:|\/\/)/ },
@@ -344,9 +358,24 @@ export function scanSource(text, label, { positionModule = false, quickModule = 
   // Bracket literals/escapes/concatenations are normalized before these checks.
   const writeOperator = String.raw`(?:[+\-*/%&|^<>?]*=(?!=|>)|\+\+|--)`;
   const targetEnd = String.raw`(?:[)}\]\s]*|(?:\s*,\s*(?:[\w$]+\s*:\s*)?[\w$.]+\s*)+[)}\]\s]*)`;
-  const component = String.raw`(?:href|search|hostname|host|pathname|protocol|port|hash|origin|username|password)`;
-  const componentWrite = new RegExp(String.raw`\.\s*${component}\b\s*(?:${targetEnd}${writeOperator}|[)}\]\s]*\b(?:of|in)\b)|(?:\+\+|--|delete\b)[^;]*?\.\s*${component}\b`);
-  if (componentWrite.test(canonical)) errors.push(`${label}: URL component write forbidden`);
+  const component = `(${PROTECTED_WRITE_PROPERTIES.join('|')})`;
+  const componentWrite = new RegExp(String.raw`\.\s*${component}\b\s*(?:${targetEnd}${writeOperator}|[)}\]\s]*\b(?:of|in)\b)|(?:\+\+|--|delete\b)[^;]*?\.\s*${component}\b`, 'gi');
+  const writeKinds = new Set();
+  for (const propertyWrite of canonical.matchAll(componentWrite)) {
+    const property = (propertyWrite[1] || propertyWrite[2]).toLowerCase();
+    writeKinds.add(URL_COMPONENT_PROPERTIES.includes(property) ? 'URL component' : 'resource property');
+  }
+  for (const kind of writeKinds) errors.push(`${label}: ${kind} write forbidden`);
+  // A forbidden IDL write must not be laundered through an extracted DOM
+  // attribute setter or a runtime attribute name. Allow direct, fixed safe
+  // names only; the existing SVG-key loop is safe in the digest-locked content.
+  let attributeMethods = checkedCanonical;
+  if (auditedAuthorContent) attributeMethods = attributeMethods.replace('path.setAttribute(key, value);', '');
+  const safeAttributeCall = (call, quote, name) => Object.hasOwn(RESOURCE_ATTRIBUTE_IDL, name.toLowerCase()) ? call : '';
+  attributeMethods = attributeMethods
+    .replace(/\.\s*setAttribute\s*\(\s*(["'`])([\w:-]+)\1\s*,/g, safeAttributeCall)
+    .replace(/\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*(["'`])([\w:-]+)\1\s*,/g, safeAttributeCall);
+  if (/\b(?:setAttribute|setAttributeNS|setAttributeNode|setAttributeNodeNS|setNamedItem|setNamedItemNS)\b/.test(attributeMethods)) errors.push(`${label}: dynamic/extracted attribute mutation forbidden`);
   // Methods and aliases are forbidden regardless of the receiver or property
   // spelling. Preserve only the existing fixed Scheduled navigation and the
   // exact audited native-select setter read; neither permits URL mutation.
@@ -867,6 +896,98 @@ export function destructuringSelfTest() {
   return attacks.length;
 }
 
+export function resourcePropertySelfTest() {
+  // Explicit pairs make missing mappings fail rather than shrink the matrix.
+  const pairs = [
+    ['src', 'src'], ['href', 'href'], ['srcset', 'srcset'], ['action', 'action'],
+    ['poster', 'poster'], ['data', 'data'], ['ping', 'ping'], ['formaction', 'formAction'],
+    ['attributionsrc', 'attributionSrc'], ['background', 'background'],
+    ['referrerpolicy', 'referrerPolicy'], ['srcdoc', 'srcdoc'],
+  ];
+  if (JSON.stringify(Object.entries(RESOURCE_ATTRIBUTE_IDL)) !== JSON.stringify(pairs)) throw new Error('resource self-test: attribute/IDL map changed');
+  const cases = [];
+  for (const [attribute, key] of pairs) {
+    const escape = `\\u${key.charCodeAt(0).toString(16).padStart(4, '0')}${key.slice(1)}`;
+    const kind = key === 'href' ? 'URL component write' : 'resource property write';
+    for (const source of [
+      `author.${key} = value;`, `author.${escape} = value;`,
+      `author.\\u{${key.charCodeAt(0).toString(16)}}${key.slice(1)} = value;`,
+      `author['${key}'] = value;`, `author['${escape}'] = value;`,
+      `author['\\x${key.charCodeAt(0).toString(16)}${key.slice(1)}'] = value;`,
+      `author['${key[0]}' + '${key.slice(1)}'] = value;`,
+      `author[/*key*/'${key}'] = value;`,
+      `author.${key} += value;`, `author.${key} ||= value;`, `author.${key} ??= value;`,
+      `author.${key}++;`, `++author.${key};`, `delete author.${key};`,
+      `(getAuthor()).${key} = value;`,
+      `for (author.${key} of values) {}`, `for (author.${key} in values) {}`,
+    ]) cases.push([source, kind]);
+    cases.push([`author[('${key}')] = value;`, 'dynamic property write']);
+    for (const source of [
+      `Reflect.set(author, '${key}', value);`, `Reflect['s'+'et'](author, '${escape}', value);`,
+      `Object.assign(author, {'${key}': value});`, `Object['ass'+'ign'](author, {'${escape}': value});`,
+      `Object.defineProperty(author, '${key}', {value});`,
+      `Object.defineProperties(author, {'${key}': {value}});`,
+      `Reflect.defineProperty(author, '${key}', {value});`,
+      `Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype, '${key}').set.call(author, value);`,
+    ]) cases.push([source, 'reflective property mutation/extraction']);
+    for (const source of [
+      `({first: author.${key}, second: {value: other}} = input);`,
+      `({first: author['${escape}'], second: {value: other}} = input);`,
+      `({first: author.${key} = value, second: {value: other}} = input);`,
+      `for ({first: author.${key}, second: {value: other}} of values) {}`,
+      `for ([{first: author.${key}, second: {value: other}}] in values) {}`,
+      `const {first = (author.${key} = value), second: {value: other}} = input;`,
+      `function f({first = (author.${key} = value), second: {value: other}}) {}`,
+    ]) cases.push([source, 'destructuring member access']);
+    for (const source of [
+      `author.setAttribute('${attribute}', value);`,
+      `author['set'+'Attribute']('${attribute}', value);`,
+      `author.setAttribute('\\u${attribute.charCodeAt(0).toString(16).padStart(4, '0')}${attribute.slice(1)}', value);`,
+      `author.setAttribute('${attribute[0]}'+'${attribute.slice(1)}', value);`,
+      `author.setAttribute('${attribute.toUpperCase()}', value);`,
+      `author.setAttrib\\u0075te('${attribute}', value);`,
+    ]) cases.push([source, 'banned API "resource attribute"']);
+    for (const source of [
+      `author.setAttributeNS(null, '${attribute}', value);`,
+      `author['setAttributeNS']('namespace', '${attribute[0]}'+'${attribute.slice(1)}', value);`,
+    ]) cases.push([source, 'banned API "namespaced resource attribute"']);
+  }
+  cases.push(
+    ["author.ping = 'https://evil.example/ping';", 'resource property write'],
+    ["author.ping = 'https://x.com/punkcan';", 'resource property write'],
+    ['const key = "ping"; author[key] = value;', 'dynamic property write'],
+    ['author[`pi${suffix}`] = value;', 'dynamic property write'],
+    ['const {set: write} = Reflect; write(author, "ping", value);', 'reflective property mutation/extraction'],
+    ['const {assign: write} = Object; write(author, {ping: value});', 'reflective property mutation/extraction'],
+    ['const write = Object.defineProperty; write(author, "ping", {value});', 'reflective property mutation/extraction'],
+    ['author.ping = value; author.search = "?x=1";', 'URL component write'],
+  );
+  for (const source of [
+    "const write = author.setAttribute; write.call(author, 'ping', value);",
+    "author.setAttribute.call(author, 'ping', value);",
+    "const name = 'ping'; author.setAttribute(name, value);",
+    "const write = author.setAttribute.bind(author); write('ping', value);",
+    "author.setAttribute.apply(author, ['ping', value]);",
+    "const {setAttribute: write} = author; write.call(author, 'ping', value);",
+    "author['set'+'Attribute'](name, value);",
+    "author.setAttrib\\u0075te(name, value);",
+    "author.setAttributeNS(namespace, name, value);",
+    "const write = author.setAttributeNS; write.call(author, null, 'ping', value);",
+    'author.setAttributeNode(attribute);', 'author.setAttributeNodeNS(attribute);',
+    'author.attributes.setNamedItem(attribute);', 'author.attributes.setNamedItemNS(attribute);',
+  ]) cases.push([source, 'dynamic/extracted attribute mutation']);
+  for (const [source, rule] of cases) {
+    if (!scanSource(source, 'probe/reader.js').some(error => error.includes(rule))) throw new Error(`resource self-test: missed ${source}`);
+  }
+  for (const source of [
+    'const ping = author.ping; const source = image.src; const policy = image.referrerPolicy;',
+    'const style = {background: "white", color: "black"}; element.style.setProperty("background", style.background);',
+    'const {first, second: {value: other}} = input;',
+    'element.setAttribute("aria-label", label); element.setAttribute("data-xsched-host", "1");',
+  ]) if (scanSource(source, 'probe/reader.js').length) throw new Error('resource self-test: safe source rejected');
+  return cases.length;
+}
+
 function selfTest() {
   const violations = [
     'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
@@ -893,6 +1014,7 @@ function selfTest() {
   const urlCases = urlMutationSelfTest();
   const boundaryCases = authorBoundarySelfTest();
   const destructuringCases = destructuringSelfTest();
+  const resourceCases = resourcePropertySelfTest();
   // Prove the scanner fails closed: a synthetic probe with a network call AND a bad
   // manifest must produce errors, while a clean synthetic probe must not.
   const dir = mkdtempSync(join(tmpdir(), "xsched-verify-selftest-"));
@@ -955,7 +1077,7 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases, destructuring:destructuringCases };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases, destructuring:destructuringCases, resource:resourceCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -986,7 +1108,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary, ${selfTests.destructuring} destructuring self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary, ${selfTests.destructuring} destructuring self-tests; ${selfTests.resource} resource property self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call

