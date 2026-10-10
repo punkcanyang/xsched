@@ -8,21 +8,25 @@ await import('../probe/reader.js');
 await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
-function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER) {
+const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
+function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com') {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
   document.documentElement.lang = lang;
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.0.4';
+  let manifest = '0.0.5';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
-  const location = { pathname, search: '', assign(target) { navigated.push(target); } };
+  const location = { hostname, pathname, search: '', assign(target) { navigated.push(target); } };
+  const listeners = new Map();
   const window = {
     setTimeout(fn) { timers.set(++id, fn); return id; }, clearTimeout(key) { timers.delete(key); },
     setInterval(fn) { polls.set(++id, fn); return id; }, clearInterval(key) { polls.delete(key); },
-    addEventListener() {}, removeEventListener() {},
+    location, localStorage:{ getItem(key) { return stored.get(key) ?? null; }, setItem(key,value) { stored.set(key,value); }, removeItem(key) { stored.delete(key); } },
+    addEventListener(type,fn) { if (!listeners.has(type)) listeners.set(type,new Set()); listeners.get(type).add(fn); },
+    removeEventListener(type,fn) { listeners.get(type)?.delete(fn); },
   };
   const rect = function () {
     let el = this;
@@ -42,6 +46,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   });
   function flush() { for (let n = 0; timers.size && n < 10; n++) { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()); } }
   function poll() { [...polls.values()].forEach((fn) => fn()); flush(); }
+  vm.runInContext(positionSource, context);
   vm.runInContext(source, context); flush();
   const host = () => document.getElementById('xsched-probe-root');
   const shadow = () => host().shadowRoot;
@@ -51,7 +56,14 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
     Object.defineProperty(event, 'isTrusted', { value: trusted });
     shadow().querySelector(selector).dispatchEvent(event);
   };
-  return { document, host, shadow, click, location, navigated, poll, flush, context,
+  return { document, host, shadow, click, location, navigated, poll, flush, context, stored,
+    emit(type) { for (const fn of listeners.get(type) || []) fn({}); flush(); },
+    resize(width,height) { context.innerWidth=width; context.innerHeight=height; for (const fn of listeners.get('resize') || []) fn(); flush(); },
+    pointer(type,x,y,extras={}) {
+      const event = new document.defaultView.Event(type, {cancelable:true});
+      Object.assign(event,{clientX:x,clientY:y,pointerId:1,button:0,isPrimary:true,...extras});
+      shadow().querySelector('.shortcut').dispatchEvent(event);
+    },
     mutate(records) { mutationCallback(records); flush(); },
     setManifest(value) { manifest = value; }, invalidate() { invalidated = true; } };
 }
@@ -92,20 +104,22 @@ test('polls and rerenders preserve an externally hidden host and report mounted 
   assert.equal(host.dataset.xschedMounted, '1');
   assert.match(host.dataset.xschedDiag, /\bmounted=1\b/);
 });
-test('no-space hiding reports mounted zero, retries placement and preserves external display and open intent', () => {
+test('no-space hiding only retries on resize and preserves external display and open intent', () => {
   let room = true;
   const ui = { ...globalThis.XSCHED_UI, placement(...args) {
     return room ? globalThis.XSCHED_UI.placement(...args) : { clear: false, right: 16, bottom: 112 };
   } };
   const f = fixture(undefined, undefined, undefined, null, ui);
   for (let n = 0; n < 2; n++) {
-    room = false; f.poll();
+    room = false; f.resize(1100,820);
     assert.equal(f.host().style.display, 'block');
     assert.equal(f.host().style.visibility, 'hidden');
     assert.equal(f.host().dataset.xschedMounted, '0');
     assert.match(f.host().dataset.xschedDiag, /\bmounted=0\b/);
     if (n === 1) f.host().style.setProperty('display', 'none', 'important');
     room = true; f.poll();
+    assert.equal(f.host().style.visibility,'hidden','poll must not move or unhide the fixed anchor');
+    f.resize(1100,820);
     assert.equal(f.host().style.visibility, 'visible');
     assert.equal(f.host().dataset.xschedMounted, n === 1 ? '0' : '1');
   }
@@ -145,6 +159,120 @@ test('legacy body dates never rescue rewritten metadata, including virtual accum
     }
   }
 });
+test('button anchor never changes on toggle, poll, SPA, modal mutations or remount', () => {
+  let placements=0;
+  const ui={...globalThis.XSCHED_UI,placement(...args){placements++;return globalThis.XSCHED_UI.placement(...args);}};
+  const f=fixture(undefined,undefined,undefined,null,ui);
+  const point=()=>({left:f.host().style.left,top:f.host().style.top});
+  const initial=point();assert.equal(placements,1);
+  for(let n=0;n<3;n++){f.click('.shortcut');f.poll();assert.deepEqual(point(),initial);}
+  const modal=f.document.createElement('div');modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');f.document.body.append(modal);
+  f.mutate([{type:'childList',target:f.document.body,addedNodes:[modal],removedNodes:[]}]);
+  f.click('.shortcut');f.poll();assert.deepEqual(point(),initial);
+  f.location.pathname='/home';f.poll();assert.deepEqual(point(),initial);
+  f.host().remove();f.poll();assert.deepEqual(point(),initial);
+  assert.equal(placements,1,'only initialization can auto-place before resize/reset');
+  assert.ok(['BODY','HTML'].includes(f.host().parentElement.tagName));assert.equal(f.host().closest('[role="dialog"]'),null);
+  f.resize(1280,600);assert.equal(placements,2);
+});
+test('pointer drag persists numeric position, reload/restored viewport preserves it, reset returns to auto',()=>{
+  const f=fixture();const shortcut=()=>f.shadow().querySelector('.shortcut');
+  const open=shortcut().getAttribute('aria-expanded');
+  const original={x:parseFloat(f.host().style.left),y:parseFloat(f.host().style.top)};
+  f.pointer('pointerdown',original.x+22,original.y+22);
+  f.pointer('pointermove',222,122);f.pointer('pointerup',222,122);
+  f.click('.shortcut'); // Browser's compatibility click after dragging is suppressed.
+  assert.equal(shortcut().getAttribute('aria-expanded'),open);
+  assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.pos')),{x:200,y:100});
+  const reloaded=fixture(undefined,undefined,undefined,null,undefined,undefined,f.stored);
+  assert.equal(reloaded.host().style.left,'200px');assert.equal(reloaded.host().style.top,'100px');
+  reloaded.resize(180,150);assert.equal(reloaded.host().style.left,'120px');assert.equal(reloaded.host().style.top,'90px');
+  assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.pos')),{x:200,y:100},'resize does not overwrite raw preference');
+  reloaded.resize(1100,820);assert.equal(reloaded.host().style.left,'200px');assert.equal(reloaded.host().style.top,'100px');
+  assert.equal(reloaded.shadow().querySelector('[role="tooltip"], .tooltip'),null);
+  reloaded.click('[data-xsched-reset-position]');assert.equal(f.stored.size,0);
+  assert.deepEqual({x:parseFloat(reloaded.host().style.left),y:parseFloat(reloaded.host().style.top)},original);
+});
+test('pointer threshold, cancellation and secondary pointers never persist accidental moves',()=>{
+  const f=fixture();const point=()=>[f.host().style.left,f.host().style.top];const start=point();
+  f.pointer('pointerdown',100,100);f.pointer('pointermove',102,102);f.pointer('pointerup',102,102);
+  assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+  f.click('.shortcut');assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
+  f.pointer('pointerdown',100,100);f.pointer('pointermove',200,200,{pointerId:2});assert.deepEqual(point(),start);
+  f.pointer('pointermove',200,200);f.pointer('pointercancel',200,200);assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+  f.pointer('pointerdown',100,100,{button:2});f.pointer('pointermove',300,300);f.pointer('pointerup',300,300);
+  assert.deepEqual(point(),start);assert.equal(f.stored.size,0);
+});
+test('interrupted drags immediately release capture without persisting or allowing stale movement', () => {
+  for (const reason of ['resize', 'reset', 'pagehide', 'dispose', 'pointercancel', 'lostpointercapture']) {
+    const f = fixture();
+    const shortcut = f.shadow().querySelector('.shortcut');
+    const captures = new Set();
+    shortcut.setPointerCapture = id => captures.add(id);
+    shortcut.releasePointerCapture = id => {
+      captures.delete(id);
+      // Browser capture loss must not re-enter cancellation with active state.
+      const event = new f.document.defaultView.Event('lostpointercapture');
+      Object.assign(event, { pointerId: id }); shortcut.dispatchEvent(event);
+    };
+    f.pointer('pointerdown', 100, 100); f.pointer('pointermove', 160, 160);
+    assert.ok(captures.has(1), reason);
+    if (reason === 'resize') f.resize(1100, 820);
+    else if (reason === 'reset') f.click('[data-xsched-reset-position]');
+    else if (reason === 'pagehide') f.emit('pagehide');
+    else if (reason === 'dispose') f.context.XSCHED_PROBE_SESSION.dispose();
+    else f.pointer(reason, 160, 160);
+    assert.equal(captures.size, 0, reason);
+    assert.equal(f.stored.size, 0, reason);
+    if (f.host()) {
+      const point = [f.host().style.left, f.host().style.top];
+      f.pointer('pointermove', 300, 300); f.pointer('pointerup', 300, 300);
+      assert.deepEqual([f.host().style.left, f.host().style.top], point, reason);
+      assert.equal(f.stored.size, 0, reason);
+    }
+  }
+});
+test('another primary pointer cannot replace an active drag or take its capture', () => {
+  const f = fixture();
+  const shortcut = f.shadow().querySelector('.shortcut');
+  const captures = new Set();
+  shortcut.setPointerCapture = id => captures.add(id);
+  shortcut.releasePointerCapture = id => captures.delete(id);
+  const initial = [f.host().style.left, f.host().style.top];
+  f.pointer('pointerdown', 100, 100);
+  f.pointer('pointerdown', 200, 200, { pointerId: 2 });
+  f.pointer('pointermove', 300, 300, { pointerId: 2 });
+  assert.deepEqual([f.host().style.left, f.host().style.top], initial);
+  assert.deepEqual([...captures], [1]);
+  f.pointer('pointermove', 80, 80);
+  assert.notDeepEqual([f.host().style.left, f.host().style.top], initial);
+  f.pointer('pointercancel', 80, 80);
+  assert.deepEqual([f.host().style.left, f.host().style.top], initial);
+  assert.equal(captures.size, 0); assert.equal(f.stored.size, 0);
+});
+test('twitter.com retains its matching probe UI without accessing position storage', () => {
+  const stored = new Map([['xsched.probe.pos', JSON.stringify({ x: 200, y: 100 })]]);
+  const calls = [];
+  for (const method of ['get', 'set', 'delete']) {
+    const original = stored[method].bind(stored);
+    stored[method] = (...args) => { calls.push(method); return original(...args); };
+  }
+  const f = fixture(undefined, undefined, undefined, null, undefined, undefined, stored, 'twitter.com');
+  assert.equal(f.host().dataset.xschedCount, '2');
+  f.pointer('pointerdown', 100, 100); f.pointer('pointermove', 80, 80); f.pointer('pointerup', 80, 80);
+  f.click('[data-xsched-reset-position]');
+  assert.deepEqual(calls, [], 'load/save/reset remain x.com only');
+  assert.equal(Map.prototype.get.call(stored, 'xsched.probe.pos'), JSON.stringify({ x: 200, y: 100 }));
+});
+test('resize while the host is removed clamps the remounted anchor and retains its saved preference', () => {
+  const stored = new Map([['xsched.probe.pos', JSON.stringify({ x: 1000, y: 700 })]]);
+  const f = fixture(undefined, undefined, undefined, null, undefined, undefined, stored);
+  f.host().remove(); f.resize(390, 600);
+  assert.equal(f.host().style.left, '330px'); assert.equal(f.host().style.top, '540px');
+  assert.equal(stored.get('xsched.probe.pos'), JSON.stringify({ x: 1000, y: 700 }));
+  f.resize(1100, 820);
+  assert.equal(f.host().style.left, '1000px'); assert.equal(f.host().style.top, '700px');
+});
 test('home has only closed shortcut; localized goto navigates fixed target despite dataset tampering', () => {
   const f = fixture('/home', 'zh-Hant');
   assert.equal(f.shadow().querySelector('section').style.display, 'none');
@@ -161,10 +289,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.0.4 (manifest 0.0.4)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.0.5 (manifest 0.0.5)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.0.4 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.0.5 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -173,7 +301,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.0\.4/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.0\.5/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });

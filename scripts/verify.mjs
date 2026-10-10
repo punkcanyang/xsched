@@ -13,11 +13,15 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateSync } from "node:zlib";
+import { createHash } from "node:crypto";
 import { DOMParser } from "linkedom";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROBE = join(ROOT, "probe");
 const DOCS = join(ROOT, "docs");
+// Fail closed: only this exact audited numeric-only position module may persist.
+// Any edit requires review and an explicit digest update; filename alone grants nothing.
+const POSITION_SOURCE_SHA256 = "6c20a9e0a844b21a23834f8af50ecf58084f6d5bd9fa9cbcdd44624ff436de10";
 
 // Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
 // on a hostile synthetic page, that no page content can reach the skeleton or the samples.
@@ -193,6 +197,7 @@ const BANNED = [
   { name: "Function constructor/alias", re: /\bFunction\b/ },
   { name: "history patch/navigation", re: /\b(?:pushState|replaceState)\b/ },
   { name: "persistent storage", re: /\b(?:localStorage|sessionStorage|indexedDB)\b|\bchrome\s*\.\s*storage\b/ },
+  { name: "storage accessor/alias", re: /\b(?:getItem|setItem|removeItem)\b/ },
   { name: "programmatic click/scroll", re: /\.\s*(?:click|scroll|scrollBy|scrollTo|scrollIntoView)\s*\(|\.\s*(?:scrollTop|scrollLeft)\s*=/ },
   { name: "resource URL/sink", re: /\b(?:src|href|srcset)\s*=|\burl\s*\(/i },
   { name: "resource attribute", re: /\.\s*setAttribute\s*\(\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
@@ -240,10 +245,13 @@ function listFiles(dir, base = dir) {
   return out;
 }
 
-export function scanSource(text, label) {
+export function scanSource(text, label, { positionModule = false } = {}) {
   const errors = [];
   const canonical = canonicalSource(text);
+  const auditedPosition = positionModule && createHash('sha256').update(text).digest('hex') === POSITION_SOURCE_SHA256;
+  if (positionModule && !auditedPosition) errors.push(`${label}: position module differs from audited numeric-only storage boundary`);
   for (const rule of BANNED) {
+    if (auditedPosition && ['persistent storage','storage accessor/alias'].includes(rule.name)) continue;
     if (rule.re.test(text) || rule.re.test(canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
   }
   const navigation = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, "");
@@ -319,7 +327,7 @@ export function checkProbeDir(dir) {
     const rel = relative(ROOT, file);
     const text = readFileSync(file, "utf8");
     scanned += 1;
-    errors.push(...scanSource(text, rel));
+    errors.push(...scanSource(text, rel, { positionModule: relative(dir,file) === 'position.js' }));
     if (file.endsWith("manifest.json") || /[\\/]manifest\.json$/.test(file)) {
       let manifest;
       try {
@@ -495,6 +503,36 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6, fragments: maskedCount };
 }
 
+export function positionStorageSelfTest() {
+  const source = readFileSync(join(PROBE,'position.js'),'utf8');
+  if (scanSource(source,'probe/position.js',{positionModule:true}).length) throw new Error('storage self-test: audited position module rejected');
+  const forbidden = [
+    'window.localStorage.setItem("xsched.probe.pos", "{}");',
+    'const store=window["local"+"Storage"];',
+    'const a="local", b="Storage"; window[a+b].setItem("xsched.probe.pos","private");',
+    'window.sessionStorage.setItem("xsched.probe.pos","{}");',
+    'window.indexedDB.open("xsched.probe.pos");',
+    'chrome.storage.local.set({x:1,y:2});',
+    'chrome["storage"].sync.set({x:1,y:2});',
+  ];
+  for (const attack of forbidden) if (!scanSource(attack,'probe/elsewhere.js').length) throw new Error('storage self-test: storage allowed outside boundary');
+  const mutations = [
+    source.replace('"xsched.probe.pos"','"other.key"'),
+    source.replace('"xsched.probe.pos"','"xsched.secret"'),
+    source.replace('JSON.stringify(position)','JSON.stringify({ text: "private body" })'),
+    source.replace('!valid(value)','false'),
+    source.replace('Number.isFinite(value.x)','true'),
+    source.replace('window.localStorage','window.sessionStorage'),
+    source+'\nwindow.localStorage.setItem("xsched.probe.pos","private");',
+    source+'\nwindow.indexedDB.open("xsched");',
+    source+'\nchrome.storage.local.set({x:1});',
+    source+'\nconst leak=fetch("https://evil.example/");',
+  ];
+  for (const attack of mutations) if (!scanSource(attack,'probe/position.js',{positionModule:true}).length) throw new Error('storage self-test: edited boundary allowed');
+  if (!scanSource(source,'probe/renamed.js').length) throw new Error('storage self-test: renamed module allowed');
+  return forbidden.length+mutations.length+1;
+}
+
 function selfTest() {
   const violations = [
     'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
@@ -515,6 +553,7 @@ function selfTest() {
   for (const source of violations) {
     if (!scanSource(source, "self-test").length) throw new Error(`self-test: missed ${source}`);
   }
+  const storageCases = positionStorageSelfTest();
   // Prove the scanner fails closed: a synthetic probe with a network call AND a bad
   // manifest must produce errors, while a clean synthetic probe must not.
   const dir = mkdtempSync(join(tmpdir(), "xsched-verify-selftest-"));
@@ -577,7 +616,7 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -605,7 +644,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call
