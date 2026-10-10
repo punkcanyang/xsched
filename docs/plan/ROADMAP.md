@@ -50,6 +50,10 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 
 **尚未READY**：本輪沒有node_modules，npm ci ENOTCACHED／registry DNS EAI_AGAIN；無依賴位置測試5/5、实际静態守門與18項storage自測已過，完整npm test／verify／e2e未通過驗收。外部已有WIP `16f6228`，後續修改待提交；需外部安裝lockfile依賴並跑三測試／gate0.4假資料截圖，另由另一session複審與老闆真機位置驗收。根因、策略、5步實測與限制見notes/GATE0.md「閘0.4」；完整環境結果及外部命令見HANDOFF。
 
+## 閘 0.5：浮層可拖、鈕與浮層位置獨立（probe 0.0.6，進行中）
+
+2026-10-10 12:40（UTC+8）。老闆回報 0.0.5 拖鈕時浮層跟著跑。分支 `gate0.5/draggable-panel`。交接見 `notes/HANDOFF-gate0.5.md`。
+
 ## 1.0（閘 0 過才做）
 
 1. **快速選時段**：發文框旁加按鈕，預設時段（例如 9:00／12:30／20:00，可自訂、可設星期）。一按＝打開 X 原生排程視窗並填入「下一個空時段」，老闆確認後照原流程按 Schedule。
