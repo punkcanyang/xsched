@@ -747,3 +747,16 @@ e2e保留全部舊時間、診斷、host／lifecycle、原生控制項與網路�
 - 極小視窗無法同時容納60vh與固定操作列時收起面板；回到較大視窗即可再開。resize只改可見夾位，不改兩個原存值；尺寸以CSS像素計，沒有跨裝置同步。
 - 頁面可改／刪同origin數字位置；storage失敗不妨礙本頁操作，但刷新不能保存。重設預覽直到下一次明確展開或完成拖動才重新保存panel key。
 - 新Chrome物理拖动／rect／網路證據與老闆自己的Chrome實測仍待外部跑；既有reader虛擬累加／真DOM變動限制沿用，不宣稱即時權威總數。
+
+## 閘 0.5 Codex 複審
+
+獨立複審 session，與寫碼 session 01a1212e 不同。審查基準 `93ed233...8edc4e5` 全部差異；親讀 AGENTS、HANDOFF、上述根因與實作／測試。**未發現阻擋合併的問題，APPROVE**；本輪只補本節，不改 production、守門規則或測試。
+
+- **根因有原碼證據**：基準的 shortcut pointermove／pointerup 與 poll 都呼叫 positionUI，該函式直接用當時的 button anchor 重算 panelPlacement。新版只有 panelAnchor 尚未建立時才依鈕定點；之後兩個錨點分開。拖鈕、開關、poll／mutation／modal／重掛不重算浮層錨點；浮層完成拖動、resize／reload 的高度避讓仍有界，手動位置優先的限制已揭露。
+- **拖動與夾位**：6px 門檻、互斥 active pointer、標題列互動元素排除、section capture 跨 render、先清 state 再 release、防相容 click 均成立。取消／capture loss／resize／reset／pagehide／dispose／重掛回復未完成拖動且不保存；兩方向獨立、首次保存、reload、reset 預覽後 poll 不補寫、斷線 resize 保留原存值有回歸保護。Chrome 測試另外斷言完整 rect、標題列實際可見且命中，不只比 style 數字。
+- **儲存與硬規矩**：逐行核對 position.js 及已審 SHA-256，只在 x.com 存兩個固定 key 的有限數字 x/y；第三 key、非數字／額外欄位、變動 getter、儲存例外與 twitter.com 拒絕路徑安全。verify 的來源摘要豁免只涵蓋集中模組的 storage 規則，其他網路／注入／權限禁令未放寬；舊 18 項 storage 攻擊保留並增至 21。manifest 除版本／描述外與基準相同，reader／skeleton 只升版，診斷與樣本隱私規則未改。
+- **公開資料與文件**：新增文字、骨架及 41 張 PNG 對照本機 fixture／e2e 生成流程，另檢視截圖；皆為合成資料／遮罩結構，PNG 無附加 metadata，未引入老闆真日期、原始時間樣本、真帳號或密鑰。全工作樹排除 .git／node_modules 後未命中既定禁用身分字串。老闆實測為 5 步。上方與 HANDOFF 的「外部待跑」是寫碼當時的歷史狀態，以下補上本輪收到的外部結果。
+
+**本複審實跑**：`npm test` 退出 0（9 檔），細項 `node --test --test-isolation=none test/` 為 **138 過／0 敗／0 跳過**；`npm run verify` 退出 0（10 probe 檔／4 SVG，30 API／14 icon／9 SVG／39 洩漏／21 storage 自測）；PR diff 空白檢查通過。**外部結果由产品开发提供**：8edc4e5 的 npm test 138/138、verify OK、e2e **548 斷言通過**；本複審未在沙箱重跑 Chrome，不把外部數字記為自己實跑。文件提交後，依最新分支三測試規則由外部補跑 e2e／提交；本輪沒有程式差異需要重新產生截圖。
+
+剩餘風險沿用上述限制：保存位置可能覆蓋新出現的原生／其他擴充元件，極小視窗可能暫藏浮層，同 origin 可改數字偏好，storage 禁用時不能跨刷新保存；老闆自己的 Chrome 仍須按 5 步確認。沒有新增權限、網路、真機資料或讀法風險。

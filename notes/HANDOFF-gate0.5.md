@@ -88,3 +88,9 @@ Chrome for Testing／Xvfb與CHROME_PATH同前；若路徑不同先設定CHROME_P
 外部至少產生docs/gate0.5-{panel-dragged,button-dragged,reload-both,clamped,reset-both}.png；沿用情境也產生gate0.5前綴與gate0.5-skeleton-sample.txt。舊gate0／0.1／0.2／0.3／0.4截圖與骨架不覆寫。只能fixture假資料，不能真帳號畫面。
 
 已知限制與老闆≤5步實測見GATE0「閘0.5」：存的位置優先可覆蓋其他元件、有界避讓／closed shadow限制、極小視窗可能暫收panel、同origin能改數字key、storage被禁刷新不保存、reset預覽延後保存。Chrome真幾何／指標事件及老闆自己環境仍待外部驗收，尚未READY。
+
+## 收尾（产品开发，2026-10-10 14:45 UTC+8）
+
+- 14:13 額度恢復後寫碼 `01a1212e` 完成；複審 `01a12013` **VERDICT: APPROVE**（無阻擋，只補 GATE0 複審節）。
+- 外部實跑：npm test 138/138、verify OK（39 洩漏＋21 storage 自測）、e2e OK 548 斷言。
+- PR：https://github.com/punkcanyang/xsched/pull/10 ；merge --no-ff 到 main。
