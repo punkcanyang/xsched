@@ -120,3 +120,10 @@ e2e保留舊情境，全部產物改gate0.3前綴，舊gate0／0.1／0.2圖與�
 - 複審 `01a12013` 第一輪：**VERDICT: APPROVE**，並修了「舊 cell 備援可能把 tweetText 內日期當排程時間」（高）。這批修正 commit 為本 commit 的前一個 WIP。修正後 npm test 117/117、verify OK（38），但 **e2e FAILED**：複審新增的情境 `legacy body schedule phrase cannot become a second row`（scripts/e2e.mjs:531–543）。實際狀態 count=2、times 仍含改寫前的 09:00、timeFail=1 但 samples=none；疑為同 scope 累加快取保留舊列（測試寫法），或 timeFail／samples 不一致（reader bug），未定。
 - 複審第二輪撞 Codex 額度：「try again at Oct 14th, 2026 12:50 PM」。**未合併**，main 仍 `fdc8096`（0.0.3）。依指示不掛等待腳本。
 - 接回：額度恢復後 `codex exec resume 01a12013-6780-77c1-9466-bb1e9f78097f "$(cat /workspace/bd-punkcan/xsched-gate0.3-review-prompt2.txt)" </dev/null`（提示內容也在本節上方描述），修好 e2e 並給 VERDICT 後外部重跑三測試、`merge --no-ff`。
+
+## 收尾路線改 Grok Build（商務拓展定，2026-10-10 09:04 UTC+8）— 402 停
+
+- 路線：寫碼改 Grok Build CLI（grok 1.0.50）grok-4.7 reasoning high（非 Fast），先分析 e2e 紅燈是測試寫錯還是讀法 bug、再修；複審另開 Grok 4.7 high session；三測試全過＋APPROVE 才 merge。CodeWhale 不准用。
+- 09:04 第一次呼叫（`grok -p … -m grok-4.7 --reasoning-effort high --always-approve --output-format json`）即回 **`API error (status 402 Payment Required): Grok Build usage balance exhausted`**，沒有建立可續的 session、沒有讀檔或改檔。依指示立即停、不換工具。分析提示存 `/workspace/bd-punkcan/xsched-gate0.3-grok-write-1.txt`。
+- 紅燈結論：**未定**（無工具可分析）。main 仍 `fdc8096`（0.0.3），PR #8 未合。
+- **待辦：10/14 12:50（UTC+8）Codex 額度恢復後，要補一次 Codex 複審**（session `01a12013`，提示 `/workspace/bd-punkcan/xsched-gate0.3-review-prompt2.txt`）；若屆時已由 Grok 複審合併，仍要補這次 Codex 複審。
