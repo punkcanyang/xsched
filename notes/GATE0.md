@@ -845,3 +845,16 @@ ready依實際host的diagnostic是否存在判斷。fixture的dialog及子樹由
 新增test/content.test.mjs:486的真content VM回歸：不先flush，證明早點擊被忽略；2027 Date mock下完成tick後仍收合，再等診斷後點一次即展開且有四個快速鈕。fixture helper新增預設true的startReady參數，舊測試行為不變。
 
 本輪實跑npm test退出0（10檔）；`node --test --test-isolation=none test/` **155過／0敗／0跳過**。verify退出0（11 probe檔／4 SVG；30 API、14 icon、9 SVG、41 leak、21 storage、20 native writer自測），node --check與git diff --check通過。npm run e2e仍退出1：fixture server listen EPERM 127.0.0.1，Chrome斷言未開始，新截圖0。外部在最新工作樹再跑npm test → npm run verify → npm run e2e；不用沿用32b769a數字當本輪e2e驗收。沒有新增權限／依賴／真機資料，沒有commit／push。
+
+## 1.0 快速選時段 Codex 複審
+
+獨立複審 session，與寫碼 session 01a1212e 不同。已審 `2cceb5e...6f42f83` 全部差異、開工卡、ROADMAP、AGENTS、HANDOFF 與本節；**修正以下守門缺口後 APPROVE 此未驗證原型，不宣稱真 X 填值或 1.0 第一項已完成驗收**。
+
+- **高：原生激活別名守門漏擋，已修。** 複審實際呼叫原 scanSource，`const {click: activate}=button`、`Reflect.get(button,"click")`、解構 submit 與 Object.getOwnPropertyDescriptor 取得 submit 均回傳零錯誤；這是靜態守門缺口，沒有發現 production 在執行這些操作。scripts/verify.mjs 追加解構／反射取 click／submit、onclick／onsubmit 別名禁令，保留原規則與兩個已審來源摘要，不擴大任何豁免。原 20 個 native writer 攻擊保留，追加 prototype.call、label、focus＋Enter、dispatchEvent 別名、註解／拼接／跨行、反射／解構及直接 handler 攻擊，共 **33**；test/review.test.mjs 用真 CLI 的五個違規頁證明退出 1 且 stderr 指向新增規則，test/quick.test.mjs 更新自測數，AGENTS 同步規則與數字。
+- **送出與原生設值：親讀程式，符合限定範圍。** content 只有可信 shadow 快速鈕點擊才呼叫 fillSlot；唯一 writer 不匯出，只對整組預檢的 HTMLSelectElement 用 prototype value setter，再送 input／change。沒有 click／pointer／keyboard／submit、確認／發佈／Update 激活路徑或 requestSubmit／form.submit。缺欄位／歧義／hidden／disabled／不可表示選項在任何寫入前拒絕，setter 拒絕會嘗試靜默回復，不發事件；受控事件重建後的相容性仍未知，不把失敗當成功。e2e 對合成頁所有 Confirm／Schedule／Post 鈕與兩個 form 計數，逐個快速時段要求送出為 0；missing／partial／不可表示分鐘要求欄位不變且所有計數為 0，原網路守門保留。
+- **證據與範圍：親查原始骨架的結構計數。** 340748 bytes／4110 行、dialog 在 36／42 行；四個設定 testid 與 select／option 節點均 0，支持上述「沒有設定 DOM」結論，未提交或匯出原檔內容。QUICK_CONFIG 集中所有 testid／name／domain 假設，程式、九語 heading 與文件皆標未驗證；設定缺失會顯示未偵測。開工卡的一按開視窗、自訂／星期與佔用避讓未實作，理由與縮小範圍已寫清楚。遠端 PR 正文讀取失敗（Cache miss），未宣稱已核對其文案；产品开发須在 PR 保留「合成 fixture 原型／真設定 DOM 未驗證」及上述未做範圍。
+- **時間、隱私、權限：親讀與本機測試。** 本地 next 9:00／12:30／20:00、從明天開始的工作日 9:00、5 分鐘邊界、跨月年／閏日／DST、12／24h 及精確分鐘選項有測試。新設定 fixture／now 都在 2027+；舊列表假資料讀法不改。新診斷行只有四個非負安全整數，不匯出欄位值；骨架能走進設定 dialog，select／option 的文字只留長度。manifest 除名稱／描述／版本及本地 quick.js 外無新增權限／host／資源；position.js 與 storage 摘要不改，沒有新增儲存／網路或注入。核對 46 張新增截圖與本機生成流程、PNG 無附加 metadata；新增文字／fixture 為假資料或結構計數，未引入真機日期／原始樣本／真帳號／密鑰。老闆實測 5 步包含手動開設定視窗、複製結構及診斷貼回、逐欄確認、不送出或手動改 2027+ 後刪除。
+
+**本複審實跑**：npm test 退出 0（10 檔）；細項 **156 過／0 敗／0 跳過**。verify 退出 0：11 probe 檔／4 SVG，**30 API／14 icon／9 SVG／41 洩漏／21 storage／33 native writer 自測**；diff 空白檢查通過。**外部由产品开发提供**：6f42f83 原版 test 155/155、verify OK、e2e **622 斷言通過**；不是本沙箱執行結果。本輪不改 probe／fixture／e2e，只改 scripts/verify.mjs、兩個測試、AGENTS 與本節；外部在含修正的最新工作樹再跑三測試後提交，預期 e2e 仍保留原 622 斷言，不須為本輪重建截圖。
+
+仍待老闆的新設定骨架與真頁逐欄對照；原生 select／option 合約、React input/change 行為、X 可接受提前量／上限及時區設定都未驗證，合成測試不能代替真頁證據。靜態守門是保守文字掃描，不能當任意 JavaScript 的完整安全證明；本輪同時逐行核對唯一 writer。禁止自動開視窗／確認／送出與公開資料規矩不變。

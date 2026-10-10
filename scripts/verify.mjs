@@ -183,6 +183,10 @@ const BANNED = [
   { name: "activation event constructors/aliases", re: /\b(?:MouseEvent|PointerEvent|KeyboardEvent|SubmitEvent)\b/ },
   { name: "form submission/aliases", re: /\brequestSubmit\b|\.\s*submit\b/ },
   { name: "click alias", re: /\.\s*click\b/ },
+  // Dot/bracket checks alone miss destructuring and reflected method extraction.
+  // Match the same static property names after comment removal/string folding.
+  { name: "activation method extraction", re: /\{[^{};]*\b(?:click|submit)["']?\s*(?=[:,}])|\.\s*(?:get|getOwnPropertyDescriptor)\s*\([^;]*["'](?:click|submit)["']/ },
+  { name: "activation handler alias", re: /\.\s*on(?:click|submit)\b/ },
   { name: "namespaced resource attribute", re: /\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
   { name: "markup parsing", re: /\b(?:createContextualFragment|parseFromString)\b/ },
   { name: "fetch(", re: /\bfetch\s*\(/ },
@@ -561,6 +565,16 @@ export function nativeWriterSelfTest() {
     'control.dispatchEvent(new Event("input"))', 'control["dispatch"+"Event"](new Event("change"))',
     'control.dispatchEvent(new MouseEvent("click"))', 'control.dispatchEvent(new PointerEvent("pointerdown"))',
     'control.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter"}))', 'form.dispatchEvent(new SubmitEvent("submit"))',
+    'HTMLElement.prototype.click.call(button)', 'label.click()',
+    'control.focus(); control.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter"}))',
+    'const {click:activate}=button; activate.call(button)', 'const {click}=button; click.call(button)',
+    'Reflect.get(button,"cl"+"ick").call(button)',
+    'Reflect.get(\n button,\n "click"\n).call(button)',
+    'const {"submit":send}=form; send.call(form)',
+    'Object.getOwnPropertyDescriptor(HTMLFormElement.prototype,"submit").value.call(form)',
+    'const dispatch=control.dispatchEvent; dispatch.call(control,new Event("click"))',
+    'button.onclick()', 'const send=form.onsubmit; send.call(form)',
+    'button[/* gap */"cl"+"ick"]()',
   ];
   for(const attack of attacks) if(!scanSource(attack,'probe/elsewhere.js').length) throw new Error('native writer self-test: activation allowed');
   const edits=[source.replace("Event('input'","Event('click'"),source.replace("Event('change'","Event('submit'"),source.replace("if (!detected.ready || !at)","if (!at)"),source+'\nform.requestSubmit();',source+'\nbutton.click();',source+'\ncontrol.dispatchEvent(new Event("change"));'];

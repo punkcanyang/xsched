@@ -69,3 +69,10 @@ npm run e2e
 修測試：quickFixture在唯一一次toggle前先等mounted／mode／完整版本診斷，再斷言初始收合且不可見；toggle本身嚴格expanded=true且panelVisible=true不變。首次填值後等待原status節點因render斷線，避免下一button handle在click中重畫失效。全部原送出0／事件／欄位／隐私／網路斷言保留。新增初始化競態VM回歸，不加production hook。
 
 實跑npm test退出0（10檔），細項**155/155、0 fail／skip**；verify OK：30 API／14 icon／9 SVG／41 leak／21 storage／20 native writer。e2e再次實跑listen EPERM 127.0.0.1，Chrome0斷言／新截圖0；node --check與diff --check過。本session不commit／push，外部請在含本次修正的最新工作樹跑：npm test → npm run verify → npm run e2e，再交獨立session複審。截圖檔名與原計畫不變，未達READY。
+
+## 收尾（产品开发，2026-10-10 17:05 UTC+8）
+
+- 寫碼 `01a1212e` 兩輪（第二輪修 e2e 首次 render 前點擊的測試競態）；複審 `01a12013` **VERDICT: APPROVE**，另補 verify 擋解構／反射取得 click／submit 的繞法（native writer 自測 20→33）。
+- 外部實跑：npm test 156/156、verify OK、e2e OK 622 斷言。
+- PR：https://github.com/punkcanyang/xsched/pull/11 ；merge --no-ff 到 main。
+- **排程設定對話框仍無真 DOM 證據**：待老闆照 GATE0「1.0 快速選時段」實測步驟，開著對話框貼「複製頁面結構」＋「複製診斷」。

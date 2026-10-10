@@ -193,3 +193,22 @@ test("verify CLI exits nonzero for an actual synthetic violation; missing manife
     assert.match(result.stderr.toString(), /banned API/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('verify CLI rejects destructured, reflected and handler activation before executing code', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'xsched-activation-review-'));
+  try {
+    writeFileSync(join(directory, 'manifest.json'), JSON.stringify(goodManifest));
+    for (const [source, rule] of [
+      ['const {click: activate}=button; activate.call(button)', 'activation method extraction'],
+      ['Reflect.get(button,"cl"+"ick").call(button)', 'activation method extraction'],
+      ['const {"submit": send}=form; send.call(form)', 'activation method extraction'],
+      ['Object.getOwnPropertyDescriptor(HTMLFormElement.prototype,"submit").value.call(form)', 'activation method extraction'],
+      ['const send=form.onsubmit; send.call(form)', 'activation handler alias'],
+    ]) {
+      writeFileSync(join(directory, 'ok.js'), source);
+      const result = runNode(['scripts/verify.mjs', directory], { timeout: 10000 });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.ok(result.stderr.includes(rule), result.stderr);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
