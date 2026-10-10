@@ -120,7 +120,7 @@ test('skeleton visits native dialog; option labels/values never become calendar 
   assert.ok(!result.includes('calendar='));
 });
 test('native event writer guard accepts only exact audited file and catches activation attacks',async()=>{
-  assert.equal(nativeWriterSelfTest(),46);
+  assert.equal(nativeWriterSelfTest(),49);
   const source=readFileSync(new URL('../probe/quick.js',import.meta.url),'utf8');
   assert.deepEqual(scanSource(source,'probe/quick.js',{quickModule:true}),[]);
   assert.ok(scanSource(source,'probe/other.js').length);

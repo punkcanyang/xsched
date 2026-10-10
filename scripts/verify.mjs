@@ -26,7 +26,7 @@ const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d
 
 // Exact-source exception only for the sole native select input/change writer.
 // All other activation, network, storage and markup rules still scan this file.
-const QUICK_SOURCE_SHA256 = "4abbe5cb2526e1effc0a8890db6db2fa4333b48eea7db92e4f8ced7ce87a29fc";
+const QUICK_SOURCE_SHA256 = "f780b40ae0a8a8f4138d2b28fa89d0746146104b47c0536b328187d440d4d25e";
 
 // Owner-authorized exception: one exact DOM factory in root probe/ui.js only.
 // Pin both definition and sole call site to full reviewed sources. This prevents
@@ -789,7 +789,7 @@ export function nativeWriterSelfTest() {
   const edits=[source.replace("Event('input'","Event('click'"),source.replace("Event('change'","Event('submit'"),source.replace("if (!detected.ready || !at)","if (!at)"),source+'\nform.requestSubmit();',source+'\nbutton.click();',source+'\ncontrol.dispatchEvent(new Event("change"));'];
   for(const edit of edits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: edited writer allowed');
   const realEdits=[
-    source.replace("if(!await readSettled(doc,()=>matches(expected)))", "if(false)"),
+    source.replace("if(!await readSettled(doc,matches))", "if(false)"),
     source.replace("if (!withinDateBounds(detected.fields.dateInput,at))", "if (false)"),
     source.replace("(text===expected || (!text && value===expected)) && (!value || value===expected)", "true"),
     source.replace("control.dispatchEvent(new doc.defaultView.Event('change'", "doc.body.dispatchEvent(new doc.defaultView.Event('change'"),
@@ -801,9 +801,12 @@ export function nativeWriterSelfTest() {
     source.replace("const picker=currentPicker(doc,dialog);\n      const control=picker?.fields[key];", "const picker=detected;\n      const control=picker.fields[key];"),
     source.replace("['year','month','day','period','hour','minute']", "['month','day','year','hour','minute','period']"),
     source.replace("await settle(doc);", "await Promise.resolve();"),
-    source.replace("if(!await readSettled(doc,()=>currentPicker(doc,dialog)?.fields[key]?.value===value))", "if(false)"),
-    source.replace("if(!await readSettled(doc,()=>restoreField(doc,initial,key)?.value===restoredValues[key]))", "if(false)"),
+    source.replace("if(!await readSettled(doc,()=>matchesTarget(currentPicker(doc,dialog),key,wanted[key])))", "if(false)"),
+    source.replace("if(!await readSettled(doc,()=>restoredFieldMatches(key)))", "if(false)"),
     source.replace("return candidates.length===1 ? candidates[0] : null;", "return candidates[0];"),
+    source.replace("return value!==null && detected.fields[key]?.value===value;", "return true;"),
+    source.replace("const value=originalValue(control,key);", "const value=originals[key];"),
+    source.replaceAll(" || control.closest(QUICK_CONFIG.dialog)!==dialog", ""),
   ];
   for(const edit of asyncEdits)if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length)throw new Error('native writer self-test: async protection removed');
   for (const edit of realEdits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: altered real picker boundary accepted');

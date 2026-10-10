@@ -87,7 +87,7 @@ npm run e2e       # Chrome for Testing 載入真 probe/，本機 fixture，零�
 
 `npm run e2e` 需要 Xvfb 與 `CHROME_PATH` 指向 Chrome for Testing。全部只用 fixture，不登入帳號；快速時段 fixture 與測試時鐘皆為 2027 年以後。
 
-0.1.1 的歷史結果：169/169 單元測試、verify 通過；三份 fixture 隱藏 Chrome 日期圖示後，完整 e2e 通過 686 斷言。0.1.2 本輪 npm test 12 檔／細項 196 過，verify 通過（66 洩漏／46 writer 自測，其他守門保留）。沿用 fixture-only CSS，不改網路政策、不豁免 data:；完整 Chrome e2e 交外部。
+0.1.1 的歷史結果：169/169 單元測試、完整 e2e 686 斷言通過。0.1.2 複審前外部完整 e2e 已通過 911 斷言；複審補修後，npm test 12 檔／細項 199 過，verify 通過（66 洩漏／49 writer 自測，其他守門保留）。沿用 fixture-only CSS，不改網路政策、不豁免 data:；最新 writer 的完整 Chrome e2e 需外部重跑，真頁逐欄驗收仍待老闆確認。
 
 ## 文件
 
@@ -95,7 +95,7 @@ npm run e2e       # Chrome for Testing 載入真 probe/，本機 fixture，零�
 - [`docs/plan/ROADMAP.md`](docs/plan/ROADMAP.md)：路線圖與目前進度
 - [`notes/GATE0.md`](notes/GATE0.md)：列表讀法、真骨架證據表、原生 writer 與實測步驟
 - [`notes/HANDOFF-v1.0-quick-fill.md`](notes/HANDOFF-v1.0-quick-fill.md)：0.1.2 交接、外部待跑與真機待驗證項目
-- 0.1.2 假資料截圖（待外部 e2e 產生）：[`real-detected`](docs/v1.0-quickfill-real-detected.png)、[`real-filled`](docs/v1.0-quickfill-real-filled.png)、[`year-missing`](docs/v1.0-quickfill-year-missing.png)、[`rollback`](docs/v1.0-quickfill-rollback.png)
+- 0.1.2 假資料截圖（複審前外部 e2e 產生）：[`real-detected`](docs/v1.0-quickfill-real-detected.png)、[`real-filled`](docs/v1.0-quickfill-real-filled.png)、[`year-missing`](docs/v1.0-quickfill-year-missing.png)、[`rollback`](docs/v1.0-quickfill-rollback.png)
 - 舊版範例截圖：[`docs/gate0-en.png`](docs/gate0-en.png)、[`gate0-ja.png`](docs/gate0-ja.png)、[`gate0-zh-Hans.png`](docs/gate0-zh-Hans.png)、[`gate0-zh-Hant.png`](docs/gate0-zh-Hant.png)、[`gate0-ko.png`](docs/gate0-ko.png)、[`gate0-roles-fallback.png`](docs/gate0-roles-fallback.png)、[`gate0-empty.png`](docs/gate0-empty.png)、[`gate0-virtual-before.png`](docs/gate0-virtual-before.png)、[`gate0-virtual-after.png`](docs/gate0-virtual-after.png)
 - 標誌：[`docs/xsched-logo-B.svg`](docs/xsched-logo-B.svg)，使用符文 Dagaz，意思是「日子」，整體輪廓像封起來的 X
 

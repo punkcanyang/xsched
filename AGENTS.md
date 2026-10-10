@@ -75,6 +75,7 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 - `npm run verify` 保留全部舊守門／自測，option 樣本共用 skeleton 的有限數字／固定上下午詞彙遮罩；新增 11 個 value 洩漏攻擊（55→66），新增 7 個非同步 writer 邊界改寫（39→46）。原 30 API／14 icon／9 SVG／21 storage／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測數量不減。修改 quick／content 後須重新核對並更新精確 SHA；ui 作者 factory 與 position 模組未改。新日曆欄位診斷只允許計算目標數字、1–4 位 value 數字或固定短上下午列舉；本文、長 ID、網址與身份仍不得匯出。
 - `npm run e2e` 新增受控 picker：年月重建日 select、四種 value 變體各填四時段、缺年份零寫入、上下午修正後全組還原、safe option-values 骨架樣本與實體複製六欄診斷。以完整非同步狀態和 readback 判定成功，不能用第六個 change 代替完成。所有 X/calendar/send click 及 form submit 仍 0，網路政策與 0 擴充資源／背景請求斷言不動，權限與 `162a838` 相同。日期 input 繼續只讀 min/max，fixture 隱藏內建日曆圖示；不增加 data: 豁免。截圖改存 `docs/v1.0-quickfill-*.png`，新增 picker／時鐘皆 2027+，舊列表仍是假資料，舊截圖保留。
 - `node scripts/build-quick-fixtures.mjs` 可重建八份 `fixtures/quick-real-*.html`；腳本只讀合成設定，不讀老闆骨架。真機截圖、骨架、日期與 option 真值不得放 repo。完整 Chrome e2e 在沙箱外跑，未跑前不能宣稱 0.1.2 已通過真頁驗收。
+- 0.1.2 Codex 複審另測晚到的月份編碼切換、原 raw 仍存在時的日曆值還原，以及 input 後控制項移出原 dialog 時禁止 change。讀回與還原都按當前唯一選項映射核對日曆值，不能只比較 raw token。原 46 項 writer 攻擊保留，追加上述邊界的三項來源改寫攻擊為 49；quick.js 摘要同步，AUTHOR_* 摘要與其他守門不變。
 
 ## READY 的標準（PR 說明裡要有）
 

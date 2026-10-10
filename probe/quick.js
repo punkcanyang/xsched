@@ -254,6 +254,11 @@ function targetParts(fields, at) {
 function mappedValue(detected, key, wanted) {
   return detected.maps ? detected.maps[key]?.get(wanted) ?? null : optionValue(detected.fields[key],wanted);
 }
+function matchesTarget(detected,key,wanted) {
+  if(!detected)return false;
+  const value=mappedValue(detected,key,wanted);
+  return value!==null && detected.fields[key]?.value===value;
+}
 // Always re-identify a unique control in the SAME original dialog. A new dialog
 // or an ambiguous/incomplete group is never a continuation of the transaction.
 function currentPicker(doc, dialog) {
@@ -303,7 +308,8 @@ function captureRows(doc, initial, wanted, expected) {
   return FILL_ORDER.filter(key=>wanted[key]!==null).map(key=>{
     const control=detected?.fields[key] || restoreField(doc,initial,key);
     const raw=control?.value;
-    return {field:key,target:wanted[key],value:safeValue(expected[key]),read:safeValue(raw),options:control ? globalThis.XSCHED_SKELETON.optionSamples(control) : 'x',mismatch:raw!==expected[key]};
+    const value=control ? realOptions(control,key)?.get(wanted[key]) ?? null : null;
+    return {field:key,target:wanted[key],value:safeValue(value ?? expected[key]),read:safeValue(raw),options:control ? globalThis.XSCHED_SKELETON.optionSamples(control) : 'x',mismatch:value===null || raw!==value};
   });
 }
 // Sole audited event writer. Every target is preflighted before any mutation.
@@ -316,21 +322,32 @@ async function writeNativeControls(doc, detected, wanted, expected, at) {
   const initial={...detected,anchors};
   const originals=Object.fromEntries(keys.map(key=>[key,detected.fields[key].value]));
   const logicalOriginals=Object.fromEntries(keys.map(key=>[key,[...detected.maps[key]].find(pair=>pair[1]===originals[key])?.[0] ?? null]));
-  const restoredValues={...originals};
   let failedField='none',writtenAll=false;
   function write(control,value) {
     if(!control.isConnected || control.ownerDocument!==doc)throw new Error('detached');
-    if(control.closest(QUICK_CONFIG.excluded))throw new Error('scope');
+    if(control.closest(QUICK_CONFIG.excluded) || control.closest(QUICK_CONFIG.dialog)!==dialog)throw new Error('scope');
     setter.call(control,value);
     control.dispatchEvent(new doc.defaultView.Event('input',{bubbles:true}));
     if(!control.isConnected || control.ownerDocument!==doc)throw new Error('detached');
-    if(control.closest(QUICK_CONFIG.excluded))throw new Error('scope');
+    if(control.closest(QUICK_CONFIG.excluded) || control.closest(QUICK_CONFIG.dialog)!==dialog)throw new Error('scope');
     control.dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));
   }
-  const matches=values=>{
+  const matches=()=>{
     const picker=currentPicker(doc,dialog);
-    return picker && keys.every(key=>picker.fields[key]?.value===values[key]);
+    return picker && keys.every(key=>matchesTarget(picker,key,wanted[key]));
   };
+  // Raw values can survive a re-render while changing calendar meaning. Restore
+  // the original logical value through the CURRENT unique mapping, even if the
+  // old raw token still exists. A blank original can only return to one blank.
+  function originalValue(control,key) {
+    if(originals[key]==='')return [...control.querySelectorAll(QUICK_CONFIG.option)].filter(option=>option.value==='').length===1 ? '' : null;
+    return logicalOriginals[key]!==null ? realOptions(control,key)?.get(logicalOriginals[key]) ?? null : null;
+  }
+  function restoredFieldMatches(key) {
+    const control=restoreField(doc,initial,key);
+    const value=control ? originalValue(control,key) : null;
+    return value!==null && control.value===value;
+  }
   if(typeof setter!=='function') {
     fillReports.set(doc,{result:'failed',failed:keys,rows:captureRows(doc,initial,wanted,expected)});
     return 'failed';
@@ -344,10 +361,10 @@ async function writeNativeControls(doc, detected, wanted, expected, at) {
       if(!control || value===null || !withinDateBounds(picker.fields.dateInput,at))throw new Error('options');
       expected[key]=value; // a re-render may change the option encoding
       write(control,value);
-      if(!await readSettled(doc,()=>currentPicker(doc,dialog)?.fields[key]?.value===value))throw new Error('readback');
+      if(!await readSettled(doc,()=>matchesTarget(currentPicker(doc,dialog),key,wanted[key])))throw new Error('readback');
     }
     writtenAll=true;
-    if(!await readSettled(doc,()=>matches(expected)))throw new Error('readback');
+    if(!await readSettled(doc,matches))throw new Error('readback');
     fillReports.set(doc,{result:'ok',wanted});
     return 'filled';
   } catch {
@@ -355,21 +372,19 @@ async function writeNativeControls(doc, detected, wanted, expected, at) {
     const failed=writtenAll ? rows.filter(row=>row.mismatch).map(row=>row.field) : [failedField];
     if(!failed.length)failed.push(failedField);
     // Logical fields may be replaced by a controlled re-render. Restore only a
-    // freshly verified unique select in the same dialog, using original raw values.
+    // freshly verified unique select in the same dialog, preserving calendar meaning.
     let restored=true;
     for(const key of keys) {
       try {
         const control=restoreField(doc,initial,key);
-        const options=control && [...control.querySelectorAll(QUICK_CONFIG.option)].filter(option=>option.value===originals[key]);
         if(!control)throw new Error('restore');
-        const value=options.length===1 ? originals[key] : logicalOriginals[key]!==null ? realOptions(control,key)?.get(logicalOriginals[key]) ?? null : null;
+        const value=originalValue(control,key);
         if(value===null)throw new Error('restore');
-        restoredValues[key]=value;
         write(control,value);
-        if(!await readSettled(doc,()=>restoreField(doc,initial,key)?.value===restoredValues[key]))restored=false;
+        if(!await readSettled(doc,()=>restoredFieldMatches(key)))restored=false;
       } catch {restored=false;}
     }
-    restored=Boolean(await readSettled(doc,()=>keys.every(key=>restoreField(doc,initial,key)?.value===restoredValues[key]))) && restored;
+    restored=Boolean(await readSettled(doc,()=>keys.every(restoredFieldMatches))) && restored;
     const result=restored ? 'failed' : 'rollbackFailed';
     fillReports.set(doc,{result,failed,rows});
     return result;

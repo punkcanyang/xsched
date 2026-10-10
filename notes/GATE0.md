@@ -1023,4 +1023,23 @@ verify 的靜態禁令與舊自測保留：新增 11 個 option value 洩漏攻�
 
 `npm test` 12 檔通過；細項 TAP（含子測試）196 過／0 敗／0 跳過。verify OK：30 API／14 icon／9 SVG／66 leak／21 storage／46 native writer／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測。語法、diff 空白、八份 fixture 結構／去識別掃描通過；manifest 除版本外不變，網路政策與 e2e 最後守衛逐字保留。完整 Chrome e2e 與截圖本輪未跑，需外部執行。
 
-還原先保留原 raw 值；若重繪改變 option 編碼，只有原日曆數值能在當前唯一選項中對應，才使用新編碼還原。原值為空則只能恢復空白。欄位及 date bounds 每次填前再查；本文／article 內的控制項排除，input 後若節點斷線不派送 change。相關回歸已包含在上述結果中。
+還原按原日曆值在當前選項中唯一映射，即使原 raw token 仍存在，也不能優先把它當成原月份。原值為空則只能恢復唯一空白選項。欄位及 date bounds 每次填前再查；本文／article 內的控制項排除，input 後若節點斷線或移出原 dialog，不派送 change。複審補修的回歸結果見下節。
+
+## 1.0 快速時段 0.1.2 Codex 複審
+
+獨立 Codex 與寫碼 session `01a1212e` 不同，審查 `162a838...290476b` 全部差異。親讀外部 0.1.1 骨架及填值失敗截圖；兩版骨架 L86–173 確實逐字相同。截圖可證明偵測六欄及 writer 回報失敗，不能證明 React 的重繪時機或 option 真編碼。文件把這些列為推測，沒有將合成重現宣稱為真頁證明。原始證據未複製或提交。
+
+複審先以新增回歸重現兩項高嚴重度問題：
+
+- 最後一欄事件把月份編碼由 1..12 換成 0..11，重繪仍選 raw `1`，已代表二月；原 writer 卻只比 raw token 而回報 `filled`。修正每欄與最後整組讀回，按當前唯一映射核對目標日曆值；失敗診斷也以當前映射判定欄位，能正確列出 month。
+- 還原時舊 raw `1` 仍存在，原 writer 優先採它，將原本一月還原成二月卻宣稱已還原。改為按初始日曆值重新映射，還原的等待與最後整組確認也使用日曆值；無法唯一映射就回報不完整。空白原值只允許恢復唯一空白。
+
+另補一項中嚴重度邊界：input handler 把原節點移出 dialog 但仍連在 document 時，原檢查會繼續派送 change。現在在 input/change 前均要求最近 dialog 仍是本次原 dialog；回歸確認移出的 year 收到 0 次 change，操作回報還原不完整。三項均保留所有 X/calendar/send click 與 form submit 為 0 的斷言。
+
+`scripts/verify.mjs` 的既有 API、權限、storage、作者連結、URL／資源／CSS／解構及防送出規則未放寬。原 46 項 writer 攻擊保留，舊讀回改寫樣本更新為新判定的等價位置，再加日曆讀回、還原 raw 優先及 dialog 邊界的三項攻擊為 **49**。新 quick.js 完整摘要為 `f780b40ae0a8a8f4138d2b28fa89d0746146104b47c0536b328187d440d4d25e`；AUTHOR_* 摘要、ui.js、position.js 原樣且相符。
+
+option 樣本仍共用原安全函式，只有 1–4 位數字、空白標記及固定短上下午詞彙，沒有新增文字出口。manifest 除版本外與基準相同；network-policy.mjs 與 e2e 最後網路守衛逐字相同。八份 fixture 年份均 2027+、無身份／網址，生成腳本可在 /tmp 重建出逐字相同檔案。57 張變更 PNG 已逐張核對為 fixture 範例，沒有文字型 metadata；沒有提交老闆真機資料。
+
+補修後實跑 `npm test` **12 檔通過**，展開 TAP **199 過／0 敗／0 跳過**；verify **30 API／14 icon／9 SVG／66 leak／21 storage／49 native writer／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測**全部通過。主代理提供的複審前 e2e 是 **911 斷言通過**；本沙箱未跑 Chrome，且本輪修改 writer，最新完整 e2e 必須交外部重跑。沒有 commit／push／merge。
+
+結論 **APPROVE（本輪工作樹補修已納入）**，合併前須外部提交補修並在最新提交重跑三項。真頁 option 編碼、React 接受與相依重繪、日期 input 同步仍待老闆五步逐欄驗收；有界讀回不能保證任意更晚的修正。不宣稱本版已通過真頁驗收。

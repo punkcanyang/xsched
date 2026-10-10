@@ -170,3 +170,50 @@ test('calendar-shaped controls inside tweetText/article never become a native pi
   assert.match(Q.fillDiagnostic(f.document),/read=x options=x/);
  }
 });
+
+test('late month encoding change cannot pass raw readback or restore a different logical month',async()=>{
+ const f=fixture();
+ native.call(f.field('month'),'1');
+ for(const type of ['input','change'])f.field('month').dispatchEvent(new f.window.Event(type,{bubbles:true}));
+ await pause();let changed=false;
+ f.document.addEventListener('change',event=>{
+  if(!changed && event.target===f.field('minute')) {
+   changed=true;
+   for(const option of f.field('month').querySelectorAll('option:not([disabled])'))option.value=String(Number(option.value)-1);
+  }
+ });
+ assert.equal(await Q.fillSlotResult(f.document,'morning',now),'failed');
+ assert.equal(f.field('month').value,'0','restore January through its new encoding, not original raw 1 / February');
+ assert.match(Q.fillDiagnostic(f.document),/failed=month/);
+ assert.match(Q.fillDiagnostic(f.document),/field=month target=1 value=0 read=1/);
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
+});
+
+test('rollback maps original calendar meaning even when the old raw month value still exists',async()=>{
+ const f=fixture('autocorrect');
+ native.call(f.field('month'),'1');
+ for(const type of ['input','change'])f.field('month').dispatchEvent(new f.window.Event(type,{bubbles:true}));
+ await pause();let changed=false;
+ f.document.addEventListener('change',event=>{
+  if(!changed && event.target===f.field('year')) {
+   changed=true;
+   for(const option of f.field('month').querySelectorAll('option:not([disabled])'))option.value=String(Number(option.value)-1);
+  }
+ });
+ assert.equal(await Q.fillSlotResult(f.document,'evening',now),'failed');
+ assert.equal(f.field('month').value,'0','original January must remain January after rollback');
+ assert.match(Q.fillDiagnostic(f.document),/failed=period/);
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
+});
+
+test('input handler moving a control outside the original dialog cannot receive its change event',async()=>{
+ const f=fixture(),year=f.field('year');let moved=false,yearChanges=0;
+ year.addEventListener('change',()=>yearChanges++);
+ f.document.addEventListener('input',event=>{
+  if(!moved && event.target===year){moved=true;f.document.body.append(year);}
+ });
+ assert.equal(await Q.fillSlotResult(f.document,'morning',now),'rollbackFailed');
+ assert.equal(yearChanges,0,'change is forbidden after the original control leaves its dialog');
+ assert.match(Q.fillDiagnostic(f.document),/failed=year/);
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
+});
