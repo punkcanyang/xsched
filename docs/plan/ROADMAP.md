@@ -40,6 +40,10 @@ Chrome 擴充，只改造 x.com 頁面：老闆照樣在網頁上發文，擴充
 
 外部工作期間建立WIP `05242c5`，仍有最後收尾差異待提交。待外部 `npm test`／`npm run verify`／`npm run e2e`、gate0.3假資料截圖與0資源／背景請求證據；沙箱listen EPERM，沒有本輪Chrome斷言／新截圖。另待另一session複審及老闆自己的Chrome逐則日期時分與右下布局實測，尚未READY。無新增權限／網路API／遠端資源，$0、不打包zip。根因、5步實測與限制見 `notes/GATE0.md`「閘0.3」，外部交接見 `notes/HANDOFF-gate0.3.md`。
 
+## 閘 0.4：快捷鈕可拖動＋避讓其他擴充（probe 0.0.5，進行中）
+
+2026-10-10 11:35（UTC+8）。老闆實測 0.0.4：時間解析通過（timeOk=1、timeFail=0）、浮層可捲；但快捷鈕與其他擴充浮動鈕疊在一起、tooltip 蓋鈕。分支 `gate0.4/drag-avoid-extensions`；位置存 x.com localStorage（不加權限）。交接見 `notes/HANDOFF-gate0.4.md`。
+
 ## 1.0（閘 0 過才做）
 
 1. **快速選時段**：發文框旁加按鈕，預設時段（例如 9:00／12:30／20:00，可自訂、可設星期）。一按＝打開 X 原生排程視窗並填入「下一個空時段」，老闆確認後照原流程按 Schedule。
