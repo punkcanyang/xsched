@@ -172,7 +172,7 @@ test("diagnostic accepts only safe nonnegative integers and numeric enum codes",
   const secret = "@private https://private.example/ Oct 10 2026 9:00 AM private post";
   const report = Object.fromEntries(["onScheduled", "tab", "scope", "cell", "button", "listitem", "link", "tweetText", "phrase", "l1", "l2", "l3", "layer", "mounted", "timeOk", "timeFail", "unparsed", "loose", "needsScroll", "virtualized", "empty", "scrolled"].map((key) => [key, secret]));
   const diagnostic = R.buildDiagnostic(report);
-  assert.match(diagnostic, /^xsched probe v0\.1\.0 \(manifest unknown\)\n(?:\w+=[\w%|-]* ?)+\nfmt=none$/);
+  assert.match(diagnostic, /^xsched probe v0\.1\.1 \(manifest unknown\)\n(?:\w+=[\w%|-]* ?)+\nfmt=none$/);
   assert.ok(!diagnostic.includes(secret));
   for (const value of [-1, NaN, Infinity, 1.5, {}, () => secret]) {
     assert.match(R.buildDiagnostic({ cell: value }), /cell=0 /);

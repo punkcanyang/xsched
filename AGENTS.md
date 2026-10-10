@@ -60,6 +60,13 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 
 資源屬性守門：`setAttribute`／`setAttributeNS` 與 IDL property 寫入共用一份對照表，完整保留原8項src／href／srcset／action／poster／data／ping／formaction，另禁attributionsrc／background／referrerpolicy／srcdoc及對應camelCase IDL（formAction／attributionSrc／referrerPolicy）。與URL組件共用直接／bracket／跳脫／拼接／複合賦值／for-of／for-in寫入規則，反射及任意深度解構沿用原禁令；另拒絕動態attribute名稱、setAttribute／setAttributeNS的方法提取與call／apply／bind、setAttributeNode與NamedNodeMap setter；只允許固定安全attribute直接呼叫，以及完整摘要鎖住content的既有SVG-key loop。資源網址僅原factory的精確href statement例外。新增514項資源屬性自測與安全讀取／CSS背景對照，所有舊自測數量不變。完整repo CLI保留原3個解構攻擊，再加15個reader.js pointerover資源寫入變體（含直接ping、跳脫／拼接bracket、Reflect.set／Object.assign／defineProperty及巢狀解構），乾淨副本退出0／全自測執行，18個攻擊皆須以具體守門規則退出1，不能靠摘要不符或執行錯誤。
 
+## 快速時段0.1.1的真骨架回歸
+
+- `npm test`另測`test/quick-real.test.mjs`：內外dialog／兩group／aria-labelledby唯一label／空testid、四時段、opaque值及文字／數字映射、全域一致零基月份、12 AM/PM／24h／刻度分、上下午文字與順序矛盾拒絕、disabled同值／hidden選項、缺年份／日／分與min/max預檢零寫入。事件後讀回不符整組還原並派送input/change，節點回收／還原拒絕明示不完整；content VM驗證繁中優先於瀏覽器簡中及錯誤跨render保留。新fixture全為假資料、年份2027+；不直接寫日期input。
+- `npm run verify`保留原30 API／14 icon／9 SVG／21 storage／41 leak／33 native writer自測；select與label的安全日曆UI詞彙testid新出口增加14身份攻擊，洩漏成55；writer刪讀回／bounds／period驗證、setter替換／body派送／click別名增加6攻擊，native writer成39。仍只對quick.js精確SHA豁免dispatchEvent一條，唯一writer只送select input/change（含整組還原）；不click／不submit禁令與position storage摘要不變。
+- `npm run e2e`保留全部舊情境與0網路證據；真骨架精簡合成picker要求schedDialog=1 dateCtl=3 timeCtl=3 selects=6、四時段逐欄／12h換算、兩世界2027假時鐘、缺年份零改／零事件、change handler拒絕目標後所有select原值復原且input/change各12次，所有Confirm／Schedule／Post／calendar click及form submit皆0。date input不直接寫、picker骨架安全匯出、權限與293589f相同。新截圖`docs/v1.0-quickfix-{real-detected,real-filled,year-missing,rollback}.png`及舊情境的新前綴副本；既有截圖不覆寫。原真機骨架禁止提交；新的value格式與React接受仍須老闆確認。
+- 0.1.1 的日期輸入框只存在於三份 `quick-real-*` fixture；測試頁用 `::-webkit-calendar-picker-indicator{display:none}` 隱藏 Chrome 內建日曆圖示，避免它在 CDP 產生 data: SVG 請求。保留 date input／min/max 與原生填值、還原及零送出斷言，擴充程式不變；網路政策不豁免 data:，仍要求 0 擴充資源／背景請求。外部 `737d242` 的兩個快速時段情境已過，但完整 e2e 曾在這筆圖示請求上失敗；修改 fixture 後外部重跑完整 e2e 已通過（686 斷言、0 擴充資源請求）。往後仍不能把單一情境通過當成完整 e2e 通過。
+
 ## READY 的標準（PR 說明裡要有）
 
 1. 做了什麼（閘 0 要附 DOM 依據、讀取方式、改版風險）。

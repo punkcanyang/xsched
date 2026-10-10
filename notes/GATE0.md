@@ -858,3 +858,95 @@ ready依實際host的diagnostic是否存在判斷。fixture的dialog及子樹由
 **本複審實跑**：npm test 退出 0（10 檔）；細項 **156 過／0 敗／0 跳過**。verify 退出 0：11 probe 檔／4 SVG，**30 API／14 icon／9 SVG／41 洩漏／21 storage／33 native writer 自測**；diff 空白檢查通過。**外部由产品开发提供**：6f42f83 原版 test 155/155、verify OK、e2e **622 斷言通過**；不是本沙箱執行結果。本輪不改 probe／fixture／e2e，只改 scripts/verify.mjs、兩個測試、AGENTS 與本節；外部在含修正的最新工作樹再跑三測試後提交，預期 e2e 仍保留原 622 斷言，不須為本輪重建截圖。
 
 仍待老闆的新設定骨架與真頁逐欄對照；原生 select／option 合約、React input/change 行為、X 可接受提前量／上限及時區設定都未驗證，合成測試不能代替真頁證據。靜態守門是保守文字掃描，不能當任意 JavaScript 的完整安全證明；本輪同時逐行核對唯一 writer。禁止自動開視窗／確認／送出與公開資料規矩不變。
+
+# 1.0 快速時段 0.1.1：真骨架
+
+## 寫碼前證據
+
+親讀0.1.0設定視窗遮罩骨架（3134節點）與原skeleton.js，不提交原檔或任何真機文字／值。離線以`nl -ba`讀L36–171，再核對attrToken：raw為null或空字串時只印屬性名稱；非空未知data-testid會印=x。**六個select的裸data-testid代表空值，不是前綴被遮掉**；本輪無testid前綴可用。aria-labelledby／label id被遮成x，只有關聯形狀，沒有真id或label詞證據。
+
+| 證據行 | 結構／路徑 | 可判定與不可判定 |
+|---|---|---|
+| L36／42 | 外dialog → role=group(L40) → aria-modal=true內dialog | 六個選單屬內dialog，不能讓外group重複計數 |
+| L86 | 內dialog → 日期group，四個子分支 | 三個select分別在label後，第四分支為日曆鈕＋date input |
+| L88–96／91 | 日期group → wrapper → label(id)／select(aria-labelledby)，c=13 | disabled空value＋12選項；文字長度3／4，符合月份，但月份名稱與value真值仍未知 |
+| L101–109／104 | 日期group第二wrapper，同關聯，c=32 | 空白＋31選項；文字長度1／2，符合日 |
+| L114–120／117 | 日期group第三wrapper，同關聯，c=4 | 空白＋3選項，文字長度4，符合年份；不匯出真年份 |
+| L124–132 | 日期group第四分支，label → button／input(type=date,min,max,value) | 另有日期input與日曆控制；是否為同步鏡像未知，不點鈕、不改input |
+| L135／139 | 內dialog → 時間group → 四個子wrapper的容器 | 一個提示分支＋三個label/select分支 |
+| L141–149／144 | 時間group第一select，c=13 | 空白＋12選項，文字長度1／2；12小時制 |
+| L154–160／157 | 第二select，c=61 | 空白＋60選項，文字長度2；分鐘 |
+| L165–170／168 | 第三select，c=2 | 兩個文字長度2的選項，無空白；上下午需以九語文字＋順序互相驗證 |
+
+0.1.0只查未驗證scheduledDateField／scheduledTimeField容器與name選單，因此真骨架雖有6個select，schedDialog仍0。修法必須加入真結構分支；不把未知class／遮罩id／空testid當成真選擇器。option value全部=x，**value格式未驗證**，不能直接假設月為1–12或上下午為AM/PM。
+
+## 偵測／填值設計
+
+所有新結構選擇器集中在quick.js的QUICK_CONFIG並附上述行號：真結構分支只接收可見`[role="dialog"][aria-modal="true"]`，日期與時間select必須直接歸屬同一最近group與dialog；aria-labelledby必須唯一指到本group的label，不借背景／別的dialog／重複id。由九語日曆label提示及選項完整域辨識角色；label為中性詞時依域推斷，歧義一律拒絕。日期group另需一個type=date input；時間group支援12h＋兩個上下午選項或完整0–23的24h。原scheduledDateField／scheduledTimeField＋name的合成備援保留，結果不改；不新增class或猜測testid前綴。
+
+數字來源是option value或完整數字／日曆單位／九語月份名稱的option文字，寫回實際option.value而非猜一個後端編碼。數值與文字都可識別但不一致時拒絕；只有**整個0–11域與十二個月份文字都一致差1**才接受零基月份。12h域必須完整1–12，24h必須完整0–23；目標日／分／年不可表示時不半填。AM／PM須有兩個可用且值唯一的選項，第一個文字確認上午、第二個確認下午；若value也可辨認AMPM，必須與文字及順序一致。未知上下午文字／逆序／duplicate value（含disabled同值選項）／hidden目標選項均拒絕。這是保守的判定規則，不宣稱已知真X的value格式。
+
+目標年份不存在時九語明示「目標年份不在 X 的選項中」，其他缺選項／日期越界也有獨立九語錯誤。維持本地Date四個未來時段與至少5分鐘餘量。date input只讀min/max作本地日曆日期預檢，不寫value／min／max、不點日曆鈕：骨架沒有同步鏡像或事件行為證據，不能把它當必填控制項；X自己的React事件可能同步它，還需真頁確認。
+
+唯一writeNativeControls用原生HTMLSelectElement.prototype.value setter先寫整組，再送每個select的bubbles input/change，最後逐欄檢查連線及value。任何setter／事件後讀回不符，都嘗試對**全部原節點**還原原值，整組還原值先於還原input/change事件。還原讀回成功才顯示「填值失敗，已還原」；React若回收節點、拒絕還原或重設欄位，明示「還原不完整」，不對新節點猜測補寫，不宣稱成功。無setter完全不寫，預檢失敗完全無事件。0.1.0的「setter部分失敗後靜默還原」測試依本輪授權改為驗證整組還原事件與零click／submit，沒有放寬失敗或送出斷言。
+
+## 骨架／隱私／送出守門
+
+新增select／label專用data-testid出口；只保留短ASCII且由固定日曆UI詞彙組成的值（例如合成select-month／month-label），拒絕@／URL／email／UUID／數字ID／未知身份詞。其他元素照舊，未知合法testid也可能遮成x，這是刻意保守。原先空testid新版仍印裸名稱，不能還原不存在的前綴。label文字、id／aria-labelledby、option文字與value仍遮罩，select／option文字只留長度，沒有新增值型診斷；schedDialog／dateCtl／timeCtl／selects仍是純計數。
+
+verify原API／注入／storage／激活與防送出規則全保留；只更新逐行核對的quick.js精確來源摘要，唯一writer（含還原）只能對已預檢select派送input/change。原33 native writer攻擊保留，再加讀回／bounds／上下午檢查被刪、原生setter替換、派送到body及點擊別名攻擊為39；原41洩漏自測保留，加入select／label兩個新出口各7個身份攻擊成55。position.js來源與摘要不動；manifest 權限／host／resources／matches與293589f一致，無新增依賴，$0。
+
+三份`fixtures/quick-real-*.html`是精簡結構重建：保留內外dialog／group、label＋aria-labelledby、空testid、select選項數量及date input；所有id、文字、value及日期為新生成假資料，年份2027／2028／2029。Form／送出計數器是測試專用合成結構，不宣稱骨架證明有form。variant year-missing只保留2027；rollback以頁面change handler一次拒絕目標hour，不修改production或extension prototype。用Python掃新fixture：無URL／email／@handle／UUID，日期年份均>=2027，id只允許fake-/fixture-/合成測試按鈕；原骨架只有讀取，未轉存／提交任何真值。
+
+## 實跑／外部待跑
+
+0.1.1 的單元測試為 **169 過／0 敗／0 跳過**（11 個測試檔）。verify 通過：11 個 probe 檔、4 個 SVG，**30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer 自測**。涵蓋真骨架結構辨識、四個時段、12 AM／PM、24 小時制、分鐘刻度、選項數字與文字映射、label 關聯、缺年份及日期界線的零寫入、讀回失敗後整組還原，以及九語錯誤提示。reader 的讀法沒有改動，只更新版本。
+
+外部在 `737d242` 實跑 `npm test` 169/169、verify OK；e2e 的原合成快速時段與真骨架重建情境均通過，但**完整 e2e 未通過**：最後的網路守衛抓到 Chrome 為 `input type=date` 自繪日曆指示器時產生的 `data:image/svg+xml` 請求。它是瀏覽器內建圖示，不是擴充發出的請求，也不會連線出去；仍不能因此把這次 e2e 記成通過。
+
+### 本次 e2e 修法：只隱藏 fixture 的內建圖示
+
+採第一案，在三份 `quick-real-*` fixture 的樣式加上 `input[type=date]::-webkit-calendar-picker-indicator{display:none}`，並在 e2e 真骨架情境前註明原因。已掃描所有 fixture，只有這三份含日期輸入框。這個樣式只隱藏測試頁的瀏覽器日曆圖示，保留原生 date input、value、min/max 及所有填值／還原斷言；擴充本身的行為不變。
+
+**沒有新增 data: 豁免**：`scripts/network-policy.mjs`、網路守衛及「0 擴充資源請求」斷言均未修改。本輪依交接不在沙箱啟動 e2e server，也不生成截圖；CSS 能否消除該筆請求，交由外部重跑確認。
+
+外部實測（2026-10-10 19:40 UTC+8，含本次 fixture 修正）：`npm test` 169/169、verify OK、`npm run e2e` **OK — 686 斷言**；網路段 78 筆本機 fixture／favicon／頁面導覽、0 擴充資源／背景請求、1 次使用者點擊的前往 Scheduled，日期圖示的 data: 請求已消失。
+
+外部請在最新工作樹跑 `npm test` → `npm run verify` → `npm run e2e`，沿用 Chrome for Testing／Xvfb／`CHROME_PATH`。快速時段情境保留：真結構計數 1／3／3／6、四個時段逐欄比對、12 小時換算、日期 input 不寫入、缺年份零寫入／零事件、讀回失敗後整組還原且 input/change 各 12 次，以及 Confirm／Schedule／Post／calendar click、form submit 全為 0。兩個 JavaScript world 都用 2027 年假時鐘，production 沒有時鐘覆寫；權限仍與 `293589f` 相同。
+
+已核對 e2e 實際輸出路徑：
+
+- `docs/v1.0-quickfix-real-detected.png`
+- `docs/v1.0-quickfix-real-filled.png`
+- `docs/v1.0-quickfix-year-missing.png`
+- `docs/v1.0-quickfix-rollback.png`
+
+上述四張快速時段截圖由外部產生，使用 2027 年以後的假資料。舊列表情境另存 quickfix 前綴，沿用既有合成日期（包含 2026 年），不是老闆真機資料；既有 gate0 與 v1.0-quick 截圖不覆寫。完整 e2e 已由外部實跑通過；複審結果見下節，老闆真頁逐欄驗收仍待完成。總覽沒有帶入此分支。
+
+## 老闆實測（≤5步）
+
+1. 更新 repo 至本版 commit；PR 合併後，可在 main 執行 `git pull --ff-only origin main`。
+2. 在`chrome://extensions`重新載入probe/，確認0.1.1；回到 x.com 重新整理頁面。
+3. 在x.com發文框自己打開原生排程對話框，再點Dagaz浮層的一個快速時段。
+4. 逐欄核對月／日／年／時／分／上午下午與原生畫面一致，**不要按排程**；若必須送出測試，先手動選2027以後的年份，測完到Scheduled刪掉。
+5. 按「複製頁面結構」和「複製診斷」貼回；若出錯附畫面，真機資料不提交公開repo。
+
+## 已知限制／是否需再貼骨架
+
+需要0.1.1新版骨架及診斷，搭配逐欄實測確認偵測／React接受結果；原骨架已足夠證明結構，但**option真value、label實際詞與React受控行為尚未驗證**。空testid下一次仍為空；若出現非空且屬安全UI詞彙，新出口才可見，其他字串仍遮罩。option仍只輸出長度，不能靠新版骨架確認全部值編碼；若仍失敗，再請回報不含推文或真日期的label詞／下拉編碼類型（例如月份0基或1基、上下午顯示文字），不需帳號或真id。
+
+日曆input未直接同步，原生事件是否更新X內部狀態不能由合成fixture證明；若React重建欄位，原節點可能無法完整還原，錯誤會要求自行檢查。多個設定dialog、重複label id／多重aria-labelledby、未知上下午詞／選項順序、無法安全映射的值一律拒絕。原本X可接受提前量／上限、DST與本地時區、自訂／星期／佔用避讓未做的限制沿用0.1.0。本版仍不開X排程視窗、不確認／排程／發佈、不背景發文。
+
+## 1.0 快速時段 0.1.1 Codex 複審
+
+獨立 Codex session 審 PR #13，與寫碼 session `01a1212e` 不同。範圍為 `293589f...f3513d4` 全部差異，另親讀本機遮罩 picker 骨架並核對上表行號；原檔沒有轉存或提交。50 張新增 PNG 已逐張檢視，皆為 fixture 範例，未發現真機內容或文字型 metadata。
+
+沒有發現需改 production 的阻擋問題。唯一 writer 只對原生 select 設值與派送 input/change，事件後讀回整組，失敗時還原原節點；節點回收或還原遭拒會回報不完整。補強既有單元測試：change handler 以新 select 取代原節點，新節點保留頁面設定的值、收到 0 個事件，其餘原欄位全部還原，結果不得當成功。防 click／submit／滑鼠鍵盤事件規則與原 33 項 writer 攻擊仍在，新增六項及真 CLI 違規退出測試通過；摘要豁免仍只有 quick.js 的 dispatchEvent 一條。
+
+select／label 的 testid 出口只接受固定日曆 UI 詞彙，身份、URL、email、數字 ID、UUID、未知字串與 option 內容仍遮罩。manifest 除版本外與基準完全相同。已比對 network-policy.mjs 與 e2e 最後網路檢查區塊，兩者與基準逐字相同：沒有 data: 豁免，0 擴充資源／背景請求斷言保留。三份新 fixture 的日期均為 2027+ 合成資料，新增文字未發現密鑰或已禁用身份字串。
+
+本輪修正兩項文件問題：快速時段的四張截圖為 2027+，舊列表截圖沿用合成 2026 日期，不能混稱；外部完整 e2e 已通過，不再列為待跑。README／HANDOFF／本節實測步驟也修正 `git pull main` 的錯誤命令，補上重新整理 x.com，仍為五步。production、verify、fixture、e2e 均未修改。
+
+本輪實跑 `npm test` 通過 11 個測試檔；目前 Node 26 的預設報告以檔案彙總，另以 `node --test --test-isolation=none --test-reporter=tap test/*.test.mjs` 核對 **169 過／0 敗／0 跳過**。`npm run verify` 通過 **30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer 自測**。沙箱未跑 e2e；外部在 `f3513d4` 的結果為 **686 斷言、78 筆本機請求、0 擴充資源／背景請求**，本輪沒有改動其執行程式或頁面。未 commit／push／merge，也未碰 author 或 overview 工作。
+
+結論 **APPROVE**，適用於這個保守填欄位測試版。option 真編碼、React 接受事件與日期 input 同步仍待老闆逐欄驗證，不能宣稱真頁填值已驗收；靜態文字掃描也不是任意 JavaScript 的完整安全證明。外部提交本輪文件／測試補強後，依 repo 流程在最新提交跑三項測試，e2e 仍須在沙箱外執行。

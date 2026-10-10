@@ -1,97 +1,105 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="xsched：在 X 网页上排程发文，一眼看清排了什么。不用 API，推文照样由 X 自带的排程送出。目前是 Gate 0 只读探针。">
+  <img src="./assets/readme/hero.svg" width="100%" alt="xsched：在 X 網頁上排程發文，查看已排內容。不用 API，貼文由 X 原生排程送出。0.1.1 快速時段測試版只填欄位，由使用者自己確認。">
 </p>
 
 <p align="center">
-  <b>Chrome 扩展：直接在 x.com 页面上帮你操作 X 自带的「排程」。</b><br>
-  不用 API、不发网络请求、不会自己发文。推文一律由 X 原生排程送出。
+  <b>Chrome 擴充：在 x.com 頁面上幫你操作 X 原生排程。</b><br>
+  不用 API、不發網路請求、不會自己發文。貼文一律由 X 原生排程送出。
 </p>
 
 > [!IMPORTANT]
-> **目前只有 Gate 0 只读探针。** 它只会读出你在 X 上已经排好的推文，还不能帮你排程。下面写着「规划中」的功能都还没做，要等探针在真帐号上实测通过才开工。
+> **目前版本：0.1.1，快速時段測試版。** 閘 0 列表讀取已通過老闆實測；快速時段依真頁遮罩骨架修正，仍待真頁逐欄驗證。擴充只填原生欄位，**不會替你按確認、排程或發佈**。完整 e2e 已在 fixture 修正後通過（686 斷言）。
 
-## 现在能用的：Gate 0 探针
+## 快速時段 0.1.1
 
-<p align="center">
-  <img src="./assets/readme/probe-overlay.png" width="756" alt="两个 xsched 探针浮层。左边：读到 6 则，每则一行英文排程时间和开头文字，下方是「複製診斷」按钮和一行只有数字的诊断。右边：简体中文界面，读到 2 则，时间写成「将于2026年10月10日 上午9:00发送」。">
-</p>
+先自己打開 X 原生排程對話框，再在 Dagaz 浮層選 9:00、12:30、20:00 或「下個工作日 9:00」。時段以本地時區計算，選下一次至少比現在晚 5 分鐘的時間；不會自動打開 X 對話框，也還沒有自訂、星期設定或避開已排推文的功能。
 
-<p align="center"><sub>端到端测试的截图：本机测试页上的示例数据，依公开资料重建，不是真实的 X 页面或帐号。左边是自己往下滚之后累加到 6 则，右边是简体中文的时间写法。</sub></p>
+偵測依據是遮罩骨架中的內層 dialog、日期／時間兩個 group、label 關聯及六個原生 select 的選項範圍。骨架的 testid 是空值，不猜前綴。日期與時間欄位必須完整且選項可表示目標值，才會整組填入；年份不在 X 的選項中時會明確報錯，完全不填。
 
-打开 X 的排程列表时，探针会在右下角放一个浮层（浮层文字目前是繁体中文）：
+填值使用原生 select value setter 與 input/change 事件，完成後逐欄讀回；任何不符就整組還原。若節點被回收或還原遭拒，會提示還原不完整，請自行檢查。日期 input 只讀 min/max，不直接寫入。**option 真值格式及 React 是否接受，仍需老闆實測確認。**
 
-- **「讀到 N 則」**：数出画面上的排程推文。X 的列表是边滚边载入的，所以要你自己滚到底，数字才完整；探针不会替你滚。
-- **每则的时间和前 20 个字**：方便你对照 X 上显示的是否一致。
-- **「複製診斷」**：按下才复制一行诊断，只有计数和版本号，不含推文内容、帐号或网址。读不出来时，把这行贴回来就知道是哪一步出问题。
-- **五种界面语言的时间写法**：英文、日文、简体中文、繁体中文、韩文。日文的写法有公开实机资料可对照，其他几种是推测的。
-
-## 原则：只读、不存、不传
+## 排程列表與診斷
 
 <p align="center">
-  <img src="./assets/readme/how-it-works.svg" width="100%" alt="怎么运作：打开 X 的 Scheduled 列表；只读画面上已显示的内容，三层读法互相备援，不发网络请求；浮层显示则数、时间和前 20 个字；复制诊断只有计数">
+  <img src="./assets/readme/probe-overlay.png" width="756" alt="舊版探針的假資料浮層，示範排程則數、時間與文字前段。">
 </p>
 
-- **不用任何 API**：不调用 X 官方 API，也不连我们自己或任何第三方服务器。
-- **零网络请求**：不用 `fetch`、XHR、`sendBeacon`、WebSocket、EventSource。`npm run verify` 会把这些写法挡掉，端到端测试也确认扩展本身发出的请求是 0。
-- **零权限**：manifest 里没有任何 `permissions`，也没有 host 权限。内容脚本只在 `x.com` 和 `twitter.com` 上运行。
-- **不存资料**：探针不用 storage，读到的内容只留在当前页面的内存里，关掉就没了。
-- **不会自己发文**：现在只读；以后的版本也只是帮你打开、填好 X 自带的排程窗口，最后由你按下 Schedule、由 X 发出。
+<p align="center"><sub>舊版測試頁示意，不是真實 X 頁面或帳號；目前介面與版本以程式及下方文件為準。</sub></p>
 
-## 安装探针
+- Scheduled 列表會顯示已讀則數、時間與文字前段。X 採虛擬列表，須自己捲到底；探針不替你捲動。
+- Dagaz 快捷鈕與浮層可以分別拖動，位置互相獨立。介面支援九語；時間解析另有繁簡中、英、日、韓及跨年回歸測試。
+- 「複製診斷」只含版本、命中數與遮罩時間格式，不含推文內容、帳號或網址。
+- 「複製頁面結構」保留結構並遮罩文字與屬性；0.1.1 僅讓 select／label 的安全日曆 UI 詞彙 testid 可見，疑似個資仍遮罩，option 文字與 value 也不匯出。
 
-还没上架 Chrome Web Store，先用开发者模式载入：
-
-1. 下载本仓库，或解压拿到的探针 zip。
-2. 打开 `chrome://extensions`，开启右上角「开发者模式」。
-3. 点「加载已解压的扩展程序」（Load unpacked），选 `probe/` 文件夹。
-4. 打开 <https://x.com/compose/post/unsent/scheduled>，也可以从发文窗口的排程图标进去，点左下角「Scheduled posts」。
-5. 右下角会出现浮层。把列表自己滚到底，对照则数和时间，再按「複製診斷」，把那一行贴回来。
-
-## 路线
+## 原則：不連線、不代替使用者送出
 
 <p align="center">
-  <img src="./assets/readme/roadmap.svg" width="100%" alt="路线：Gate 0 是现在，只读探针已在本机测试页通过，等真帐号实测；1.0 规划中，包括快速选时段、可开关的自动预排、避开已排的推文、排程总览">
+  <img src="./assets/readme/how-it-works.svg" width="100%" alt="舊版列表探針流程：讀取畫面上已載入的排程列，在浮層顯示則數、時間與文字前段，不發網路請求。">
 </p>
 
-**1.0（规划中，Gate 0 实测通过才开工）**
+- **不用任何 API**：不呼叫 X 官方 API，也不連我們自己或任何第三方伺服器。
+- **零網路請求**：不用 `fetch`、XHR、`sendBeacon`、WebSocket、EventSource。verify 靜態守門與 e2e 都要求擴充資源／背景請求為 0；0.1.1 完整 e2e 686 斷言通過，擴充資源／背景請求為 0。
+- **零權限**：manifest 沒有 `permissions` 或 host 權限。content script 只在 `x.com` 和 `twitter.com` 執行。
+- **只存兩個位置**：只有位置模組可用 x.com 的 localStorage，固定 key 為 `xsched.probe.pos` 與 `xsched.probe.panelPos`，只存有限數字 `{x,y}`。不存本文、帳號、網址或診斷，不加 storage 權限；讀到的列表只留在當前頁面記憶體。
+- **不替你送出**：快速時段只填原生欄位，不 click X 的按鈕、不 submit、不派送滑鼠鍵盤事件。最終是否排程由你決定，貼文仍由 X 原生排程發出。
 
-- **快速选时段**：发文框旁边加按钮，预设几个常用时段，可以自定义、可以按星期设。按一下就打开 X 的排程窗口，填进「下一个空时段」，你确认后照原流程按 Schedule。
-- **自动预排**（可开关，默认关）：打开后，按「发文」会改走排程，自动填进下一个空时段。
-- **避开已经排好的推文**：空时段会对照 Gate 0 读到的 X 排程列表，不只看这台电脑记过什么。现有的同类扩展都读不出 X 上已经排了什么，这是 xsched 想补上的空缺。
-- **排程总览**：用周视图或列表看所有已排推文的时间和开头文字，点一下跳到 X 上那一则去编辑。
-- **找不到会提示**：读不到排程窗口或列表时，面板会明确警告，并保留复制诊断的按钮。
+## 載入與實測（≤5 步）
 
-上架商店之后再决定。
+尚未上架 Chrome Web Store。初次使用先下載 repo，在 `chrome://extensions` 開啟開發人員模式，以「載入未封裝項目」選擇 `probe/`；已有 clone 的更新流程如下：
+
+1. 更新 repo 至本版 commit；PR 合併後，可在 main 執行 `git pull --ff-only origin main`。
+2. 在 `chrome://extensions` 重新載入 `probe/`，確認 0.1.1；回到 x.com 重新整理頁面。
+3. 自己打開 X 原生排程對話框，點 Dagaz 浮層的一個快速時段。
+4. 逐欄核對月／日／年／時／分／上午下午，**不要按排程**。若必須送出測試，先手動選 2027 年以後，測完到 Scheduled 刪掉。
+5. 按「複製頁面結構」與「複製診斷」貼回。真機資料不提交公開 repo。
+
+## 路線
+
+<p align="center">
+  <img src="./assets/readme/roadmap.svg" width="100%" alt="舊版路線示意。最新狀態：閘 0 已通過實測，0.1.1 快速時段待驗證，其餘功能見 ROADMAP。">
+</p>
+
+**1.0 進度：閘 0 已通過；快速時段 0.1.1 待驗證，其餘項目仍在規劃中。**
+
+- **快速時段**：本版提供四個固定未來時段，先手動開 X 對話框，按鈕只填欄位。與原開工卡不同，本版不自動開視窗、不自訂時段／星期，也不計算「避開已排」的空時段；這些留待後續。
+- **自動預排**（規劃中，可開關、預設關）：開啟後按「發文」會改走排程，填入下個空時段。
+- **避開已排推文**（規劃中）：用列表探針讀到的 X 排程比對空時段，不只看這台電腦記過什麼。
+- **排程總覽**（規劃中）：以周視圖或列表查看時間與文字前段，連回 X 原生列表；細節見 ROADMAP。
+- **健康檢查**：找不到原生欄位會明確提示，並保留複製診斷與頁面結構的按鈕。
+
+是否上架商店另行決定。
 
 ## 已知限制
 
-- **还没在真的 X 页面上验证过。** 我们不登录 X，读法是照公开资料和本机测试页写的；能不能在你的帐号上读出来，要靠实测确认。
-- **繁体中文、简体中文、韩文的时间写法和页签名称是推测的。** 浮层如果是 0 或整个不出现，告诉我们你的界面语言和页签上的字，我们再补。
-- **列表要自己滚到底。** 累加的则数不是即时的准确总数；同一画面里编辑或删除过的，可能还留着旧的那一则，重新进入列表就会重读。
-- **时间和全文完全相同的两则会被当成一则。**
-- **只有图片或影片、没有文字的推文可能读不到。**
-- **排程窗口本身（快速选时段要用的）不在 Gate 0 范围内**，这一阶段只读列表。
+- 真骨架已證明欄位結構，尚未證明 option value 編碼、label 實際詞、React 是否接受或是否同步日期 input。需要再貼 0.1.1 骨架與診斷，並逐欄核對；新版不能還原原本空的 testid，option 值也仍遮罩。
+- 多個設定對話框、label 關聯歧義、上下午文字與順序矛盾，或無法安全映射的選項，都會拒絕填值。React 回收原節點時，整組還原可能不完整。
+- 5 分鐘是本版安全餘量，X 實際允許的最小間隔仍未知。自訂、星期設定與避開已排尚未實作。
+- 列表要自己捲到底。同一頁編輯或刪除後，累加資料可能保留舊列；重新進入列表會重讀。時間與全文相同的兩則會去重，純圖片／影片列也可能讀不到。
 
-## 开发
+## 開發
 
 ```bash
-npm install
-npm test          # reader 解析：五种语言、三层备援、去重累加、诊断不含内容
-npm run verify    # 权限和网络请求守门，含会抓违规的 self-test
-npm run e2e       # Chrome for Testing 载入真 probe/，本机测试页模拟 X
+npm ci
+npm test          # 列表、位置、骨架、四時段、真結構、預檢與整組還原
+npm run verify    # 權限、網路、隱私、storage 與不 click／submit 守門
+npm run e2e       # Chrome for Testing 載入真 probe/，本機 fixture，零送出斷言
 ```
 
-`npm run e2e` 需要 Xvfb，并用 `CHROME_PATH` 指向 Chrome for Testing。所有测试都只用本机测试页，不登录任何帐号。
+`npm run e2e` 需要 Xvfb 與 `CHROME_PATH` 指向 Chrome for Testing。全部只用 fixture，不登入帳號；快速時段 fixture 與測試時鐘皆為 2027 年以後。
+
+0.1.1 單元測試 169/169、verify 通過（55 洩漏、39 native writer 自測，既有守門保留）。外部 `737d242` 的兩個快速時段 e2e 情境已過，完整 e2e 在 Chrome 內建日期圖示的 data: SVG 請求上失敗。本次只在三份 fixture 隱藏日曆指示器，不修改擴充或網路政策，也不豁免 data:。修正後完整 e2e 686 斷言通過。
 
 ## 文件
 
-- [`AGENTS.md`](AGENTS.md)：接手这个仓库的工作规矩和要跑的测试
-- [`docs/plan/ROADMAP.md`](docs/plan/ROADMAP.md)：路线图和目前进度
-- [`notes/GATE0.md`](notes/GATE0.md)：Gate 0 的读法、依据来源、改版风险和实测步骤
-- 示例截图：[`docs/gate0-en.png`](docs/gate0-en.png)、[`gate0-ja.png`](docs/gate0-ja.png)、[`gate0-zh-Hans.png`](docs/gate0-zh-Hans.png)、[`gate0-zh-Hant.png`](docs/gate0-zh-Hant.png)、[`gate0-ko.png`](docs/gate0-ko.png)、[`gate0-roles-fallback.png`](docs/gate0-roles-fallback.png)、[`gate0-empty.png`](docs/gate0-empty.png)、[`gate0-virtual-before.png`](docs/gate0-virtual-before.png)、[`gate0-virtual-after.png`](docs/gate0-virtual-after.png)
-- 标志：[`docs/xsched-logo-B.svg`](docs/xsched-logo-B.svg)，用的是符文 Dagaz，意思是「日子」，整体轮廓是一个封起来的 X
+- [`AGENTS.md`](AGENTS.md)：工作規矩與必要測試
+- [`docs/plan/ROADMAP.md`](docs/plan/ROADMAP.md)：路線圖與目前進度
+- [`notes/GATE0.md`](notes/GATE0.md)：列表讀法、真骨架證據表、原生 writer 與實測步驟
+- [`notes/HANDOFF-v1.0-quick-fix.md`](notes/HANDOFF-v1.0-quick-fix.md)：0.1.1 交接、外部待跑與真機待驗證項目
+- 0.1.1 假資料截圖（由外部 e2e 產生）：[`real-detected`](docs/v1.0-quickfix-real-detected.png)、[`real-filled`](docs/v1.0-quickfix-real-filled.png)、[`year-missing`](docs/v1.0-quickfix-year-missing.png)、[`rollback`](docs/v1.0-quickfix-rollback.png)
+- 舊版範例截圖：[`docs/gate0-en.png`](docs/gate0-en.png)、[`gate0-ja.png`](docs/gate0-ja.png)、[`gate0-zh-Hans.png`](docs/gate0-zh-Hans.png)、[`gate0-zh-Hant.png`](docs/gate0-zh-Hant.png)、[`gate0-ko.png`](docs/gate0-ko.png)、[`gate0-roles-fallback.png`](docs/gate0-roles-fallback.png)、[`gate0-empty.png`](docs/gate0-empty.png)、[`gate0-virtual-before.png`](docs/gate0-virtual-before.png)、[`gate0-virtual-after.png`](docs/gate0-virtual-after.png)
+- 標誌：[`docs/xsched-logo-B.svg`](docs/xsched-logo-B.svg)，使用符文 Dagaz，意思是「日子」，整體輪廓像封起來的 X
 
-## 授权
+## 授權
 
 作者：[@punkcan](https://x.com/punkcan)
 
