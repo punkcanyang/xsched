@@ -1120,6 +1120,14 @@ async function main() {
       await page.evaluate(()=>{window.localStorage.removeItem('xsched.probe.pos');window.localStorage.removeItem('xsched.probe.panelPos');});
       await open(name,'/compose/post');
       const contextId=await until(findExtensionContext,'quick picker isolated context');
+      // Module presence / document_idle does not imply the first throttled tick ran.
+      // A shortcut click before lastReport exists is intentionally ignored.
+      const initial=await until(async()=>{
+        const state=await probeState(page);
+        return state.present && state.mounted==='1' && state.mode==='other'
+          && state.diag.startsWith('xsched probe v0.1.0 (manifest 0.1.0)\n') ? state : null;
+      },'quick picker first diagnostic rendered: '+name);
+      assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
       // Test-only Date replacement in BOTH worlds. Production has no clock override.
       const expression=`globalThis.__QuickRealDate=Date;
         globalThis.Date=class extends globalThis.__QuickRealDate {
@@ -1149,7 +1157,14 @@ async function main() {
       const expected=expectedResult.result.value;
       assert(Number(expected.year)>=2027,'computed slot year must be at least 2027');
       assert(expected.year==='2028'&&expected.month==='1'&&expected.day===(id==='workday'?'3':'1'),'explicit cross-year / weekend expectation');
+      // First success changes the render signature. Wait for that repaint before
+      // taking the next button handle, so a 60ms tick cannot detach it mid-click.
+      const initialStatus=index===0 ? await page.evaluateHandle(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-status')) : null;
       await clickShadow(`[data-xsched-slot="${id}"]`);
+      if(initialStatus) {
+        try { await until(()=>page.evaluate(old=>!old.isConnected,initialStatus),'first quick fill repaint completed'); }
+        finally { await initialStatus.dispose(); }
+      }
       const filled=await until(async()=>{const v=await nativePickerState();return v.counts.change===(index+1)*6?v:null;},'native change events for '+id);
       assert(JSON.stringify(filled.values)===JSON.stringify(expected),'native fields equal local future slot: '+id);
       assert(filled.counts.input===(index+1)*6,'all native input events bubble: '+id);

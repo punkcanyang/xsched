@@ -59,3 +59,13 @@ npm run e2e
 需要原Chrome for Testing／Xvfb；CHROME_PATH預設沿用。e2e新增main／extension兩個世界的2027年測試時鐘，逐欄四時段／原生change與0送出計數、缺欄位／不能表示原子失敗、骨架複製／純計數與原0網路證據；原548基準斷言全部保留，**不當成本輪已通過數字**。至少新增docs/v1.0-quick-{dialog-detected,slot-filled,not-detected,partial-fields,diag}.png，其餘旧情境另存v1.0-quick前綴，所有旧截圖保留。
 
 未達READY：外部最新e2e／截圖、獨立session複審、老闆設定對話框新骨架與欄位對照尚待完成。真頁可能未偵測，不能宣稱真X填值已通過；本版不自動打開視窗、不確認／送出，不做自訂／星期設定／佔用避讓。5步實測、假設表、原生控制項受控事件風險與還缺什麼見GATE0新節。
+
+## e2e 紅燈续修（本輪最新）
+
+外部已commit／push至32b769a，回報154/154、verify OK，舊情境全部過，quickFixture的toggle(true)逾時。本輪只改scripts/e2e.mjs、test/content.test.mjs及GATE0／本交接：**production／fixture／verify不動**。
+
+根因證據：findExtensionContext只保證reader模組已載入，host先掛、首次tick延後60ms；此間shortcut的click因lastReport空而直接返回。真content VM＋原假fixture離線重現「早點＋tick／poll仍false，等待首次診斷後點一次true」，2027 Date mock沒有凍結timer callback。1280×820的原幾何計算可放下panel，modal子樹不是障礙。實際外部紅燈當下尚無state快照，修復仍需外部Chrome重跑確認。
+
+修測試：quickFixture在唯一一次toggle前先等mounted／mode／完整版本診斷，再斷言初始收合且不可見；toggle本身嚴格expanded=true且panelVisible=true不變。首次填值後等待原status節點因render斷線，避免下一button handle在click中重畫失效。全部原送出0／事件／欄位／隐私／網路斷言保留。新增初始化競態VM回歸，不加production hook。
+
+實跑npm test退出0（10檔），細項**155/155、0 fail／skip**；verify OK：30 API／14 icon／9 SVG／41 leak／21 storage／20 native writer。e2e再次實跑listen EPERM 127.0.0.1，Chrome0斷言／新截圖0；node --check與diff --check過。本session不commit／push，外部請在含本次修正的最新工作樹跑：npm test → npm run verify → npm run e2e，再交獨立session複審。截圖檔名與原計畫不變，未達READY。

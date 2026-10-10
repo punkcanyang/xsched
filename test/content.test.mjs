@@ -10,7 +10,7 @@ await import('../probe/ui.js');
 await import('../probe/quick.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
 const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
-function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com') {
+function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com', startReady = true) {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
   document.documentElement.lang = lang;
   const timers = new Map();
@@ -49,7 +49,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   function flush() { for (let n = 0; timers.size && n < 10; n++) { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()); } }
   function poll() { [...polls.values()].forEach((fn) => fn()); flush(); }
   vm.runInContext(positionSource, context);
-  vm.runInContext(source, context); flush();
+  vm.runInContext(source, context); if (startReady) flush();
   const host = () => document.getElementById('xsched-probe-root');
   const shadow = () => host().shadowRoot;
   const click = (selector, trusted = true) => {
@@ -481,4 +481,28 @@ test('missing picker keeps quick buttons disabled and leaves copy tools accessib
   for(const button of f.shadow().querySelectorAll('[data-xsched-slot]'))assert.equal(button.disabled,true);
   assert.ok(f.shadow().querySelector('[data-xsched-copy]'));assert.ok(f.shadow().querySelector('[data-xsched-skeleton]'));
   assert.match(f.host().dataset.xschedDiag,/schedDialog=1 dateCtl=0 timeCtl=0 selects=0/);
+});
+
+test('quick fixture readiness: early toggle is ignored until first diagnostic, frozen Date does not stop timers',()=>{
+  const f=fixture('/compose/post','en','../fixtures/quick-dialog.html',null,globalThis.XSCHED_UI,globalThis.XSCHED_READER,new Map(),'x.com',false);
+  assert.ok(f.shadow().querySelector('.shortcut'));
+  assert.equal(f.host().dataset.xschedDiag,undefined);
+  assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),null);
+  // Same test-only 2027 clock as Chrome quickFixture; timeout callbacks remain live.
+  vm.runInContext(`globalThis.__QuickRealDate=Date;
+    globalThis.Date=class extends __QuickRealDate {
+      constructor(...args){super(...(args.length?args:[new __QuickRealDate(2027,11,31,21,0).getTime()]));}
+      static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
+    };`,f.context);
+  f.click('.shortcut');f.flush();f.poll();
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.0/);
+  assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
+  assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
+  assert.equal(f.shadow().querySelector('section').style.display,'none');
+  assert.match(f.host().dataset.xschedDiag,/schedDialog=1 dateCtl=3 timeCtl=3 selects=6/);
+  // The test fix waits for the state above, THEN sends exactly one ordinary click.
+  f.click('.shortcut');
+  assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true');
+  assert.equal(f.shadow().querySelector('section').style.display,'flex');
+  assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,4);
 });

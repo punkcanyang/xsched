@@ -820,3 +820,28 @@ verify新增禁止click方法／別名、requestSubmit／submit方法／別名�
 - X允許的最小提前量／可排上限未驗證；本地5分鐘僅本版安全餘量，不保證X接受，時區依本機Date而非X自行選的其他時區。AMPM數字值、零基月、非select／不完整或不能精確表示的選單均拒絕。遇原生事件重建欄位，不宣稱成功，老闆需自己對照。
 - 缺控件／不可表示都用同一「未偵測到排程欄位」訊息，不提供可能含值／私人錯誤的診斷；需骨架分辨原因。工作日只指週一到週五，沒有假日表。無自訂時段／星期／佔用避讓。
 - 雙位置、極小視窗、虛擬列表與同origin位置storage限制沿用0.0.6；快速鈕在body內可能需捲動，但複製操作固定可見。extension不開X對話框、不確認、不排程、不背景發文。
+
+## 1.0 快速時段 e2e 紅燈續修（32b769a之後）
+
+外部回報32b769a：npm test154/154、verify OK，全部舊gate0.5情境通過；quickFixture第一次toggle(true)逾時。**本輪定位到測試缺首次render等待的初始化競態，production不改。** Chrome紅燈當下沒有state快照，以下是原函式離線重現的證據，與回報相符；尚需外部重跑確認實際Chrome修復，不能宣稱e2e已過。
+
+程式證據：e2e的findExtensionContext（225–230）只查XSCHED_READER存在；open（236–240）只等domcontentloaded，原quickFixture（1119–1137）找context後改Date就直接toggle。content的start（693–694）先ensureHost再schedule；schedule以SETTLE_MS=60延後首次tick。快捷鈕click（208）在lastReport尚空時直接返回，不記開啟請求。模組／host已存在不等於首次報告已完成；早點一下被忽略，首次tick在非Scheduled路徑仍預設收合，所以後面的400ms poll不會自行開啟，toggle等待可一直失敗。這不是測試應接受「開或關都算過」的情況。
+
+離線實跑`node /tmp/xsched-quick-toggle-repro.mjs`：擷取test/content.test.mjs原fixture helper，只把初始flush留給呼叫端，載入真content.js及原quick-dialog假fixture，注入原2027年Date mock，先點再flush／poll；输出：
+
+```text
+before initial read {"ready":false,"expanded":null,"display":""}
+early click + tick + poll {"ready":true,"expanded":"false","display":"none"}
+click after first read {"ready":true,"expanded":"true","display":"flex"}
+geometry (no fixed obstacles) {"left":920,"top":160,"right":1264,"bottom":652,"width":344,"maxHeight":492,"clear":true}
+```
+
+ready依實際host的diagnostic是否存在判斷。fixture的dialog及子樹由原collectObstacles排除；剩餘原生Post是static，不構成fixed障礙。1280×820、快捷鈕(1220,664)、492px panelHeight由原panelPlacement計算可放下；是純幾何計算，非Chrome量測。此測試只改Date類別，沒有Emulation virtual time policy；VM中既有setTimeout／interval callback仍可flush執行，Date mock並不替換它們。
+
+最小修正：scripts/e2e.mjs quickFixture（1123–1130）先等當頁mounted=1、mode=other、0.1.0首次診斷完成，**另斷言expanded=false且panelVisible=false**，再照舊注入兩個世界的2027時鐘、只點一次shortcut。原toggle的expanded=true **且** panelVisible=true檢查完全不變，不用重試點擊／接受錯狀態／改production避讓。
+
+預查後續：第一次成功填值使quickStatus進render signature，60ms後重建body；若立刻抓下一個button handle，可能在物理click中被重畫移除。四時段循環首次填值後等待原quick-status節點已斷線，再抓下一顆鈕，等待實際重畫，不加任意sleep。四時段逐欄／獨立跨年期望、input/change、Confirm／Schedule／Post click=0及submit=0、缺欄位／部分欄位／不能表示完全不改值、骨架遮罩／複製與0網路斷言全部保留。
+
+新增test/content.test.mjs:486的真content VM回歸：不先flush，證明早點擊被忽略；2027 Date mock下完成tick後仍收合，再等診斷後點一次即展開且有四個快速鈕。fixture helper新增預設true的startReady參數，舊測試行為不變。
+
+本輪實跑npm test退出0（10檔）；`node --test --test-isolation=none test/` **155過／0敗／0跳過**。verify退出0（11 probe檔／4 SVG；30 API、14 icon、9 SVG、41 leak、21 storage、20 native writer自測），node --check與git diff --check通過。npm run e2e仍退出1：fixture server listen EPERM 127.0.0.1，Chrome斷言未開始，新截圖0。外部在最新工作樹再跑npm test → npm run verify → npm run e2e；不用沿用32b769a數字當本輪e2e驗收。沒有新增權限／依賴／真機資料，沒有commit／push。
