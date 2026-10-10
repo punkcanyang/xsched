@@ -23,7 +23,9 @@ const DOCS = join(ROOT, "docs");
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
 const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d699da92e15bee335";
 
-const QUICK_SOURCE_SHA256 = "ad3352419221dd1c0fd8ae63e7c935c8fc9bc0220ffb74edb81b7f97453ca58d";
+// Exact-source exception only for the sole native select input/change writer.
+// All other activation, network, storage and markup rules still scan this file.
+const QUICK_SOURCE_SHA256 = "c24818395b41357f5ca2311bd5fd9aad0077409e07104c4ae3e2ce327443016e";
 
 // Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
 // on a hostile synthetic page, that no page content can reach the skeleton or the samples.
@@ -509,7 +511,12 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   bodyTimeRow.setAttribute('aria-label', bodyTimeRow.firstElementChild.textContent + ' ' + bodyTimeRow.querySelector('[data-testid="tweetText"]').textContent);
   const ariaBodyReport = reader.readSnapshot(bodyTimePage, { pathname:'/compose/post/unsent/scheduled' });
   if (ariaBodyReport.items.length || ariaBodyReport.timeOk || ariaBodyReport.timeFail !== 1 || ariaBodyReport.fmt || ariaBodyReport.samples.length) throw new Error('self-test: accessible label borrowed tweet body date');
-  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6, fragments: maskedCount };
+  const optionPage = new DOMParser().parseFromString('<html><body><div role="dialog"><select name="year"><option value="2028" aria-label="private @decoy_handle decoy@example.invalid">Will send on Jan 1, 2028 at 9:00 AM private https://example.invalid/private</option></select></div></body></html>','text/html');
+  const optionOutput = mapper.buildSkeleton(optionPage,{pathname:'/compose/post'});
+  if (!/select /.test(optionOutput) || !/option /.test(optionOutput)) throw new Error('self-test: picker export not exercised');
+  for (const secret of ['2028','Jan','9:00','private','decoy_handle','decoy@example.invalid','https://example.invalid']) if (optionOutput.includes(secret)) throw new Error('self-test: picker option export leaked '+secret);
+  if (optionOutput.includes('calendar=')) throw new Error('self-test: option text became a calendar sample');
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6 + 2, fragments: maskedCount };
 }
 
 export function positionStorageSelfTest() {

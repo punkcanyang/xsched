@@ -1165,6 +1165,7 @@ async function main() {
     assert(/schedDialog=1 dateCtl=3 timeCtl=3 selects=6/.test(exported.result.value[0]),'copied diagnostic includes counts');
     assert(/role=dialog/.test(exported.result.value[1])&&/select /.test(exported.result.value[1])&&/option /.test(exported.result.value[1]),'skeleton includes native picker/options, not just Scheduled list');
     assert(!/2027|2028|Confirm|synthetic|Schedule \(synthetic\)/.test(exported.result.value[1]),'native option dates/body are not exported');
+    await page.evaluate(()=>{const body=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');body.scrollTop=body.scrollHeight;});
     await page.screenshot({path:join(DOCS,'v1.0-quick-diag.png')});
     // A picker can become incomplete after an enabled quick button was rendered.
     const beforePartial=await nativePickerState();

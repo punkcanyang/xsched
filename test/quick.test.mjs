@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parseHTML} from 'linkedom';
 import {nativeWriterSelfTest,scanSource} from '../scripts/verify.mjs';
+import {runNode} from '../scripts/test-cli.mjs';
 await import('../probe/quick.js');
 await import('../probe/ui.js');
 await import('../probe/reader.js');
@@ -94,6 +95,7 @@ test('hidden, disabled, ambiguous and non-x.com pickers fail closed',()=>{
     doc=>doc.body.append(doc.querySelector('[role=dialog]').cloneNode(true)),
     doc=>{doc.defaultView.location={hostname:'twitter.com'};},
     doc=>doc.querySelector('[role=dialog]').setAttribute('aria-hidden','true'),
+    doc=>{for(const el of doc.querySelectorAll('[data-testid]'))el.removeAttribute('data-testid');},
   ];
   for(const edit of edits){const f=fixture();edit(f.document);const before=f.values();assert.equal(Q.fillSlot(f.document,'morning',now),false);assert.deepEqual(f.values(),before);assert.equal(f.sends.change,0);}
 });
@@ -122,4 +124,21 @@ test('native event writer guard accepts only exact audited file and catches acti
   const source=readFileSync(new URL('../probe/quick.js',import.meta.url),'utf8');
   assert.deepEqual(scanSource(source,'probe/quick.js',{quickModule:true}),[]);
   assert.ok(scanSource(source,'probe/other.js').length);
+});
+
+test('unknown picker counts six selects without guessing date/time roles or changing fields',()=>{
+  const f=fixture();for(const el of f.document.querySelectorAll('[data-testid]'))el.removeAttribute('data-testid');
+  assert.deepEqual(Q.detectControls(f.document).counts,{schedDialog:0,dateCtl:0,timeCtl:0,selects:6});
+  assert.equal(Q.detectControls(f.document).ready,false);
+});
+
+test('local timezone arithmetic keeps wall-clock slots across DST and business weekends',()=>{
+  const result=runNode(['--input-type=module','-e',`
+    await import('./probe/quick.js');
+    const Q=globalThis.XSCHED_QUICK;
+    const at=Q.nextSlot('morning',new Date(2027,2,13,21,0));
+    const work=Q.nextSlot('workday',new Date(2027,2,12,21,0));
+    if(at.toISOString()!=='2027-03-14T13:00:00.000Z'||work.toISOString()!=='2027-03-15T13:00:00.000Z')process.exit(1);
+  `],{env:{...process.env,TZ:'America/New_York'}});
+  assert.equal(result.status,0,result.stderr.toString());
 });

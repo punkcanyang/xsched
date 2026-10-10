@@ -35,9 +35,9 @@ function visible(node, doc) {
 function detectControls(doc) {
   const candidates = [...doc.querySelectorAll(QUICK_CONFIG.dialog)].filter(el => !el.closest('[data-xsched-host="1"]') && visible(el,doc));
   const dialogs = candidates.filter(dialog => [QUICK_CONFIG.date,QUICK_CONFIG.time].some(selector => [...dialog.querySelectorAll(selector)].some(el => el.closest(QUICK_CONFIG.dialog) === dialog)));
-  const counts = {schedDialog:dialogs.length,dateCtl:0,timeCtl:0,selects:0};
+  // Even an unknown picker can report native select count, without guessing its roles.
+  const counts = {schedDialog:dialogs.length,dateCtl:0,timeCtl:0,selects:candidates.reduce((sum,dialog)=>sum+[...dialog.querySelectorAll('select')].filter(el=>el.closest(QUICK_CONFIG.dialog)===dialog).length,0)};
   for (const dialog of dialogs) {
-    counts.selects += [...dialog.querySelectorAll('select')].filter(el => el.closest(QUICK_CONFIG.dialog) === dialog).length;
     for (const [key,selector] of [['dateCtl',QUICK_CONFIG.date],['timeCtl',QUICK_CONFIG.time]]) counts[key] += [...dialog.querySelectorAll(selector+' select')].filter(el => el.closest(QUICK_CONFIG.dialog) === dialog).length;
   }
   if (dialogs.length !== 1) return {counts,ready:false};

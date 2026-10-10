@@ -767,6 +767,56 @@ e2e保留全部舊時間、診斷、host／lifecycle、原生控制項與網路�
 
 本輪先讀 AGENTS、ROADMAP 第1項、開工卡、競品、HANDOFF與閘0依據表／0.2–0.5筆記，再查 repo 與未提交的遮罩骨架。`rg -n 'scheduledDateField|scheduledTimeField|scheduleOption|scheduleConfirm' fixtures probe` 無排程設定欄位命中；既有 fixture 的 dialog 是 Scheduled／草稿列表，不是日期時間選單。依據表第5列只是未親讀文章的未驗證線索，本輪沒有把它當真頁證據，也沒有引用新網頁。
 
-離線指令：Python逐行搜尋原始遮罩骨架，檔案340748 bytes／4110行，`role=dialog`在L36、L42；四個上述testid均0命中；`^\s*select\b`／`option`均0節點。一般`select`字串的4次命中在L86、93、507、520，都是aria-selected。這份骨架只有排程列表／背景時間軸，不能證明排程設定對話框的控制項結構。原始骨架不提交，也不從它匯出任何真機資料。
+離線指令：Python逐行搜尋原始遮罩骨架，檔案340748 bytes／4110行，`role=dialog`在L36、L42；四個上述testid均0命中；`^\s*select\b`／`option`均0節點。一般`select`字串的4次命中在L86、93、507、520，都是aria-selected。另`rg -n '^\s*input\b'`只有L3461的type=text、role=combobox，位於背景分支，沒有date／time input。這份骨架只有排程列表／背景時間軸，不能證明排程設定對話框的控制項結構。原始骨架不提交，也不從它匯出任何真機資料。
 
 結論：**出快速填值原型，但真頁控制項尚未驗證**。老闆自己先打開X原生排程對話框，擴充只按明確、完整的假設選單填值；不打開X視窗、不點任何X控制項或送出鈕。缺欄位／有歧義／選项不匹配時整組不填。這是相對開工卡「一按打開」的刻意縮小：拿到老闆新骨架後才修偵測，開視窗功能另議，最終確認始終留給老闆。
+
+## 設計／未驗證選擇器表
+
+所有設定集中在`probe/quick.js:5–11`的QUICK_CONFIG，不修改reader的列表選擇器／讀法。只有x.com、由老闆可信點擊shadow內快速鈕，才會進填值入口；不點X的排程圖示，不代替確認。按既有Dagaz快捷鈕展開浮層才能看快速區；保留0.0.6的手動開關與雙位置模型，不因X開對話框自動移位。快速區在可捲body，診斷／骨架／重設等仍在固定操作列。九語的四個鈕文字、aria-label／title及狀態都在ui.js的QUICK_STRINGS。
+
+| 假設 | 選擇器／選項值 | 證據／狀態 |
+|---|---|---|
+| 設定視窗是可見dialog | `[role="dialog"]`，欄位必須直接歸屬同一最近dialog；拒絕隱藏與多個設定視窗 | 列表骨架有dialog，但**設定視窗此結構未驗證** |
+| 日期／時間容器 | `data-testid=scheduledDateField`／`scheduledTimeField` | 依據表#5未親讀公開文章；**未驗證假設** |
+| 日期選單 | 日期容器內`select[name="month"]`／`day`／`year` | 純合成fixture；**未驗證假設** |
+| 時間選單 | 時間容器內`select[name="hour"]`／`minute`／可選`period` | 純合成fixture；**未驗證假設** |
+| 選项值 | 月1–12、日／年／時／分為數字（允許零補齊）；period明確AM／PM。不看任意選項文字猜值 | 純合成fixture；**未驗證假設**。月0–11、數字AMPM或其他映射均拒絕 |
+| 12／24小時 | 有period需完整1–12及AM/PM；無period需完整0–23 | 保守的合成控制項合約，真頁尚待確認 |
+
+每次按鈕點擊重新偵測，不沿用render抓到的節點。欄位缺漏、重複、disabled／hidden／multiple、目標選項缺失／重複時整組拒絕。先算出所有目標值、預檢所有選項與原生setter，再把全部值設好，最後才送出原生input/change。setter拒絕時靜默回復原值、不發事件；找不到setter不改值。React受控選單的事件處理若重建或重設欄位，末尾检查連線及值，失敗明示不成功，不會再猜測／補點X按鈕。真X相容性仍需骨架與老闆欄位對照確認。
+
+預設9:00／12:30／20:00取下一次**至少晚於現在5分鐘**的本地時間，跨日／月／年按Date本地日曆計算；「下個工作日9:00」從明天開始找週一到週五，不包含今天、不判國定假日。遇DST造成小時正規化則跳過該日，不默默填另一時間。原生分鐘選單可精確表示就填（含零補齊）；不能表示就顯示「未偵測到排程欄位」，所有欄位不變，不私自四捨五入。
+
+這不是「下一個空時段」：本PR不避開已排推文（ROADMAP第3項）、不做自訂時段／星期、不存時段設定、不自動预排，也不聲稱填值代表已排成功。之後拿到真設定視窗DOM才修假設；開工卡的一按開視窗另議，最後送出始終由老闆操作。
+
+## 診斷／骨架與守門
+
+content診斷第一行`xsched probe v0.1.0 (manifest 0.1.0)`，新增獨立純計數行`schedDialog=N dateCtl=N timeCtl=N selects=N`：schedDialog只計含假設容器的可見設定候選；dateCtl/timeCtl計候選容器內select數；selects計所有可見dialog所屬的select數，不借用未知欄位的名稱／值猜用途。因此即使testid改名，也可能看到schedDialog=0／selects=6供比對。其他診斷及fmt／samples規則不變，這一行不含任何欄位值／本文／帳號／網址。
+
+skeleton.js原本根從body整棵走，非只走Scheduled列表；合成fixture證明開著的設定dialog及select／option會被走入。select／option文字只留#text長度，不走短日曆樣本出口，屬性照舊遮罩；不匯出選項日期值、名稱或本文。原始真機骨架不提交，新fixture與所有截圖情境皆是假資料。
+
+verify新增禁止click方法／別名、requestSubmit／submit方法／別名、MouseEvent／PointerEvent／KeyboardEvent／SubmitEvent、任何未審dispatchEvent。只有根目錄quick.js且SHA-256完全符合逐行核對的來源，才豁免dispatchEvent關鍵字一條；同檔其他網路／storage／激活／注入規則照掃。唯一writeNativeControls函式只對預檢後的原生select送input／change，不對dialog、button、form送事件。來源改動／改名／其他模組派送，即使只送change，也失敗。20項新攻擊自測，保留30 API／14 icon／9 SVG／21 storage；洩漏39項保留，加選項內容／日曆匯出路徑為41項。position.js與其授權摘要不變，仍只有兩個數字位置key，權限／host／resources／matches與2cceb5e一致。$0，0擴充網路請求由原e2e證據守門持續驗證。
+
+## 本輪實跑／外部待跑
+
+`npm test`退出0（Node隔離模式彙總10檔）；細項`node --test --test-isolation=none test/`：**154過／0敗／0跳過**。`npm run verify`退出0：11個probe檔、4 SVG，30 API／14 icon／9 SVG／41 leak／21 storage／20 native writer自測。new quick單元包含跨年／月／閏日／5分邊界、工作日、12／24h、原生setter批次值先於事件、缺漏／不支持分鐘／年份／歧義／hidden／disabled／非x.com、setter失敗回復、九語、診斷無值、選項遮罩；content VM測可信點擊及render後欄位消失的即時預檢，仍不觸發任何X送出。
+
+`npm run e2e`實跑退出1：`fixture server failed: Error: listen EPERM: operation not permitted 127.0.0.1`；**Chrome斷言0、新截圖0**。node_modules已存在，無須安裝。e2e腳本保留全部548基準情境的斷言，不把548寫成本輪已過；新增合成設定fixture、四時段逐欄比對、input/change計數、Confirm／Schedule／composer Post click=0及form submit=0、missing／partial／選項無法表示時完全不填、骨架／診斷物理複製與0額外網路證據。新設定情境在main與extension isolated world各以測試Date替換固定2027年時鐘，只有test腳本注入，不改production；獨立断言跨年到2028年及工作日跳週末，fixture年份選單從2027起。
+
+外部在最新分支依次跑`npm test`、`npm run verify`、`npm run e2e`（沿用Chrome for Testing／Xvfb及CHROME_PATH）。新截圖至少`docs/v1.0-quick-{dialog-detected,slot-filled,not-detected,partial-fields,diag}.png`；旧情境也另存v1.0-quick前綴，舊gate0–0.5截圖／骨架不覆寫。沙箱不commit／push／PR，外部WIP 2ac003b只是中途snapshot，後續差異還需外部提交與不同session複審。**未達READY：外部最新e2e與真設定DOM／老闆欄位對照待確認。**
+
+## 老闆實測（≤5步）
+
+1. `git pull main`。
+2. `chrome://extensions`重新載入probe/，確認版本0.1.0。
+3. 在x.com發文框自己打開X原生排程對話框，再點Dagaz展開浮層，看快速時段顯示「未偵測到排程欄位」或可用。
+4. 不論可用與否，保持X設定對話框開著，按「複製頁面結構」與「複製診斷」貼回。
+5. 若可用，按一個快速時段、逐欄確認原生日期／時間被填好，**不要按排程**。若一定要按送出測試，先手動把年份改到2027年以後，測完到Scheduled刪掉那則；有問題附範例化截圖回報，真機資料不入公開repo。
+
+## 已知限制／還缺什麼
+
+- 尚無排程設定真DOM；testid、name、選項值與受控事件處理都是假設，真頁可能全部顯示未偵測。還需老闆在**設定對話框開著**時貼0.1.0的骨架及schedDialog／dateCtl／timeCtl／selects診斷，不能用既有Scheduled列表骨架代替；只用遮罩資料修公開fixture。
+- X允許的最小提前量／可排上限未驗證；本地5分鐘僅本版安全餘量，不保證X接受，時區依本機Date而非X自行選的其他時區。AMPM數字值、零基月、非select／不完整或不能精確表示的選單均拒絕。遇原生事件重建欄位，不宣稱成功，老闆需自己對照。
+- 缺控件／不可表示都用同一「未偵測到排程欄位」訊息，不提供可能含值／私人錯誤的診斷；需骨架分辨原因。工作日只指週一到週五，沒有假日表。無自訂時段／星期／佔用避讓。
+- 雙位置、極小視窗、虛擬列表與同origin位置storage限制沿用0.0.6；快速鈕在body內可能需捲動，但複製操作固定可見。extension不開X對話框、不確認、不排程、不背景發文。

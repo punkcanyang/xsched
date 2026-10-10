@@ -22,7 +22,7 @@
 
 ## 進度
 
-- [ ] 寫碼
+- [x] 寫碼（0.1.0，未驗證原生欄位假設）
 - [ ] 外部三測試、截圖
 - [ ] PR
 - [ ] 複審
@@ -35,3 +35,27 @@
 3. shadow浮層九語快速鈕、純計數診斷、選項骨架隱私；不動舊讀法／拖動／位置。
 4. 合成2027+選單fixture、送出計數器、缺欄位／不可表示／時鐘回歸；verify加強，保留全部旧e2e斷言。
 5. 本機test／verify；e2e由外部跑，完成文件並交另一session複審。
+
+## 寫碼交付（最新）
+
+基準main 2cceb5e；外部中途WIP 2ac003b已收進部分改動，後續差異仍在工作樹。本session沒有commit／push／PR，沒有改main。
+
+- 證據先記GATE0新節：340748-byte遮罩骨架只有列表dialog，0 select／option、4個設定testid均0；不提交原始骨架。
+- 新quick.js集中未驗證testid／name假設、四種本地未來時段（>=now+5分鐘）、整組原生select預檢／setter、唯一input/change事件出口；沒有X click／確認／送出。
+- 既有shadow浮層九語快速區／未偵測提示，可信點擊才寫；新純計數診斷。既有雙拖動／位置／reader讀法保留，骨架走全body並把option文字限定為長度。
+- 三個合成fixture quick-dialog／quick-missing／quick-partial，年份2027–2031；新quick及真content測試。verify精確SHA只開放quick.js的唯一input/change出口，新增20攻擊自測，洩漏39→41，其他禁令全保留，position模組與摘要不動。
+- 版本manifest／package／lock／reader／skeleton／版本測試同步0.1.0，不用version_name；manifest permissions／hosts／resources／matches與基準相同。
+
+本機實跑：npm test退出0（10測試檔）；細項154/154、0 fail／skip。npm run verify退出0（11 probe檔／4 SVG；30 API、14 icon、9 SVG、41 leak、21 storage、20 native writer自測）。npm run e2e退出1，fixture server listen EPERM 127.0.0.1；Chrome斷言未開始、未生成新截圖。node_modules可用，未安裝新依賴。
+
+外部請在最新分支跑：
+
+```sh
+npm test
+npm run verify
+npm run e2e
+```
+
+需要原Chrome for Testing／Xvfb；CHROME_PATH預設沿用。e2e新增main／extension兩個世界的2027年測試時鐘，逐欄四時段／原生change與0送出計數、缺欄位／不能表示原子失敗、骨架複製／純計數與原0網路證據；原548基準斷言全部保留，**不當成本輪已通過數字**。至少新增docs/v1.0-quick-{dialog-detected,slot-filled,not-detected,partial-fields,diag}.png，其餘旧情境另存v1.0-quick前綴，所有旧截圖保留。
+
+未達READY：外部最新e2e／截圖、獨立session複審、老闆設定對話框新骨架與欄位對照尚待完成。真頁可能未偵測，不能宣稱真X填值已通過；本版不自動打開視窗、不確認／送出，不做自訂／星期設定／佔用避讓。5步實測、假設表、原生控制項受控事件風險與還缺什麼見GATE0新節。
