@@ -29,3 +29,7 @@
 ## 本輪簡短計畫
 
 先保留 quick.js 的 SHA-256（c24818395b41357f5ca2311bd5fd9aad0077409e07104c4ae3e2ce327443016e），不修改任何字元。reader 僅增加非序列化的列弱參照介面，不改選擇器／解析／累加結果；總覽獨立模組負責九語、本地日期／空日、90天上限、自家shadow標亮與過期節點提示。content只接線到可切換區塊，既有列表預設保留。verify新增精確來源的唯一捲動邊界及攻擊自測；e2e新增2027+假列表、原生子樹零變更／零點擊／零送出。跑完整unit與verify，外部再跑Chrome e2e與提交。
+
+## 暫停（2026-10-10 17:03 UTC+8）
+
+老闆貼回排程對話框骨架，依插隊規則：寫碼 session 第一輪中途停掉（進度已在 `1b19423`），先做快速時段 0.1.1（分支 `v1.0/quick-fix`）。回來時先把本分支 rebase／merge 到新 main，再 resume 寫碼 session 續做（提示 `/workspace/bd-punkcan/xsched-v1.0-overview-write-prompt.txt`，告知已有 WIP）。
