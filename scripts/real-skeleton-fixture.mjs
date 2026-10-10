@@ -41,13 +41,13 @@ export function reconstruct(text) {
   function emit(n) {
     const attrs = Object.entries(n.attrs).map(([k,v]) => ` ${k}="${escape(v)}"`).join('');
     let content = n.children.map(emit).join('');
-    if (n === time) content = '將於2026年10月10日 上午9:00傳送'; // INFERRED, not recovered
+    if (n === time) content = '將於 2026年11月3日 週二 下午11:19 發送'; // confirmed grammar; FAKE date
     if (n.line === 123) content = '甲乙'; // synthetic two-character body
     if (n.line === 89) content = '甲乙丙丁戊己';
     if (n.line === 96) content = '甲乙丙'; // labels remain unknown
     return `<${n.tag}${attrs}>${content}</${n.tag}>`;
   }
-  const html = '<!doctype html>\n<!-- Owner masked skeleton reconstruction; no real text/IDs. Time grammar and zh-Hant locale are INFERRED synthetic examples, NOT verified X text. -->\n<html lang="zh-Hant"><head><meta charset="utf-8"><title>骨架重建假資料，時間格式推定</title></head><body>\n<p>骨架結構重建，非真頁快照；時間與文字全是假資料</p>\n' + emit(outer) + '\n<div aria-hidden="true"><div data-testid="cellInnerDiv"><article role="article"><time datetime="2026-10-09T09:00:00">09:00</time><div data-testid="tweetText">背景假資料</div></article></div></div>\n</body></html>\n';
+  const html = '<!doctype html>\n<!-- Owner masked skeleton reconstruction; no real text/IDs. Traditional Chinese format confirmed by owner; all dates and post text are FAKE. -->\n<html lang="zh-Hant"><head><meta charset="utf-8"><title>骨架重建假資料，格式真機確認，日期為假</title></head><body>\n<p>骨架結構重建，非真頁快照；格式由老闆真機樣本確認，日期與本文為假</p>\n' + emit(outer) + '\n<div aria-hidden="true"><div data-testid="cellInnerDiv"><article role="article"><time datetime="2026-10-09T09:00:00">09:00</time><div data-testid="tweetText">背景假資料</div></article></div></div>\n</body></html>\n';
   scanFixture(html);
   return html;
 }
@@ -68,6 +68,17 @@ export function crossYearFixture(html) {
   label(clone).textContent = '1月1日 上午12:05';
   clone.querySelector('[data-testid="tweetText"] span').textContent = '丙丁';
   row.after(clone);
+  document.querySelector("p").textContent = "合成跨年情境：無年份時間格式是測試例子，日期與本文為假";
+  const result = document.toString();
+  scanFixture(result);
+  return result;
+}
+export function simplifiedFixture(html) {
+  const { document } = parseHTML(html);
+  document.documentElement.lang = 'zh-Hans';
+  const row = [...document.querySelectorAll('button')].find(el => el.querySelector('[data-testid="tweetText"]'));
+  [...row.querySelectorAll('span')].find(el => !el.closest('[data-testid="tweetText"]')).textContent = '将于 2026年11月3日 周二 下午11:19 发送';
+  document.querySelector('p').textContent = '繁中格式真機確認，簡中對應變體；日期與本文為假';
   const result = document.toString();
   scanFixture(result);
   return result;
@@ -76,7 +87,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const [input, output, mode] = process.argv.slice(2);
   if (!input || !output) throw new Error('usage: node scripts/real-skeleton-fixture.mjs <owner skeleton> <output.html>');
   const ordinary = reconstruct(readFileSync(input,'utf8'));
-  const html = mode === '--cross-year' ? crossYearFixture(ordinary) : ordinary;
+  if (mode && !['--cross-year','--zh-Hans'].includes(mode)) throw new Error('unknown fixture mode');
+  const html = mode === '--cross-year' ? crossYearFixture(ordinary) : mode === '--zh-Hans' ? simplifiedFixture(ordinary) : ordinary;
   writeFileSync(output,html);
-  console.log(mode === '--cross-year' ? 'cross-year synthetic 2-row fixture; privacy scan OK' : 'reconstructed 1 modal row, separate source #text(28) time span, synthetic replacement; privacy scan OK');
+  console.log(mode === '--cross-year' ? 'cross-year synthetic 2-row fixture; privacy scan OK' : 'reconstructed 1 modal row, separate source #text(28) time span, confirmed Chinese grammar, fake date; privacy scan OK');
 }

@@ -85,7 +85,7 @@ function serveFixture(req, res) {
   }
   let body;
   try {
-    body = readFileSync(join(FIXTURES, ...(["boss-skeleton", "cross-year"].includes(name) ? ["real", `${name}.html`] : [`${name}.html`])), "utf8");
+    body = readFileSync(join(FIXTURES, ...(["boss-skeleton", "boss-skeleton-zh-Hans", "cross-year"].includes(name) ? ["real", `${name}.html`] : [`${name}.html`])), "utf8");
   } catch {
     res.writeHead(404, { "content-type": "text/plain" }).end("no fixture " + name);
     return;
@@ -136,13 +136,13 @@ async function probeState(page) {
 }
 
 const CASES = [
-  { fixture: "en", file: "gate0.2-en.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
-  { fixture: "ja", file: "gate0.2-ja.png", count: 2, times: ["2026-07-20 16:24 (Mon)", "2026-08-03 09:05 (Mon)"] },
-  { fixture: "zh-Hans", file: "gate0.2-zh-Hans.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
-  { fixture: "zh-Hant", file: "gate0.2-zh-Hant.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
-  { fixture: "ko", file: "gate0.2-ko.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
-  { fixture: "roles", file: "gate0.2-roles-fallback.png", count: 2, layer: "a11y", times: ["2026-10-16 07:30 (Fri)", "2026-10-17 18:00 (Sat)"] },
-  { fixture: "empty", file: "gate0.2-empty.png", count: 0 },
+  { fixture: "en", file: "gate0.3-en.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "ja", file: "gate0.3-ja.png", count: 2, times: ["2026-07-20 16:24 (Mon)", "2026-08-03 09:05 (Mon)"] },
+  { fixture: "zh-Hans", file: "gate0.3-zh-Hans.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "zh-Hant", file: "gate0.3-zh-Hant.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "ko", file: "gate0.3-ko.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "roles", file: "gate0.3-roles-fallback.png", count: 2, layer: "a11y", times: ["2026-10-16 07:30 (Fri)", "2026-10-17 18:00 (Sat)"] },
+  { fixture: "empty", file: "gate0.3-empty.png", count: 0 },
 ];
 
 async function main() {
@@ -266,13 +266,14 @@ async function main() {
         const shortcut = host.shadowRoot.querySelector('.shortcut');
         const panel = host.shadowRoot.querySelector('section');
         const rects = [shortcut, panel].map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height);
-        return [...document.querySelectorAll('.native-post, .native-fab, .native-drawer')].map((el) => {
+        return [...document.querySelectorAll('.native-post, .native-fab, .native-drawer, .native-unread, .native-grok')].map((el) => {
           const r = el.getBoundingClientRect();
           if (!r.width || !r.height) return null;
-          return { testid: el.dataset.testid || 'drawer', overlap: rects.some((a) => a.left < r.right && a.right > r.left && a.top < r.bottom && a.bottom > r.top), hit: document.elementFromPoint(r.left + r.width/2, r.top + r.height/2) === el };
+          const hit=document.elementFromPoint(r.left + r.width/2, r.top + r.height/2);
+          return { testid: el.dataset.testid || el.className, overlap: rects.some((a) => a.left < r.right && a.right > r.left && a.top < r.bottom && a.bottom > r.top), hit: el.classList.contains('native-unread') ? el.contains(hit) : hit===el };
         }).filter(Boolean);
       });
-      assert(results.length === 2, `${label}: post/FAB plus drawer must be visible`);
+      assert(results.length === 4, `${label}: post/FAB, drawer, unread circle and Grok must be visible`);
       for (const r of results) {
         assert(!r.overlap, `${label}: shortcut/panel overlaps ${r.testid}`);
         assert(r.hit, `${label}: elementFromPoint must hit native ${r.testid}`);
@@ -280,6 +281,8 @@ async function main() {
       const selector = await page.evaluate(() => innerWidth <= 600 ? '.native-fab' : '.native-post');
       await page.click(selector);
       assert(await page.evaluate(() => window.fixturePostClicks > 0), `${label}: physical Post click reaches native button`);
+      await page.click('.native-unread'); await page.click('.native-grok');
+      assert(await page.evaluate(() => window.fixtureWidgetClicks >= 2), `${label}: physical clicks reach unread/Grok controls`);
     }
 
     // ── 0.2 shortcut / positioning / navigation ────────────────────────────
@@ -289,13 +292,13 @@ async function main() {
       return s.count === 2 && s.expanded === 'true' ? s : null;
     }, 'shortcut Scheduled defaults open');
     assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
-    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.0.3 (manifest 0.0.3)', 'diagnostic first line includes both versions');
+    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.0.4 (manifest 0.0.4)', 'diagnostic first line includes both versions');
     await checkNative('desktop scheduled open');
-    await page.screenshot({ path: join(DOCS, 'gate0.2-scheduled-open.png') });
-    await page.screenshot({ path: join(DOCS, 'gate0.2-diag-version.png') });
+    await page.screenshot({ path: join(DOCS, 'gate0.3-scheduled-open.png') });
+    await page.screenshot({ path: join(DOCS, 'gate0.3-diag-version.png') });
     await toggle(false);
     await checkNative('desktop scheduled closed');
-    await page.screenshot({ path: join(DOCS, 'gate0.2-scheduled-closed.png') });
+    await page.screenshot({ path: join(DOCS, 'gate0.3-scheduled-closed.png') });
     await page.evaluate(() => history.replaceState({}, '', '/home'));
     await until(async () => (await probeState(page)).mode === 'other', 'closed state survives SPA home');
     assert((await probeState(page)).expanded === 'false', 'explicit closed survives route change');
@@ -309,7 +312,7 @@ async function main() {
     }, 'shortcut remount');
     assert(shortcutRemount.expanded === 'false' && shortcutRemount.mounted === '1', 'remount preserves closed choice and mounted state');
     await toggle(true);
-    await page.screenshot({ path: join(DOCS, 'gate0.2-remount.png') });
+    await page.screenshot({ path: join(DOCS, 'gate0.3-remount.png') });
 
     await open('home', '/home');
     const home = await until(async () => {
@@ -318,7 +321,7 @@ async function main() {
     }, 'shortcut home defaults closed');
     assert(home.shortcut && !home.panelVisible && home.count === 0, 'home shows only shortcut, no shortcut');
     await checkNative('desktop home closed');
-    await page.screenshot({ path: join(DOCS, 'gate0.2-home-closed.png') });
+    await page.screenshot({ path: join(DOCS, 'gate0.3-home-closed.png') });
     const homeOpen = await toggle(true);
     const target = 'https://x.com/compose/post/unsent/scheduled';
     assert(homeOpen.target === target, 'goto button fixed target is exact (location.assign, no href sink)');
@@ -327,14 +330,14 @@ async function main() {
     await sleep(300);
     assert(page.url() === homeBeforeSynthetic, 'synthetic page click cannot trigger Scheduled navigation');
     await checkNative('desktop home open');
-    await page.screenshot({ path: join(DOCS, 'gate0.2-home-open-goto-link.png') });
+    await page.screenshot({ path: join(DOCS, 'gate0.3-home-open-goto-link.png') });
     for (const width of [390, 600]) {
       await page.setViewport({ width, height: 820 });
       await sleep(600);
       await checkNative(`narrow ${width} open`);
       await toggle(false);
       await checkNative(`narrow ${width} closed`);
-      if (width === 390) await page.screenshot({ path: join(DOCS, 'gate0.2-narrow-fab.png') });
+      if (width === 390) await page.screenshot({ path: join(DOCS, 'gate0.3-narrow-fab.png') });
       await toggle(true);
     }
     await page.setViewport({ width: 1100, height: 820 });
@@ -357,14 +360,14 @@ async function main() {
       chrome.runtime.getManifest = () => ({version: '0.0.2'});
     ` });
     await until(async () => (await probeState(page)).version.includes('⚠ 版本不符'), 'manifest mismatch warning');
-    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.0.3 / manifest 0.0.2'), 'diagnostic mismatch warning');
-    await page.screenshot({ path: join(DOCS, 'gate0.2-version-mismatch.png') });
+    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.0.4 / manifest 0.0.2'), 'diagnostic mismatch warning');
+    await page.screenshot({ path: join(DOCS, 'gate0.3-version-mismatch.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: `chrome.runtime.getManifest = () => { throw new Error('Extension context invalidated. private account'); };` });
     await until(async () => (await probeState(page)).version.includes('擴充已重新載入'), 'context invalidated warning');
     assert(!(await probeState(page)).diag.includes('private account'), 'runtime exception is never copied into diagnostic');
-    await page.screenshot({ path: join(DOCS, 'gate0.2-runtime-invalidated.png') });
+    await page.screenshot({ path: join(DOCS, 'gate0.3-runtime-invalidated.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: 'chrome.runtime.getManifest = globalThis.__originalManifest;' });
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.0.3 (manifest 0.0.3)'), 'runtime warning clears');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.0.4 (manifest 0.0.4)'), 'runtime warning clears');
 
     // Reproduce an actual 0.0.2 reader/content session in another isolated world.
     // Historical sources are read from the task's base commit, never downloaded.
@@ -379,7 +382,7 @@ async function main() {
     await until(async () => (await probeState(page)).diag.startsWith('xsched-gate0 v0.0.2'), 'actual old host visible');
     const takeover = await network.send('Runtime.evaluate', { contextId: versionContext, expression: readFileSync(join(PROBE, 'content.js'), 'utf8') });
     assert(!takeover.exceptionDetails, 'new script reinjection avoids top-level const collisions');
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.0.3'), 'new script takes over old UI');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.0.4'), 'new script takes over old UI');
     await sleep(1200); // legacy poll has run repeatedly
     assert(await page.evaluate(() => document.querySelectorAll('#xsched-probe-root').length === 1 && [...document.querySelectorAll('[data-xsched-retired]')].every((el) => el.getBoundingClientRect().height === 0)), 'one active UI; legacy stays connected and hidden');
     await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
@@ -418,31 +421,112 @@ async function main() {
       console.log(`  ✓ ${testCase.fixture}: ${testCase.count} row(s)`);
     }
 
-    // ── owner skeleton reconstruction: structural count proven, grammar inferred ──
+    // ── 0.3 short viewport: independent scrolling content, pinned actions ──
+    async function checkActions(label, withGoto=false) {
+      const hits=await page.evaluate(withGoto => {
+        const host=document.getElementById('xsched-probe-root');
+        const shadow=host.shadowRoot;
+        const selectors=['[data-xsched-copy]','[data-xsched-skeleton]',...(withGoto ? ['[data-xsched-goto]'] : [])];
+        return selectors.map(selector => {
+          const button=shadow.querySelector(selector);
+          const r=button.getBoundingClientRect();
+          const x=r.left+r.width/2, y=r.top+r.height/2;
+          return {selector,visible:r.width>0 && r.height>0 && r.top>=0 && r.bottom<=innerHeight,
+            hit:document.elementFromPoint(x,y)===host && shadow.elementFromPoint(x,y)===button,
+            pinned:button.closest('.panel-actions')!==null && !shadow.querySelector('.panel-body').contains(button)};
+        });
+      },withGoto);
+      for (const result of hits) assert(result.visible && result.hit && result.pinned, `${label}: ${result.selector} visible, hit and outside scroll area`);
+    }
+    await page.setViewport({width:1280,height:600});
+    await open('en');
+    await until(async () => (await probeState(page)).count===2, 'short viewport original rows');
+    await page.evaluate(() => {
+      const source=document.querySelector('[data-testid="cellInnerDiv"]');
+      const list=source.parentElement;
+      const rows=[];
+      for(let i=0;i<30;i++) {
+        const row=source.cloneNode(true);
+        row.querySelector('[data-testid="tweetText"]').textContent='Fake scroll row '+(i+1);
+        rows.push(row);
+      }
+      list.replaceChildren(...rows);
+    });
+    await until(async () => (await probeState(page)).count===30, 'short viewport thirty fake rows');
+    const scrollInfo=await page.evaluate(() => {
+      const shadow=document.getElementById('xsched-probe-root').shadowRoot;
+      const panel=shadow.querySelector('section'),body=shadow.querySelector('.panel-body');
+      return {height:panel.getBoundingClientRect().height,max:parseFloat(getComputedStyle(panel).maxHeight),overflow:getComputedStyle(body).overflowY,scroll:body.scrollHeight,client:body.clientHeight};
+    });
+    assert(scrollInfo.height<=360.5 && scrollInfo.max<=360 && scrollInfo.overflow==='auto' && scrollInfo.scroll>scrollInfo.client, '1280x600: panel <=60vh with independently scrollable content');
+    await checkActions('short viewport before scroll');
+    await checkNative('1280x600 native avoidance');
+    await page.evaluate(() => {const body=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');body.scrollTop=body.scrollHeight;});
+    assert(await page.evaluate(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body').scrollTop>0), 'panel content actually scrolls');
+    await checkActions('short viewport after scroll');
+    await page.screenshot({path:join(DOCS,'gate0.3-small-viewport-scroll.png')});
+    await page.screenshot({path:join(DOCS,'gate0.3-avoid-native.png')});
+    const actionContext=await findExtensionContext();
+    assert(actionContext,'short viewport clipboard context exists');
+    await network.send('Runtime.evaluate',{contextId:actionContext,expression:`
+      globalThis.__scrollCopies=[];
+      Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText(text){globalThis.__scrollCopies.push(text);return Promise.resolve();}}});
+    `});
+    await clickShadow('[data-xsched-copy]');await clickShadow('[data-xsched-skeleton]');
+    const writes=await network.send('Runtime.evaluate',{contextId:actionContext,expression:'globalThis.__scrollCopies.length',returnByValue:true});
+    assert(writes.result.value===2,'fixed actions physically click and copy while content scrolled to end');
+    await clickShadow('[data-xsched-minimize]');
+    await until(async () => (await probeState(page)).expanded==='false', 'explicit minimize');
+    assert(!(await probeState(page)).panelVisible,'minimize leaves only shortcut');
+    await page.screenshot({path:join(DOCS,'gate0.3-collapsed.png')});
+    await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
+    await until(async () => (await probeState(page)).remounts>0, 'minimized host remount');
+    assert((await probeState(page)).expanded==='false','minimized choice survives remount');
+    await toggle(true);await checkActions('reexpanded short viewport');
+    await checkNative('reexpanded 1280x600');
+    await page.setViewport({width:1100,height:820});await sleep(600);
+    await checkNative('desktop unread and drawer controls');
+    await open('home','/home');await until(async () => (await probeState(page)).mode==='other','short viewport home');
+    await page.setViewport({width:1280,height:600});await toggle(true);
+    await checkActions('short viewport home goto',true);await checkNative('short home corner widgets');
+    await page.setViewport({width:1100,height:820});
+
+    // ── owner skeleton reconstruction: structural count proven, Chinese grammar confirmed, dates fake ──
     await open('boss-skeleton');
     const boss = await until(async () => {
       const state = await probeState(page);
       return state.mode === 'scheduled' && state.times.length === 1 ? state : null;
     }, 'owner skeleton: one visible Scheduled row');
     assert(boss.count === 1, 'owner L108 has ONE row; background cells/articles must not be counted');
-    assert(boss.times[0] === '2026-10-10 09:00 (Sat)', 'synthetic inferred owner label parses exact date/clock');
+    assert(boss.times[0] === '2026-11-03 23:19 (Tue)', 'confirmed Chinese format with fake date parses exact date/clock');
     assert(/timeOk=1 .*timeFail=0/.test(boss.diag), 'owner fixture: every synthetic time parsed, zero failures');
-    assert(boss.diag.endsWith('\nfmt=將於2026年10月10日 上午9:00傳送'), 'success exports directly readable isolated masked format on its own line');
-    await page.screenshot({ path: join(DOCS, 'gate0.2-real-skeleton.png') });
+    assert(boss.diag.endsWith('\nfmt=將於 2026年11月3日 週二 下午11:19 發送'), 'success exports directly readable isolated masked format on its own line');
+    await page.screenshot({ path: join(DOCS, 'gate0.3-real-skeleton-zh-Hant.png') });
     await page.evaluate(() => document.querySelector('div[aria-hidden="true"]').removeAttribute('aria-hidden'));
     await sleep(300);
     assert((await probeState(page)).count === 1, 'background visibility transition cannot add timeline posts');
     // Replace the proven standalone label with an unknown format; row count remains.
     await page.evaluate(() => {
       const row = [...document.querySelectorAll('button')].find(el => el.querySelector('[data-testid="tweetText"]'));
-      [...row.querySelectorAll('span')].find(el => !el.closest('[data-testid="tweetText"]')).textContent = 'Will send on 2027-01-01 23:59 UTC';
+      [...row.querySelectorAll('span')].find(el => !el.closest('[data-testid="tweetText"]')).textContent = 'Will send on 2027-01-01 23:59 UTC private @decoy_handle decoy@example.invalid https://fake.invalid/';
     });
     const unknown = await until(async () => {
       const state = await probeState(page);
       return state.times.includes('時間未解析') ? state : null;
     }, 'owner unknown time remains explicitly unparsed');
     assert(unknown.count === 1 && /timeFail=1/.test(unknown.diag) && /samples=(?!none)/.test(unknown.diag), 'unknown time keeps row, fail count and sample');
-    await page.screenshot({ path: join(DOCS, 'gate0.2-real-time-unparsed.png') });
+    const masked = await page.evaluate(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('.sample').textContent);
+    assert(masked.includes('Will send on 2027-01-01 23:59'), 'unparsed row shows masked time sample beside failure');
+    for (const leak of ['UTC','甲乙','private','decoy_handle','example.invalid','@','http']) assert(!masked.includes(leak), 'unparsed sample excludes body/identity: '+leak);
+    await page.screenshot({ path: join(DOCS, 'gate0.3-unparsed-sample.png') });
+    await open('boss-skeleton-zh-Hans');
+    const hans = await until(async () => {
+      const state=await probeState(page);
+      return state.times[0]==='2026-11-03 23:19 (Tue)' ? state : null;
+    }, 'Simplified Chinese weekday label');
+    assert(hans.count===1 && /timeOk=1 .*timeFail=0/.test(hans.diag), 'Simplified Chinese single row parses correctly');
+    assert(hans.diag.endsWith('fmt=将于 2026年11月3日 周二 下午11:19 发送'), 'Simplified Chinese masked fmt preserves only calendar label');
+    await page.screenshot({ path: join(DOCS,'gate0.3-real-skeleton-zh-Hans.png') });
 
     await open('cross-year');
     await until(async () => (await probeState(page)).count === 2, 'cross-year structural rows');
@@ -464,7 +548,7 @@ async function main() {
       return state.times[0] === '2026-12-31 23:59 (Thu)' && state.times[1] === '2027-01-01 00:05 (Fri)' ? state : null;
     }, 'missing year Dec31 to next Jan1, in chronological order');
     assert(year.count === 2 && /timeOk=2 .*timeFail=0/.test(year.diag), 'cross-year both dates/clock parsed, no failures');
-    await page.screenshot({ path: join(DOCS, 'gate0.2-cross-year.png') });
+    await page.screenshot({ path: join(DOCS, 'gate0.3-cross-year.png') });
     console.log('  ✓ owner skeleton: 1 modal row, background excluded, normalized synthetic time/fmt; unknown label stays counted; cross-year 2 ordered rows');
 
     // Instrument only the fixture's extension isolated world to observe clipboard
@@ -522,7 +606,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched probe v0\.0\.3 \(manifest 0\.0\.3\)\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.0\.4 \(manifest 0\.0\.4\)\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
@@ -548,7 +632,7 @@ async function main() {
     for (const leak of ["Arrives", "UTC", "placeholder body"]) {
       assert(!broken.diag.includes(leak), `selectors-broken: diag leaked "${leak}": ${broken.diag}`);
     }
-    await page.screenshot({ path: join(DOCS, "gate0.2-selectors-broken.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.3-selectors-broken.png") });
     console.log("  ✓ selectors-broken: mounted, 0 rows, masked samples only");
 
     // ── 0.1: X's SPA redraw removes the host → the probe must re-mount it ──────
@@ -616,13 +700,13 @@ async function main() {
     const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
     const skeleton = skeletonCopies.result.value[0];
-    assert(/^xsched-skeleton v0\.0\.3 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(/^xsched-skeleton v0\.0\.4 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
     for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
     }
-    writeFileSync(join(DOCS, "gate0.2-skeleton-sample.txt"), skeleton + "\n");
-    await page.screenshot({ path: join(DOCS, "gate0.2-skeleton-copied.png") });
+    writeFileSync(join(DOCS, "gate0.3-skeleton-sample.txt"), skeleton + "\n");
+    await page.screenshot({ path: join(DOCS, "gate0.3-skeleton-copied.png") });
     // The clipboard may be denied; then the overlay must offer the readonly textarea.
     await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: `
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() { return Promise.reject(new Error('denied')); } } });
@@ -634,7 +718,7 @@ async function main() {
       const s = await probeState(page);
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
-    assert(/^xsched-skeleton v0\.0\.3 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    assert(/^xsched-skeleton v0\.0\.4 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
     const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
     await select.asElement().click();
     await select.dispose();
@@ -643,7 +727,7 @@ async function main() {
       return area.selectionStart === 0 && area.selectionEnd === area.value.length;
     });
     assert(selected, 'fallback: user can select the entire skeleton');
-    await page.screenshot({ path: join(DOCS, "gate0.2-skeleton-fallback.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.3-skeleton-fallback.png") });
     console.log("  ✓ skeleton: content-free map copied; textarea fallback when clipboard is denied");
 
     // ── virtualized list: the TEST scrolls, the probe only accumulates ──────────
@@ -655,7 +739,7 @@ async function main() {
     assert(before.scrolled === "0", "virtual: probe must not have scrolled on its own");
     assert(before.diag.includes("virtualized=1"), `virtual: expected virtualized=1: ${before.diag}`);
     assert(before.hint.includes("請自己往下捲"), `virtual: expected the do-not-auto-scroll hint: ${before.hint}`);
-    await page.screenshot({ path: join(DOCS, "gate0.2-virtual-before.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.3-virtual-before.png") });
 
     await page.evaluate(() => {
       const list = document.getElementById("sched-list");
@@ -676,7 +760,7 @@ async function main() {
     ]) {
       assert(after.times.includes(want), `virtual: missing accumulated time "${want}"`);
     }
-    await page.screenshot({ path: join(DOCS, "gate0.2-virtual-after.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.3-virtual-after.png") });
     console.log("  ✓ virtual: 3 → 6 rows after a test-driven scroll");
 
     await page.evaluate(() => {
@@ -766,7 +850,7 @@ async function main() {
     const homeState = await probeState(page);
     assert(homeState.present && homeState.mode === "other" && homeState.count === 0, `home: overlay should be a 0-row shortcut, got ${JSON.stringify(homeState)}`);
     assert(homeState.countText === "xsched 探針：非 Scheduled 頁", `home: shortcut text was "${homeState.countText}"`);
-    await page.screenshot({ path: join(DOCS, "gate0.2-not-scheduled.png") });
+    await page.screenshot({ path: join(DOCS, "gate0.3-not-scheduled.png") });
     console.log("  ✓ home: 0 rows (shortcut stays mounted off the Scheduled page)");
 
     for (const subpath of ["/home", "/compose/post/unsent/drafts", "/compose/post/schedule"]) {

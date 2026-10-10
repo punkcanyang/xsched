@@ -14,7 +14,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.0.3';
+  let manifest = '0.0.4';
   let invalidated = false;
   const navigated = [];
   const location = { pathname, search: '', assign(target) { navigated.push(target); } };
@@ -68,7 +68,7 @@ test('real content script mounts shadow Dagaz, toggles Scheduled and preserves c
   assert.equal(f.host().dataset.xschedRemounts, '1');
   assert.equal(f.shadow().querySelector('section').style.display, 'none');
   f.click('.shortcut');
-  assert.equal(f.shadow().querySelector('section').style.display, 'block');
+  assert.equal(f.shadow().querySelector('section').style.display, 'flex');
 });
 test('home has only closed shortcut; localized goto navigates fixed target despite dataset tampering', () => {
   const f = fixture('/home', 'zh-Hant');
@@ -86,10 +86,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.0.3 (manifest 0.0.3)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.0.4 (manifest 0.0.4)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.0.3 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.0.4 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -98,7 +98,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.0\.3/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.0\.4/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -106,7 +106,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
 test('real content displays normalized time, shows unknown row explicitly and copies safe fmt', () => {
   const f = fixture('/compose/post/unsent/scheduled','zh-Hant','../fixtures/real/boss-skeleton.html');
   assert.equal(f.host().dataset.xschedCount,'1');
-  assert.equal(f.shadow().querySelector('.time').textContent,'2026-10-10 09:00 (Sat)');
+  assert.equal(f.shadow().querySelector('.time').textContent,'2026-11-03 23:19 (Tue)');
   assert.match(f.host().dataset.xschedDiag,/fmt=(?!none)/);
   const row=[...f.document.querySelectorAll('button')].find(el=>el.querySelector('[data-testid=tweetText]'));
   const label=[...row.querySelectorAll('span')].find(el=>!el.closest('[data-testid=tweetText]'));
@@ -126,4 +126,37 @@ test('unchanged yearless labels repaint when the inferred calendar year changes'
   f.location.search = '?calendar-changed'; f.poll();
   assert.equal(f.host().dataset.xschedDiag, before); // count, raw labels and fmt stay the same
   assert.deepEqual([...f.shadow().querySelectorAll('.time')].map(el => el.textContent), ['2026-12-31 23:59 (Thu)','2027-01-01 00:05 (Fri)']);
+});
+
+test('fixed actions stay outside scrolling content, minimize shares state across SPA and remount', () => {
+  const f=fixture();
+  f.context.innerHeight=600; f.context.innerWidth=1280; f.poll();
+  const panel=f.shadow().querySelector('section');
+  assert.ok(parseFloat(panel.style.maxHeight)<=360);
+  assert.equal(f.shadow().querySelector('.panel-body').style.overflow,'auto');
+  for (const selector of ['[data-xsched-copy]','[data-xsched-skeleton]']) {
+    assert.equal(f.shadow().querySelector(selector).parentElement.className,'panel-actions');
+    assert.ok(!f.shadow().querySelector('.panel-body').contains(f.shadow().querySelector(selector)));
+  }
+  f.click('[data-xsched-minimize]');
+  assert.equal(panel.style.display,'none');
+  assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
+  f.location.pathname='/home'; f.poll(); f.host().remove(); f.poll();
+  assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
+  f.click('.shortcut');
+  assert.equal(f.shadow().querySelector('[data-xsched-goto]').parentElement.className,'panel-actions');
+});
+test('unparsed UI sample uses only authenticated calendar mask, never body or raw identities', () => {
+  const f=fixture('/compose/post/unsent/scheduled','zh-Hant','../fixtures/real/boss-skeleton.html');
+  const row=[...f.document.querySelectorAll('button')].find(el=>el.querySelector('[data-testid=tweetText]'));
+  const label=[...row.querySelectorAll('span')].find(el=>!el.closest('[data-testid=tweetText]'));
+  label.textContent='將於 2026年11月3日 週二 下午11:99 發送 private 987654321 @decoy_handle https://fake.invalid/';
+  row.querySelector('[data-testid=tweetText]').textContent='private body 123456789';
+  f.location.search='?unknown';f.poll();
+  const sample=f.shadow().querySelector('.sample').textContent;
+  assert.match(sample,/將於 2026年11月3日 週二 下午11:99 發送/);
+  for (const secret of ['private','987654321','123456789','decoy_handle','https','fake.invalid']) assert.ok(!sample.includes(secret),secret);
+  label.textContent='https://fake.invalid/2026年11月3日週二下午11:19';
+  f.location.search='?identity';f.poll();
+  assert.match(f.shadow().querySelector('.sample').textContent,/無可安全匯出的樣本/);
 });

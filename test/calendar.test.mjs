@@ -12,6 +12,44 @@ const now = new Date(2026,11,31,12);
 const html = readFileSync(new URL('../fixtures/real/boss-skeleton.html',import.meta.url),'utf8');
 const getDoc = () => parseHTML(html).document;
 const snap = (doc) => R.readSnapshot(doc,{pathname:scheduled,now});
+test('confirmed Chinese grammar handles every AM/PM hour and preserves date over weekday', () => {
+  for (const [prefix,weekday,suffix] of [['將於','週二','發送'],['将于','周二','发送']]) {
+    for (const mer of ['上午','下午']) for (let hour=1; hour<=12; hour++) {
+      const label = `${prefix} 2026年11月3日 ${weekday} ${mer}${hour}:19 ${suffix}`;
+      const parsed = R.parseSchedule(label);
+      assert.ok(parsed?.at,label);
+      assert.equal(parsed.at.getHours(), hour % 12 + (mer==='下午' ? 12 : 0),label);
+      assert.equal(parsed.at.getMinutes(),19,label);
+      assert.equal(parsed.tier,'strict');
+      assert.equal(R.timeSample(label),label);
+    }
+  }
+  assert.equal(R.formatTime(R.parseSchedule('將於 2026年11月3日 週五 下午11:19 發送').at),'2026-11-03 23:19 (Tue)');
+});
+test('Chinese weekdays and whitespace variants work in strict, loose and yearless labels', () => {
+  for (const day of ['週二','周二','星期二','週 二']) for (const gap of ['',' ','\u00a0']) {
+    const label=`將於${gap}2026年${gap}11月${gap}3日${gap}${day}${gap}下午${gap}11:19${gap}發送`;
+    assert.equal(R.formatTime(R.parseSchedule(label)?.at),'2026-11-03 23:19 (Tue)',label);
+    assert.equal(R.formatTime(R.parseTimeLabel(label)?.at),'2026-11-03 23:19 (Tue)',label);
+    const bare=`2026年11月3日 ${day} 下午11:19`;
+    assert.equal(R.formatTime(R.parseSchedule(bare)?.at),'2026-11-03 23:19 (Tue)',bare);
+  }
+  assert.equal(R.formatTime(R.parseSchedule('將於 1月1日 星期五 上午12:07 發送',{now})?.at),'2027-01-01 00:07 (Fri)');
+  assert.equal(R.formatTime(R.parseSchedule('將於 2026年11月3日 星期二 下午 11 ： 19 發送')?.at),'2026-11-03 23:19 (Tue)');
+});
+test('weekday grammar never exports calendar-shaped identities or tweet text', () => {
+  const doc=getDoc();
+  const row=[...doc.querySelectorAll('button')].find(el=>el.querySelector('[data-testid=tweetText]'));
+  const label=[...row.querySelectorAll('span')].find(el=>!el.closest('[data-testid=tweetText]'));
+  for (const secret of ['https://fake.invalid/2026年11月3日週二下午11:19發送','@2026年11月3日週二下午11:19','2026年11月3日週二下午11:19@fake.invalid']) {
+    label.textContent=secret;
+    assert.equal(R.timeSample(secret),'');
+    const result=snap(doc);
+    assert.equal(result.items.length,1); assert.equal(result.timeFail,1);
+    assert.equal(result.fmt,''); assert.deepEqual(result.samples,[]);
+    assert.ok(!S.buildSkeleton(doc,{pathname:scheduled}).includes('calendar='));
+  }
+});
 const labels = [
   ['en','Jan 1 at 12:05 AM', 0,5], ['en','Jan 1 at 12:05 PM',12,5], ['en','1 Jan at 23:59',23,59],
   ['zh-Hant','1月1日 上午12:05',0,5], ['zh-Hant','1月1日 下午12:05',12,5], ['zh-Hant','1月1日 23:59',23,59],
@@ -106,7 +144,7 @@ test('skeleton exports only isolated short time span; calendar-looking body and 
   body.textContent='Will send on Dec 31, 2026 at 9:00 AM @May 987654321';
   const free=doc.createElement('p');free.textContent='Will send on Jan 1, 2027 at 9:00 AM';doc.body.append(free);
   const out=decodeURIComponent(S.buildSkeleton(doc,{pathname:scheduled}));
-  assert.ok(out.includes('calendar=將於2026年10月10日 上午9:00傳送'));
+  assert.ok(out.includes('calendar=將於 2026年11月3日 週二 下午11:19 發送'));
   assert.ok(!out.includes('Dec') && !out.includes('Jan') && !out.includes('987654321') && !out.includes('@May'));
 });
 test('reconstructed owner fixture contains no address, account, real id or copied prose', () => {
@@ -157,7 +195,7 @@ test('legacy cell and text fallback never export calendar-looking tweetText as f
 
 test('fmt is directly readable on its own line, bounded and without content/control characters', () => {
   const report = snap(getDoc());
-  assert.match(R.buildDiagnostic(report), /\nfmt=將於2026年10月10日 上午9:00傳送$/);
+  assert.match(R.buildDiagnostic(report), /\nfmt=將於 2026年11月3日 週二 下午11:19 發送$/);
   const diag = R.buildDiagnostic({fmt: 'Oct 10, 2026 at 9:00 AM\nprivate @May2026 https://May.example/2026'});
   assert.equal(diag.split('\n').length, 3);
   const fmt = diag.split('\n')[2];

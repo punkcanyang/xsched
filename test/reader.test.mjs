@@ -216,7 +216,7 @@ test("mergeItems accumulates across a virtualized window swap and dedups", () =>
 test("buildDiagnostic has counters and calendar-only fmt, no tweet body/account/url", () => {
   const report = snap(fixture("en.html"));
   const diag = R.buildDiagnostic({ ...report, scrolled: 1 });
-  assert.match(diag, /^xsched probe v0\.0\.3 \(manifest unknown\)\n/);
+  assert.match(diag, /^xsched probe v0\.0\.4 \(manifest unknown\)\n/);
   assert.match(diag, /onScheduled=1 /);
   assert.match(diag, /layer=1 /);
 
@@ -261,7 +261,7 @@ test("sanitizeLang keeps registered language tags, masks usernames/private-use v
   assert.equal(R.sanitizeLang("en_US"), "x");
   assert.equal(R.sanitizeLang("a".repeat(30)), "x");
   assert.equal(R.sanitizeLang("en<x>"), "x");
-  for (const value of ["VibeEyeX", "secret-user", "en-secret", "en-x-VibeEyeX", "zh-Fake", "xx"]) assert.equal(R.sanitizeLang(value), "x");
+  for (const value of ["decoy_handle", "secret-user", "en-secret", "en-x-decoy_handle", "zh-Fake", "xx"]) assert.equal(R.sanitizeLang(value), "x");
   assert.equal(R.sanitizeLang("es-419"), "es-419");
 });
 

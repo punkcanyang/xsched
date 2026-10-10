@@ -1,11 +1,11 @@
-// xsched gate 0.2 — read-only panel, DOM SVG shortcut, local diagnostics.
+// xsched gate 0.3 — read-only panel, DOM SVG shortcut, local diagnostics.
 // All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
 (() => {
 "use strict";
-const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted, versionLine, formatTime } = globalThis.XSCHED_READER;
+const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted, versionLine, formatTime, maskSample } = globalThis.XSCHED_READER;
 const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 
-const { stringsFor, placement } = globalThis.XSCHED_UI;
+const { stringsFor, placement, collectObstacles } = globalThis.XSCHED_UI;
 
 const HOST_ID = "xsched-probe-root";
 const POLL_MS = 400;
@@ -130,9 +130,11 @@ function ensureHost() {
     border: "1px solid #38444d",
     "box-shadow": "0 8px 28px rgba(0, 0, 0, 0.45)",
     padding: "10px 12px 12px",
-    "max-height": "calc(100vh - 188px)",
+    "max-height": "60vh",
     "max-width": "344px",
     overflow: "auto",
+    "flex-direction": "column",
+    gap: "8px",
   });
   panel.id = "xsched-panel";
   const shortcut = makeButton("", "xschedToggle");
@@ -228,7 +230,9 @@ function showFallbackText(text) {
     event.stopPropagation();
     try { area.focus(); area.select(); } catch { /* ignore */ }
   });
-  shadow.querySelector("section").append(area, select);
+  shadow.querySelector(".panel-body").append(area);
+  css(select, { "margin-top": "0" });
+  shadow.querySelector(".panel-actions").append(select);
   positionUI();
 }
 
@@ -245,49 +249,40 @@ function makeButton(label, datasetKey) {
   return button;
 }
 
-function fixedObstacles() {
-  const rectangles = [];
-  const seen = new Set();
-  const fixedParents = new Map();
-  // Supplied Post/FAB controls and arbitrary Messages/Grok controls are covered
-  // by generic interactive elements plus their fixed/sticky ancestor containers.
-  for (const control of document.querySelectorAll('button, a, [role="button"], [role="dialog"], aside')) {
-    if (control === host || control.closest('[data-xsched-host="1"]')) continue;
-    let fixed = null;
-    for (let node = control; node && node !== document.body; node = node.parentElement) {
-      if (node === host || node.getAttribute("data-xsched-host") === "1") break;
-      if (fixedParents.has(node)) { fixed = fixedParents.get(node); break; }
-      const style = getComputedStyle(node);
-      if (style.position === "fixed" || style.position === "sticky") { fixed = node; break; }
-    }
-    fixedParents.set(control, fixed);
-    if (!fixed || seen.has(fixed)) continue;
-    seen.add(fixed);
-    const style = getComputedStyle(fixed);
-    const rect = fixed.getBoundingClientRect();
-    if (style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0) rectangles.push(rect);
-  }
-  return rectangles;
-}
-
 function positionUI() {
   if (!host?.isConnected) return;
   const panel = host.shadowRoot.querySelector("section");
-  const obstacles = fixedObstacles();
-  const isOpen = panel.style.getPropertyValue("display") !== "none";
-  // Restore the ordinary maximum before measuring; a previously expanded drawer
-  // must not leave the panel permanently cramped after it closes.
-  css(panel, { "max-height": `${Math.max(80, innerHeight - 188)}px` });
-  let position = placement(innerWidth, innerHeight, obstacles, isOpen ? panel.getBoundingClientRect().height : 0);
-  if (!position.clear && isOpen) {
-    // A short scrollable panel can fit a gap that the full panel cannot.
-    for (let cap = panel.getBoundingClientRect().height - 64; cap >= 80; cap -= 64) {
-      css(panel, { "max-height": `${cap}px` });
+  const shortcut = host.shadowRoot.querySelector(".shortcut");
+  const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
+  const cap = Math.max(0, Math.min(Math.floor(innerHeight * .6), innerHeight - 88));
+  css(host, { display:"block" });
+  css(panel, { display:wantsOpen ? "flex" : "none", "max-height":`${cap}px` });
+  const obstacles = collectObstacles(document, getComputedStyle, innerWidth, innerHeight);
+  const chromeHeight = (panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
+    + (panel.querySelector('.panel-actions')?.getBoundingClientRect().height || 0) + 40;
+  const minimum = chromeHeight + 32;
+  let shown = wantsOpen && cap >= minimum;
+  let position = shown ? placement(innerWidth, innerHeight, obstacles, panel.getBoundingClientRect().height) : { clear:false };
+  if (!position.clear && shown) {
+    // Keep controls outside the scroll area; shorten only the available content.
+    const caps = [];
+    for (let next=cap-32; next>=minimum && caps.length<12; next-=32) caps.push(next);
+    caps.push(minimum);
+    for (const next of caps) {
+      css(panel, { "max-height":`${next}px` });
       position = placement(innerWidth, innerHeight, obstacles, panel.getBoundingClientRect().height);
       if (position.clear) break;
     }
   }
-  css(host, { right: `${position.right}px`, bottom: `${position.bottom}px` });
+  if (!position.clear) {
+    shown = false;
+    css(panel, { display:"none" });
+    position = placement(innerWidth, innerHeight, obstacles);
+  }
+  shortcut.setAttribute('aria-expanded', String(shown));
+  // No free space: hide our UI instead of covering a detected native control.
+  // The user's open/closed choice is retained; the poll retries after layout changes.
+  css(host, { display:position.clear ? "block" : "none", right:`${position.right}px`, bottom:`${position.bottom}px` });
 }
 
 function render(report, items) {
@@ -328,79 +323,88 @@ function render(report, items) {
 
   const panel = node.shadowRoot.querySelector("section");
   while (panel.firstChild) panel.removeChild(panel.firstChild);
-
-  css(panel, { display: effectiveCollapsed ? "none" : "block" });
+  css(panel, { display:effectiveCollapsed ? "none" : "flex" });
   const shortcut = node.shadowRoot.querySelector(".shortcut");
   shortcut.setAttribute("aria-expanded", String(!effectiveCollapsed));
   shortcut.setAttribute("aria-label", strings.shortcut);
   shortcut.title = strings.shortcut;
   const badge = shortcut.querySelector(".badge");
   badge.textContent = String(count);
-  css(badge, { display: report.onScheduled ? "block" : "none" });
-  const kicker = textNode("div", versionLine(runtime.manifestVersion, runtime.runtimeInvalidated), { color: "#8b98a5", "font-size": "11px", "word-break": "break-word" });
-  kicker.className = "version";
-  panel.append(kicker);
+  css(badge, { display:report.onScheduled ? "block" : "none" });
 
-  const countLine = textNode("div", report.onScheduled ? `讀到 ${count} 則` : "xsched 探針：非 Scheduled 頁", { "font-size": "18px", "font-weight": "760", margin: "4px 0 8px" });
+  const header = css(document.createElement("div"), { "flex-shrink":"0" });
+  header.className = "panel-header";
+  const heading = css(document.createElement("div"), { display:"flex", gap:"8px", "align-items":"start" });
+  const kicker = textNode("div", versionLine(runtime.manifestVersion, runtime.runtimeInvalidated), { flex:"1", "min-width":"0", color:"#8b98a5", "font-size":"11px", "word-break":"break-word" });
+  kicker.className = "version";
+  const minimize = makeButton(strings.collapse, "xschedMinimize");
+  minimize.title = strings.collapse;
+  minimize.setAttribute("aria-label", strings.collapse);
+  css(minimize, { "font-size":"12px", padding:"3px 8px", "flex-shrink":"0" });
+  minimize.addEventListener("click", event => {
+    event.preventDefault(); event.stopPropagation();
+    collapsed = true;
+    render(lastReport, lastItems);
+  });
+  heading.append(kicker, minimize);
+  const countLine = textNode("div", report.onScheduled ? `讀到 ${count} 則` : "xsched 探針：非 Scheduled 頁", { "font-size":"18px", "font-weight":"760", margin:"4px 0 0" });
   countLine.className = "count";
-  panel.append(countLine);
+  header.append(heading, countLine);
+  const body = css(document.createElement("div"), { "min-height":"0", overflow:"auto", "overscroll-behavior":"contain", flex:"1 1 auto" });
+  body.className = "panel-body";
+  const controls = css(document.createElement("div"), { display:"flex", gap:"6px", "align-items":"center", "flex-wrap":"wrap", "flex-shrink":"0", "border-top":"1px solid #38444d", "padding-top":"8px" });
+  controls.className = "panel-actions";
+  panel.append(header, body, controls);
 
   if (!effectiveCollapsed) {
     if (report.onScheduled) {
-      const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color: "#ffd400", "font-size": "12px", margin: "0 0 8px" });
+      const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" });
       hint.className = "hint";
-      panel.append(hint);
-      if (count === 0) {
-        panel.append(textNode("p", report.timeFail > 0 ? "看到疑似排程列，但時間格式解析不出來（格式可能改版）。" : "這一頁目前沒有解析到排程時間。", { color: "#ffd400", "font-size": "12px", margin: "0 0 8px" }));
-      }
+      body.append(hint);
+      if (count === 0) body.append(textNode("p", report.timeFail > 0 ? "看到疑似排程列，但時間格式解析不出來（格式可能改版）。" : "這一頁目前沒有解析到排程時間。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" }));
       for (const item of items) {
-        const row = document.createElement("div");
-        css(row, { padding: "6px 0", "border-top": "1px solid #2f3336" });
-        const time = textNode("div", formatTime(item.at), { color: "#1d9bf0", "font-weight": "680", "word-break": "break-word" });
+        const row = css(document.createElement("div"), { padding:"6px 0", "border-top":"1px solid #2f3336" });
+        const time = textNode("div", formatTime(item.at), { color:"#1d9bf0", "font-weight":"680", "word-break":"break-word" });
         time.className = "time";
-        const preview = textNode("div", item.preview || "（沒有文字）", { "word-break": "break-word" });
+        row.append(time);
+        if (item.unparsed) {
+          // Only reader-authenticated isolated time samples; never item.time/body.
+          const sample = textNode("div", `時間樣本：${item.sample ? maskSample(item.sample) : "無可安全匯出的樣本"}`, { color:"#ffd400", "font-size":"12px", "word-break":"break-word" });
+          sample.className = "sample";
+          row.append(sample);
+        }
+        const preview = textNode("div", item.preview || "（沒有文字）", { "word-break":"break-word" });
         preview.className = "preview";
-        row.append(time, preview);
-        panel.append(row);
+        row.append(preview);
+        body.append(row);
       }
     } else {
       const go = makeButton(strings.goto, "xschedGoto");
       go.title = strings.goto;
       go.setAttribute("aria-label", strings.goto);
       go.dataset.xschedTarget = "https://x.com/compose/post/unsent/scheduled";
-      go.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
+      go.addEventListener("click", event => {
+        event.preventDefault(); event.stopPropagation();
         if (event.isTrusted) location.assign("https://x.com/compose/post/unsent/scheduled");
       });
-      panel.append(go);
-      panel.append(textNode("p", "非 Scheduled 頁面：此頁不讀取列表，僅保留診斷與頁面結構工具。", { color: "#8b98a5", "font-size": "12px", margin: "0 0 8px" }));
+      controls.append(go);
+      body.append(textNode("p", "非 Scheduled 頁面：此頁不讀取列表，僅保留診斷與頁面結構工具。", { color:"#8b98a5", "font-size":"12px", margin:"0 0 8px" }));
     }
-
-    const controls = document.createElement("div");
-    css(controls, { display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap" });
     const copy = makeButton("複製診斷", "xschedCopy");
-    copy.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+    copy.addEventListener("click", event => {
+      event.preventDefault(); event.stopPropagation();
       writeClipboard(lastDiag, copy, "複製診斷", () => showFallbackText(lastDiag));
     });
     const skeleton = makeButton("複製頁面結構", "xschedSkeleton");
-    skeleton.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+    skeleton.addEventListener("click", event => {
+      event.preventDefault(); event.stopPropagation();
       let text;
-      try {
-        text = buildSkeleton(document, { pathname: location.pathname || "" });
-      } catch {
-        text = `xsched-skeleton v${SKELETON_VERSION} path=other nodes=0`;
-      }
+      try { text = buildSkeleton(document, { pathname:location.pathname || "" }); }
+      catch { text = `xsched-skeleton v${SKELETON_VERSION} path=other nodes=0`; }
       writeClipboard(text, skeleton, "複製頁面結構", () => showFallbackText(text));
     });
     controls.append(copy, skeleton);
-    panel.append(controls);
-
-    panel.append(textNode("code", diag, { display: "block", "margin-top": "8px", color: "#8b98a5", font: "11px/1.4 ui-monospace, monospace", "white-space": "pre-wrap", "word-break": "break-all" }));
+    body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
   }
 
   writeDataset(node, report, count, diag);

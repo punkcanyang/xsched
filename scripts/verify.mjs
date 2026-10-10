@@ -376,8 +376,8 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   const secrets = [
     "https://example.com/a?b=c",
     "550e8400-e29b-41d4-a716-446655440000",
-    "punkcan@example.com",
-    "VibeEyeX",
+    "decoy@example.invalid",
+    "decoy_handle",
     "Will send on Oct 10, 2026 at 9:00 AM",
     "明天下午四點準時發送敬請期待",
     "2026年7月20日(月)の午後4:24に送信されます",
@@ -396,8 +396,8 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
     + `<a href="https://example.com/a?b=c">https://example.com/a?b=c</a>`
     + `<img src="https://example.com/a?b=c" alt="alt text describing the picture">`
     + `<input placeholder="placeholder asks what is happening">`
-    + `<aside class="VibeEyeX-profile" role="VibeEyeX" data-testid="VibeEyeX" aria-hidden="VibeEyeX"></aside>`
-    + `<p>Will send on Oct 10, 2026 at 9:00 AM punkcan@example.com @VibeEyeX</p>`
+    + `<aside class="decoy_handle-profile" role="decoy_handle" data-testid="decoy_handle" aria-hidden="decoy_handle"></aside>`
+    + `<p>Will send on Oct 10, 2026 at 9:00 AM decoy@example.invalid @decoy_handle</p>`
     + `<p>明天下午四點準時發送敬請期待</p>`
     + `<p>2026年7月20日(月)の午後4:24に送信されます</p>`
     + `</div></section></body></html>`;
@@ -426,9 +426,9 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   }
   const hostile = new DOMParser().parseFromString('<html><body><section role="dialog"><button role="button"><span>Will send on 2027-04-05 18:30 UTC</span><div data-testid="tweetText"><span>Will send on 2027-04-05 18:30 UTC private 987654321</span></div><p>private purchase 2027 1122334455</p></button></section></body></html>', 'text/html');
   const report = reader.readSnapshot(hostile, { pathname: '/compose/post/unsent/scheduled' });
-  const diag = reader.buildDiagnostic({ ...report, lang: 'VibeEyeX', doclang: 'en-x-VibeEyeX' });
+  const diag = reader.buildDiagnostic({ ...report, lang: 'decoy_handle', doclang: 'en-x-decoy_handle' });
   if (!/lang=x doclang=x/.test(diag)) throw new Error('self-test: diagnostic leaked unregistered language tags');
-  for (const leak of ['VibeEyeX', '987654321', '1122334455', 'private']) {
+  for (const leak of ['decoy_handle', '987654321', '1122334455', 'private']) {
     if (diag.includes(leak)) throw new Error('self-test: diagnostic leaked content or sampled tweet body');
   }
   if (report.samples.length !== 1) throw new Error('self-test: time samples must come only from the isolated time label');
@@ -462,6 +462,9 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
     '將於2026年10月10日上午9:00傳送@January.example',
     '@將於2026年10月10日上午9:00傳送',
     '"May 10, 2026 at 9:00 AM"@January.example',
+    'https://fake.invalid/2026年11月3日週二下午11:19發送',
+    '@2026年11月3日週二下午11:19',
+    '2026年11月3日週二下午11:19@fake.invalid',
   ];
   for (const secret of embeddedDates) {
     if (reader.timeSample(secret) || !/^x+$/.test(reader.maskSample(secret))) throw new Error('self-test: date extraction laundered an identity');
@@ -474,7 +477,13 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   if (legacyReport.fmt || legacyReport.samples.length || /Oct|987654321/.test(reader.buildDiagnostic(legacyReport))) throw new Error('self-test: legacy body exported as a time sample');
   const readableFmt = reader.buildDiagnostic({ fmt: '將於2026年10月10日 上午9:00傳送' });
   if (!readableFmt.endsWith('\nfmt=將於2026年10月10日 上午9:00傳送')) throw new Error('self-test: fmt must be directly readable on its own line');
-  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 2, fragments: maskedCount };
+  const weekdayLabel = '將於 2026年11月3日 週二 下午11:99 發送';
+  calendarPage.querySelector('button span').textContent = weekdayLabel+' private 987654321 @decoy_handle decoy@example.invalid';
+  const weekdayReport = reader.readSnapshot(calendarPage, { pathname:'/compose/post/unsent/scheduled' });
+  if (weekdayReport.timeFail !== 1 || weekdayReport.fmt !== weekdayLabel || weekdayReport.samples[0] !== weekdayLabel) throw new Error('self-test: weekday sample not safely preserved');
+  const weekdayOutputs = [reader.buildDiagnostic(weekdayReport), decodeURIComponent(mapper.buildSkeleton(calendarPage, { pathname:'/compose/post/unsent/scheduled' }))];
+  for (const output of weekdayOutputs) for (const leak of ['private','987654321','decoy_handle','decoy@example.invalid']) if (output.includes(leak)) throw new Error('self-test: weekday output leaked '+leak);
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 4, fragments: maskedCount };
 }
 
 function selfTest() {

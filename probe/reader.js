@@ -23,7 +23,7 @@
 (() => {
 "use strict";
 
-const PROBE_VERSION = "0.0.3";
+const PROBE_VERSION = "0.0.4";
 
 // Tab labels that mean "Scheduled". en / ja are from public sources; zh-Hant, zh-Hans
 // and ko are *guesses* (no public source found) and are marked as such in GATE0.md.
@@ -82,12 +82,12 @@ const STRICT = [
   },
   {
     lang: "zh-Hant",
-    re: /((?:將於|於)\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*[(（][^)）]{1,8}[)）])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2}):(\d{2})\s*(?:傳送|發送|发送|传送))/,
+    re: /((?:將於|於)\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*[(（][^)）]{1,8}[)）])?(?:\s*(?:週|周|星期)\s*[一二三四五六日天])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:傳送|發送|发送|传送))/,
     parts: (m) => ({ year: m[2], month: m[3], day: m[4], hour: m[6], minute: m[7], meridiem: m[5], meridiemStyle: "cjk" }),
   },
   {
     lang: "zh-Hans",
-    re: /((?:将于|于)\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*[(（][^)）]{1,8}[)）])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2}):(\d{2})\s*(?:发送|傳送|传送|发出))/,
+    re: /((?:将于|于)\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*[(（][^)）]{1,8}[)）])?(?:\s*(?:週|周|星期)\s*[一二三四五六日天])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:发送|傳送|传送|发出))/,
     parts: (m) => ({ year: m[2], month: m[3], day: m[4], hour: m[6], minute: m[7], meridiem: m[5], meridiemStyle: "cjk" }),
   },
   {
@@ -121,7 +121,7 @@ const LOOSE = [
   },
   {
     lang: "zh",
-    re: /^((\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2}):(\d{2}))/,
+    re: /^((\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*(?:週|周|星期)\s*[一二三四五六日天])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2})\s*:\s*(\d{2}))/,
     parts: (m) => ({ year: m[2], month: m[3], day: m[4], hour: m[6], minute: m[7], meridiem: m[5], meridiemStyle: "cjk" }),
   },
   {
@@ -136,6 +136,7 @@ const SEND_VERB_RE = /will send on|に送信されます|將於|将于|전송됩
 // Any 4-digit year in an element that we could not parse → format drift signal.
 const YEAR_RE = /\b20\d{2}\b|\d{4}\s*年|\d{4}\s*년/;
 
+// Gate 0.3: unparenthesized 週／周／星期 after 日 is owner-confirmed Chinese grammar.
 // Calendar vocabulary is an exact token allowlist, never arbitrary prose. Locale
 // examples below are synthetic until the owner sends fmt/samples. Shared by skeleton.
 const CALENDAR_WORDS = new Set((
@@ -147,17 +148,17 @@ const CALENDAR_WORDS = new Set((
   "januar februar märz april mai juni juli august september oktober november dezember montag dienstag mittwoch donnerstag freitag samstag sonntag " +
   "janeiro fevereiro março abril maio junho julho agosto setembro outubro novembro dezembro segunda terça quarta quinta sexta sábado domingo"
 ).split(" "));
-const CJK_CALENDAR = ["に送信されます", "전송됩니다", "게시됩니다", "예약됩니다", "예약됨", "將於", "将于", "傳送", "發送", "发送", "传送", "发出", "午前", "午後", "上午", "下午", "晚上", "中午", "凌晨", "清晨", "오전", "오후", "년", "월", "일", "시", "분", "年", "月", "日", "時", "时", "點", "点", "分", "の", "於", "于", "에", "星期", "週", "周", "一", "二", "三", "四", "五", "六", "七", "火", "水", "木", "金", "土", "요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"].sort((a, b) => b.length - a.length);
+const CJK_CALENDAR = ["に送信されます", "전송됩니다", "게시됩니다", "예약됩니다", "예약됨", "將於", "将于", "傳送", "發送", "发送", "传送", "发出", "午前", "午後", "上午", "下午", "晚上", "中午", "凌晨", "清晨", "오전", "오후", "년", "월", "일", "시", "분", "年", "月", "日", "時", "时", "點", "点", "分", "の", "於", "于", "에", "星期", "週", "周", "一", "二", "三", "四", "五", "六", "七", "天", "火", "水", "木", "金", "土", "요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"].sort((a, b) => b.length - a.length);
 const CJK_CALENDAR_RE = new RegExp("^(?:" + CJK_CALENDAR.join("|") + ")+$", "u");
 const LABEL_PATTERNS = [
   { lang: "en", re: new RegExp(`^(?:will send on\\s+)?(${WEEKDAY_PREFIX}${MONTH}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?\\s*(?:,|at)?\\s*(\\d{1,2}):(\\d{2})\\s*(a\\.?m\\.?|p\\.?m\\.?)?)`, "i"), parts: m => ({year:m[4], month:MONTH_INDEX[monthKey(m[2])], day:m[3], hour:m[5], minute:m[6], meridiem:m[7], meridiemStyle:"en"}) },
   { lang: "en", re: new RegExp(`^(?:will send on\\s+)?(${WEEKDAY_PREFIX}(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH}(?:\\s+(\\d{4}))?\\s*(?:,|at)?\\s*(\\d{1,2}):(\\d{2})\\s*(a\\.?m\\.?|p\\.?m\\.?)?)`, "i"), parts: m => ({year:m[4], month:MONTH_INDEX[monthKey(m[3])], day:m[2], hour:m[5], minute:m[6], meridiem:m[7], meridiemStyle:"en"}) },
-  { lang: "zh", re: /^((?:將於|将于|於|于)?\s*(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*[(（][^)）]{1,12}[)）])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2})(?::(\d{2})|(?:點|点|時|时)\s*(\d{1,2})?\s*分?)\s*(?:傳送|發送|发送|传送|发出)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7] || m[8] || "0",meridiem:m[5],meridiemStyle:"cjk"}) },
+  { lang: "zh", re: /^((?:將於|将于|於|于)?\s*(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*[(（][^)）]{1,12}[)）])?(?:\s*(?:週|周|星期)\s*[一二三四五六日天])?\s*(上午|下午|晚上|中午|凌晨|清晨)?\s*(\d{1,2})\s*(?::\s*(\d{2})|(?:點|点|時|时)\s*(\d{1,2})?\s*分?)\s*(?:傳送|發送|发送|传送|发出)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7] || m[8] || "0",meridiem:m[5],meridiemStyle:"cjk"}) },
   { lang: "ja", re: /^((?:(\d{4})年\s*)?(\d{1,2})月\s*(\d{1,2})日(?:\s*[(（][^)）]{1,12}[)）])?(?:\s*の)?\s*(午前|午後)?\s*(\d{1,2})(?::|時)(\d{1,2})\s*分?\s*(?:に送信されます)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7],meridiem:m[5],meridiemStyle:"cjk"}) },
   { lang: "ko", re: /^((?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(오전|오후)?\s*(\d{1,2})(?::|시\s*)(\d{1,2})\s*분?\s*(?:에\s*)?(?:전송됩니다|게시됩니다|예약됩니다|예약됨)?)/, parts: m => ({year:m[2],month:m[3],day:m[4],hour:m[6],minute:m[7],meridiem:m[5],meridiemStyle:"cjk"}) },
 ];
 // Gate 0.2: legacy values plus owner skeleton evidence (line numbers in GATE0.md).
-// Sources: notes/GATE0.md gate 0 §1–2 and gate 0.2 skeleton analysis. Real time text is pending.
+// Sources: notes/GATE0.md gate 0 §1–2 and gate 0.2 skeleton analysis. Traditional Chinese weekday format confirmed by owner; fixture dates remain fake.
 const READ_CONFIG = Object.freeze({
   selectors: Object.freeze({
     // cell: public generic X cell (§1 #5); namedRow/roles: Japanese a11y clue (#3).
@@ -286,7 +287,7 @@ function timeSample(raw) {
   if (parsed) return maskSample(parsed.time);
   // Unknown numeric date formats can be sampled, but arbitrary prose between a
   // send phrase and clock cannot: its numbers might be private post content.
-  const match = /^((?:will send on\s+|(?:將於|将于|於|于)\s*)?(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|(?:\d{4}\s*[年년]\s*)?\d{1,2}\s*[月월]\s*\d{1,2}\s*[日일])(?:\s*[(（][\p{L}\p{M} ]{1,12}[)）])?\s*(?:,|at|の)?\s*(?:上午|下午|午前|午後|오전|오후)?\s*\d{1,2}[:時时點点시]\s*\d{1,2}(?:\s*(?:AM|PM|分|분))?)/iu.exec(text);
+  const match = /^((?:will send on\s+|(?:將於|将于|於|于)\s*)?(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|(?:\d{4}\s*[年년]\s*)?\d{1,2}\s*[月월]\s*\d{1,2}\s*[日일])(?:\s*[(（][\p{L}\p{M} ]{1,12}[)）])?(?:\s*(?:週|周|星期)\s*[一二三四五六日天])?\s*(?:,|at|の)?\s*(?:上午|下午|午前|午後|오전|오후)?\s*\d{1,2}[:時时點点시]\s*\d{1,2}(?:\s*(?:AM|PM|分|분))?)/iu.exec(text);
   if (!match) return "";
   const masked = maskSample(match[1]);
   // At least one surviving calendar word, not just a number in arbitrary prose.
