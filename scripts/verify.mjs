@@ -270,6 +270,55 @@ function canonicalSource(source) {
   return text.replace(/\[\s*(["'`])([\w$]+)\1\s*\]/g, ".$2");
 }
 
+// Entry-independent: a CSS resource value is forbidden regardless of whether
+// it reaches setProperty, cssText, a style property/attribute, or a stylesheet.
+// Retain the original url()/@import rules; this additional view also covers CSS
+// escapes inside cooked JS strings and literal concatenations/templates.
+const CSS_RESOURCE_FUNCTIONS = ['url', 'src', 'image', 'image-set', '-webkit-image-set', 'cross-fade', '-webkit-cross-fade', 'element', '-moz-element', 'paint', '-webkit-canvas'];
+const CSS_RESOURCE_VALUE = new RegExp(`(?:^|[^\\w-])(?:${CSS_RESOURCE_FUNCTIONS.join('|')})\\s*\\(|@import\\b`, 'i');
+function cssDecoded(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\\(?:\r\n|[\n\r\f])/g, '')
+    .replace(/\\([0-9a-f]{1,6})(?:\r\n|[\t\n\r\f ])?|\\([^\n\r\f])/gi, (escape, hex, character) => {
+      if (!hex) return character;
+      const code = parseInt(hex, 16);
+      return !code || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff) ? '\ufffd' : String.fromCodePoint(code);
+    });
+}
+
+function checkCssResources(source, label) {
+  const views = [source, canonicalSource(source)];
+  if (label.endsWith('.js')) {
+    try {
+      const tokens = esprima.tokenize(source);
+      // Parse only isolated literal tokens, never execute them or feed modern
+      // production JS into Esprima's older full parser. Tagged templates may
+      // use raw text, so scan both raw and cooked literal fragments.
+      let raw = '', cooked = '';
+      const flush = () => { views.push(raw, cooked); raw = ''; cooked = ''; };
+      for (const token of tokens) {
+        if (token.type === 'String') {
+          const value = esprima.parseScript(token.value).body[0].expression.value;
+          views.push(value);
+          raw += value;
+          cooked += value;
+        } else if (token.type === 'Template') {
+          const fragment = token.value.slice(1, token.value.endsWith('`') ? -1 : -2);
+          const value = esprima.parseScript('`' + fragment + '`').body[0].expression.quasis[0].value.cooked;
+          views.push(fragment, value ?? fragment);
+          raw += fragment;
+          cooked += value ?? fragment;
+        } else if (token.type !== 'Punctuator' || !['+', '(', ')'].includes(token.value)) flush();
+      }
+      flush();
+    } catch {
+      return [`${label}: CSS literal analysis failed closed`];
+    }
+  }
+  return views.some(view => CSS_RESOURCE_VALUE.test(view) || CSS_RESOURCE_VALUE.test(cssDecoded(view)))
+    ? [`${label}: CSS image/resource value forbidden`] : [];
+}
+
 // content_scripts may only touch X itself over https.
 const ALLOWED_MATCHES = new Set([
   "https://x.com/*",
@@ -341,6 +390,7 @@ function checkDestructuring(source, label) {
 export function scanSource(text, label, { positionModule = false, quickModule = false } = {}) {
   const errors = [];
   if (label.endsWith('.js')) errors.push(...checkDestructuring(text, label));
+  errors.push(...checkCssResources(text, label));
   const digest = createHash('sha256').update(text).digest('hex');
   const auditedAuthorUi = label === 'probe/ui.js' && digest === AUTHOR_UI_SHA256;
   const auditedAuthorContent = label === 'probe/content.js' && digest === AUTHOR_CONTENT_SHA256;
@@ -988,6 +1038,86 @@ export function resourcePropertySelfTest() {
   return cases.length;
 }
 
+export function cssResourceSelfTest() {
+  // Keep the explicit function list/count independent of the guard's list.
+  const names = ['url', 'src', 'image', 'image-set', '-webkit-image-set', 'cross-fade', '-webkit-cross-fade', 'element', '-moz-element', 'paint', '-webkit-canvas'];
+  if (JSON.stringify(names) !== JSON.stringify(CSS_RESOURCE_FUNCTIONS)) throw new Error('CSS self-test: function list changed');
+  const cases = [];
+  for (const name of names) {
+    const value = `${name}("https://evil.example/tracker.png" 1x)`;
+    const literal = JSON.stringify(value);
+    const declaration = JSON.stringify(`background-image: ${value}`);
+    const rule = JSON.stringify(`.synthetic {background-image: ${value}}`);
+    cases.push(
+      `const value = ${literal};`,
+      `author.style.setProperty('background-image', ${literal});`,
+      `author.style.cssText = ${declaration};`,
+      `author.style.backgroundImage = ${literal};`,
+      `author.style['background-image'] = ${literal};`,
+      `author.setAttribute('style', ${declaration});`,
+      `Object.assign(author.style, {backgroundImage: ${literal}});`,
+      `document.createElement('style').textContent = ${rule};`,
+      `sheet.insertRule(${rule});`, `sheet.replace(${rule});`, `sheet.replaceSync(${rule});`,
+      `new CSSStyleSheet().replaceSync(${rule});`,
+      `CSSStyleSheet.prototype.insertRule.call(sheet, ${rule});`,
+      `CSS.supports('background-image', ${literal});`,
+      `author.style.setProperty('--synthetic-image', ${literal});`,
+    );
+    const first = name.charCodeAt(0).toString(16);
+    const split = Math.max(1, Math.floor(name.length / 2));
+    const head = JSON.stringify(name.slice(0, split));
+    const tail = JSON.stringify(value.slice(split));
+    cases.push(
+      `const value = ${JSON.stringify(value.toUpperCase())};`,
+      `const value = ${literal.replace(name[0], '\\u' + first.padStart(4, '0'))};`,
+      `const value = ${literal.replace(name[0], '\\x' + first.padStart(2, '0'))};`,
+      `const value = ${JSON.stringify('\\' + first + ' ' + value.slice(1))};`,
+      `const value = ${JSON.stringify('\\' + first.padStart(6, '0') + value.slice(1))};`,
+      `const value = ${JSON.stringify([...name].map(char => '\\' + char.charCodeAt(0).toString(16) + ' ').join('') + value.slice(name.length))};`,
+      `const value = ${head} + ${tail};`,
+      `const value = (${head}) + (${tail});`,
+      `const value = ${head} /* split */ + ${tail};`,
+      'const value = `' + value + '`;',
+      'const value = `' + name.slice(0, split) + '${' + JSON.stringify(name.slice(split)) + '}' + value.slice(name.length) + '`;',
+      `const value = ${literal.slice(0, 2)}\\\n${literal.slice(2)};`,
+    );
+  }
+  cases.push(
+    `author.style.setProperty('background-image', 'image-set("https://evil.example/tracker.png" 1x)');`,
+    `const value = 'image-set("relative.png" 1x)';`,
+    `const value = 'image-set("//evil.example/tracker.png" 1x)';`,
+    `const value = 'image-set("data:image/png,synthetic" 1x)';`,
+    `const value = 'image-set("https://x.com/punkcan" 1x)';`,
+    `const value = '@import "relative.css"';`,
+    `const value = ${JSON.stringify('@\\69 mport "relative.css"')};`,
+    `const value = 'image/**/-set("relative.png" 1x)';`,
+  );
+  for (const source of cases) {
+    if (!scanSource(source, 'probe/reader.js').includes('probe/reader.js: CSS image/resource value forbidden')) throw new Error(`CSS self-test: missed ${source}`);
+  }
+  // CSS files get the same CSS-level normalization without JS literal parsing.
+  for (const source of [
+    '.synthetic {background: image-set("relative.png" 1x)}',
+    '.synthetic {background: im\\61 ge-set("relative.png" 1x)}',
+    '@\\69 mport "relative.css";',
+  ]) {
+    cases.push(source);
+    if (!scanSource(source, 'probe/synthetic.css').includes('probe/synthetic.css: CSS image/resource value forbidden')) throw new Error(`CSS self-test: missed stylesheet ${source}`);
+  }
+  for (const source of [
+    'author.style.setProperty("background", "white");',
+    'author.style.cssText = "display:flex;color:#123456";',
+    'author.setAttribute("style", "position:fixed;opacity:1");',
+    'sheet.insertRule(".synthetic {color: blue}");',
+    'const gradient = "linear-gradient(red, blue)";',
+    'const value = "radial-gradient(circle, red, blue)";',
+    'const value = "translateY(10px) calc(100% - 20px)";',
+    'const address = "https://x.com/punkcan";',
+  ]) if (scanSource(source, 'probe/reader.js').length) throw new Error(`CSS self-test: safe source rejected ${source}`);
+  if (!checkCssResources('const value = "unterminated', 'probe/reader.js').some(error => error.includes('failed closed'))) throw new Error('CSS self-test: literal failure passed');
+  return cases.length;
+}
+
 function selfTest() {
   const violations = [
     'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
@@ -1015,6 +1145,7 @@ function selfTest() {
   const boundaryCases = authorBoundarySelfTest();
   const destructuringCases = destructuringSelfTest();
   const resourceCases = resourcePropertySelfTest();
+  const cssCases = cssResourceSelfTest();
   // Prove the scanner fails closed: a synthetic probe with a network call AND a bad
   // manifest must produce errors, while a clean synthetic probe must not.
   const dir = mkdtempSync(join(tmpdir(), "xsched-verify-selftest-"));
@@ -1077,7 +1208,7 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases, destructuring:destructuringCases, resource:resourceCases };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases, destructuring:destructuringCases, resource:resourceCases, css:cssCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1108,7 +1239,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary, ${selfTests.destructuring} destructuring self-tests; ${selfTests.resource} resource property self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary, ${selfTests.destructuring} destructuring self-tests; ${selfTests.resource} resource property self-tests; ${selfTests.css} CSS resource self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call
