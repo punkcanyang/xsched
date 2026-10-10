@@ -255,7 +255,6 @@ function positionUI() {
   const shortcut = host.shadowRoot.querySelector(".shortcut");
   const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
   const cap = Math.max(0, Math.min(Math.floor(innerHeight * .6), innerHeight - 88));
-  css(host, { display:"block" });
   css(panel, { display:wantsOpen ? "flex" : "none", "max-height":`${cap}px` });
   const obstacles = collectObstacles(document, element => getComputedStyle(element), innerWidth, innerHeight);
   const chromeHeight = (panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
@@ -282,7 +281,9 @@ function positionUI() {
   shortcut.setAttribute('aria-expanded', String(shown));
   // No free space: hide our UI instead of covering a detected native control.
   // The user's open/closed choice is retained; the poll retries after layout changes.
-  css(host, { display:position.clear ? "block" : "none", right:`${position.right}px`, bottom:`${position.bottom}px` });
+  // Visibility keeps geometry measurable for retries without overriding an
+  // externally hidden host's display (mounted must still reflect that state).
+  css(host, { visibility:position.clear ? "visible" : "hidden", right:`${position.right}px`, bottom:`${position.bottom}px` });
 }
 
 function render(report, items) {

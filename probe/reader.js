@@ -302,9 +302,14 @@ function isIsolatedTimeElement(el) {
   return el.matches(READ_CONFIG.selectors.timeLeaf) && Boolean(row) && Boolean(timeSample(el.textContent));
 }
 
-// True only when the overlay host is actually in the document *and* laid out.
+// True only when the overlay host is connected, visible and laid out.
 function hostMounted(el) {
   if (!el || !el.isConnected) return false;
+  try {
+    const view = el.ownerDocument?.defaultView;
+    const style = typeof view?.getComputedStyle === "function" ? view.getComputedStyle(el) : el.style;
+    if (style?.display === "none" || style?.visibility === "hidden" || style?.visibility === "collapse") return false;
+  } catch { /* layout checks below remain available */ }
   let width = 0;
   let height = 0;
   if (typeof el.getBoundingClientRect === "function") {

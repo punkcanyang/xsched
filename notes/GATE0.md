@@ -479,3 +479,13 @@ verify 原網路 API／資源 sink／HTML 注入／權限／固定導覽規則�
 繁中格式已由真機回報確認、假日期解析已通過；0.0.4 尚未在老闆 Chrome 逐則實測。簡中是對應變體而非真機驗收。另四語時間格式仍未承諾；時區跟瀏覽器，無年份按今天／列表順序推年，虛擬累加與同時間同本文去重限制沿用。
 
 右下取樣有有限區域／步距／候選上限；極小控制項、區域外的純 div、超深層 fixed、closed shadow、全頁遮擋或極小視窗可能不可辨識／無空間。已偵測無空間時縮成快捷鈕或暫藏，不為顯示操作區而覆蓋原生矩形；空間恢復會重試。陰影本身不計入矩形，實際堆疊／縮放／真 X 抽屜仍需真機與外部 Chrome 核對。縮小與重掛保留手動狀態，刷新會重設。
+
+## 閘0.3 外部 remount 失敗續修（2026-10-10）
+
+外部 `6e9cecf` 的 test113／verify37通過；Chrome e2e 在原681行隱藏host後 mounted 應為0處逾時，後續情境與最終網路證據未跑完。根因是避讓 `positionUI()` 在每次poll先寫 `display:block !important`，結尾可放置時又寫一次block，於是覆蓋外部 `display:none !important`。可見性函式仍測host的連接／矩形，沒有誤測快捷鈕。
+
+修正不再由避讓覆写host display；無空間暫藏改為 `visibility:hidden`，仍可量矩形並在空間恢復時重試。`hostMounted()` 保留原連接與兩维非零檢查，另拒絕 computed display:none／visibility:hidden或collapse，讓診斷反映實際host顯示狀態。外部隱藏經poll與完整重畫仍mounted=0，外部恢复block才回1；避讓暫藏與自動恢复不丟手動展開意圖，也不取消外部display隱藏。
+
+新增2項 content 回歸與reader可見性斷言；e2e原0→1等待不改，另要求computed display仍none、診斷mounted=0。檢查後續骨架複製／textarea、virtual、SPA、mutations、composer、lifecycle、首頁／非Scheduled及network，無明顯需改的舊幾何假設；固定操作區與既有gate0.3幾何測試保留。
+
+本輪 `npm test` 8檔通過，細項 **115/115、0敗、0跳過**；verify **30 API bypass／14 icon／9 SVG／37 leak** 全過；e2e語法與diff檢查通過。Chrome因既有沙箱listen限制仍待外部在最新工作樹跑 `npm test` → `npm run verify` → `npm run e2e`，本輪不宣稱e2e／0請求驗收通過。外部失敗途中產生的24張gate0.3圖保留未動，完整圖片／網路證據需重跑。版本0.0.4不變，沒有改讀法、verify守門或權限；尚未READY。

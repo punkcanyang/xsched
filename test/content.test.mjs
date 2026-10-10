@@ -8,7 +8,7 @@ await import('../probe/reader.js');
 await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
-function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null) {
+function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI) {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
   document.documentElement.lang = lang;
   const timers = new Map();
@@ -33,7 +33,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   document.createElement = (...args) => { const el = create(...args); el.getBoundingClientRect = rect; return el; };
   const context = vm.createContext({
     XSCHED_READER: clock ? { ...globalThis.XSCHED_READER, readSnapshot(doc, options) { return globalThis.XSCHED_READER.readSnapshot(doc, { ...options, now: clock() }); } } : globalThis.XSCHED_READER,
-    XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: globalThis.XSCHED_UI,
+    XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: ui,
     document, window, navigator: { language: 'en-US' }, location, innerWidth: 1100, innerHeight: 820,
     chrome: { runtime: { id: 'local-test', getManifest() { if (invalidated) throw new Error('private exception'); return { version: manifest }; } } },
     getComputedStyle() { return { position: 'static' }; },
@@ -69,6 +69,49 @@ test('real content script mounts shadow Dagaz, toggles Scheduled and preserves c
   assert.equal(f.shadow().querySelector('section').style.display, 'none');
   f.click('.shortcut');
   assert.equal(f.shadow().querySelector('section').style.display, 'flex');
+});
+test('polls and rerenders preserve an externally hidden host and report mounted zero until restored', () => {
+  const f = fixture();
+  const host = f.host();
+  assert.equal(host.dataset.xschedMounted, '1');
+  host.style.setProperty('display', 'none', 'important');
+  for (let n = 0; n < 3; n++) {
+    f.poll();
+    assert.equal(host.style.display, 'none');
+    assert.equal(host.dataset.xschedMounted, '0');
+    assert.match(host.dataset.xschedDiag, /\bmounted=0\b/);
+  }
+  f.setManifest('0.0.3'); f.poll(); // Force a full render while the host is hidden.
+  assert.equal(f.host(), host, 'hiding must not create a replacement host');
+  assert.equal(host.style.display, 'none');
+  assert.equal(host.dataset.xschedMounted, '0');
+  assert.match(host.dataset.xschedDiag, /\bmounted=0\b/);
+  host.style.setProperty('display', 'block', 'important'); f.poll();
+  assert.equal(host.dataset.xschedMounted, '1');
+  assert.match(host.dataset.xschedDiag, /\bmounted=1\b/);
+});
+test('no-space hiding reports mounted zero, retries placement and preserves external display and open intent', () => {
+  let room = true;
+  const ui = { ...globalThis.XSCHED_UI, placement(...args) {
+    return room ? globalThis.XSCHED_UI.placement(...args) : { clear: false, right: 16, bottom: 112 };
+  } };
+  const f = fixture(undefined, undefined, undefined, null, ui);
+  for (let n = 0; n < 2; n++) {
+    room = false; f.poll();
+    assert.equal(f.host().style.display, 'block');
+    assert.equal(f.host().style.visibility, 'hidden');
+    assert.equal(f.host().dataset.xschedMounted, '0');
+    assert.match(f.host().dataset.xschedDiag, /\bmounted=0\b/);
+    if (n === 1) f.host().style.setProperty('display', 'none', 'important');
+    room = true; f.poll();
+    assert.equal(f.host().style.visibility, 'visible');
+    assert.equal(f.host().dataset.xschedMounted, n === 1 ? '0' : '1');
+  }
+  assert.equal(f.host().style.display, 'none', 'placement recovery cannot unhide an external display override');
+  f.host().style.setProperty('display', 'block', 'important'); f.poll();
+  assert.equal(f.host().dataset.xschedMounted, '1');
+  assert.equal(f.shadow().querySelector('section').style.display, 'flex');
+  assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'), 'true');
 });
 test('home has only closed shortcut; localized goto navigates fixed target despite dataset tampering', () => {
   const f = fixture('/home', 'zh-Hant');

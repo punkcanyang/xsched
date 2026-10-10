@@ -265,7 +265,7 @@ test("sanitizeLang keeps registered language tags, masks usernames/private-use v
   assert.equal(R.sanitizeLang("es-419"), "es-419");
 });
 
-test("hostMounted is true only for a connected, laid-out host", () => {
+test("hostMounted is true only for a connected, visible, laid-out host", () => {
   assert.equal(R.hostMounted(null), false);
   const document = doc("<html><body></body></html>");
   const el = document.createElement("div");
@@ -274,6 +274,15 @@ test("hostMounted is true only for a connected, laid-out host", () => {
   assert.equal(R.hostMounted(el), false, "zero-size host is not mounted");
   Object.defineProperty(el, "getBoundingClientRect", { value: () => ({ width: 10, height: 5 }), configurable: true });
   assert.equal(R.hostMounted(el), true, "connected + sized host is mounted");
+  el.style.visibility = "hidden";
+  assert.equal(R.hostMounted(el), false, "visibility-hidden host retains geometry but is not mounted");
+  el.style.visibility = "collapse";
+  assert.equal(R.hostMounted(el), false, "visibility-collapse host is not mounted");
+  el.style.visibility = "visible";
+  el.style.display = "none";
+  assert.equal(R.hostMounted(el), false, "display-none host cannot be mounted even with stale geometry");
+  el.style.display = "block";
+  assert.equal(R.hostMounted(el), true, "visible host recovers");
   Object.defineProperty(el, "getBoundingClientRect", { value: () => ({ width: 0, height: 5 }), configurable: true });
   assert.equal(R.hostMounted(el), false, "both dimensions must be nonzero");
 });

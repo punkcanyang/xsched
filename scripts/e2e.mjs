@@ -679,6 +679,8 @@ async function main() {
     }, 'remount: polling recovers after repeated redraws stop', 6000);
     await page.evaluate(() => document.getElementById('xsched-probe-root').style.setProperty('display', 'none', 'important'));
     await until(async () => (await probeState(page)).mounted === '0', 'mounted: hidden host reports zero');
+    assert(await page.evaluate(() => getComputedStyle(document.getElementById('xsched-probe-root')).display === 'none'), 'mounted: placement must preserve the hidden host display');
+    assert(/\bmounted=0\b/.test((await probeState(page)).diag), 'mounted: diagnostic must reflect the hidden host');
     await page.evaluate(() => document.getElementById('xsched-probe-root').style.setProperty('display', 'block', 'important'));
     await until(async () => (await probeState(page)).mounted === '1', 'mounted: visible host reports one');
     await open("en");

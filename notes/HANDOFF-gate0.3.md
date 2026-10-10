@@ -98,3 +98,17 @@ e2e保留舊情境，全部產物改gate0.3前綴，舊gate0／0.1／0.2圖與�
 根因、幾何上限、完整 **5步實測**見GATE0「閘0.3」：pull main → reload probe確認0.0.4 → refresh x.com看內部捲動／縮小／右下元件 → Scheduled逐則對照時間 → 截圖浮層（失敗時含樣本）＋複製診斷貼回。真機資料不提交repo。
 
 繁中格式已確認，0.0.4真Chrome驗收仍待跑；簡中只是指定對應變體。取樣有限區域／候選／祖先深度，極小或區域外純div、closed shadow、全頁遮挡與極小視窗可能不可辨識／無位置；已偵測無空間則縮成快捷鈕或暫藏，400ms重試，使用者狀態不丟。時區／無年份順序推年／可見窗口累加與去重限制照舊。無新增權限／網路API／遠端資源／儲存，$0。
+
+## 外部 e2e remount 失敗續修（2026-10-10）
+
+外部已提交並 push `6e9cecf`；回報 test **113/113**、verify **37 leak** 通過，但 e2e 在原第681行「mounted: hidden host reports zero」逾時。此前情境通過不等於整套通過；後續與最終網路證據尚未執行。
+
+根因：`positionUI()` 每次 poll 在可見性檢查前兩次寫 host 的 `display:block !important`，覆蓋測試設定的 `display:none !important`。`mounted` 仍測 host，沒有改成測快捷鈕。最小修正移除這兩處 display 重寫，避讓無空間改用 host `visibility:hidden`；保留矩形供後續避讓重試，空間恢復可自動顯示。`hostMounted()` 除原有連接／兩維尺寸檢查，再檢查 computed display／visibility（無 computed style 的 DOM 測試使用 inline style），因此外部 display 隱藏與避讓暫藏都回報0。
+
+新增兩個真 content 回歸：外部隱藏經多次 poll／完整重畫仍0、恢復後1；無空間暫藏／恢復保持開啟意圖，且不能撤銷外部 display 隱藏。reader 補 hidden／collapse／display-none 即使有矩形仍不可算 mounted。原 e2e 0→1斷言不動，另加 computed display 仍none、診斷 mounted=0 兩項檢查。
+
+已核對失敗點後的 skeleton／textarea／virtual／SPA／mutations／composer chip／lifecycle／home／non-Scheduled／network，以及前面的 gate0.3 幾何情境。固定操作鈕／body 捲動的選擇器與用法仍一致，沒有發現明顯舊幾何假設需修改；原隱私與網路斷言全保留。
+
+本輪實跑：`npm test`退出0（8檔）；細項 `node --test --test-isolation=none test/` **115過／0敗／0跳過**；`npm run verify`退出0（**30 API bypass／14 icon／9 SVG／37 leak**，9 probe檔／4 Logo SVG）；`node --check scripts/e2e.mjs`與`git diff --check`通過。本轮未重跑受 listen 限制的 Chrome e2e，亦未生成／修改截圖；工作樹已有外部失敗途中產生的24張 gate0.3 圖，完整重跑仍待外部。
+
+修改7檔：`probe/content.js`、`probe/reader.js`、`test/content.test.mjs`、`test/reader.test.mjs`、`scripts/e2e.mjs`、`notes/GATE0.md`、本HANDOFF。版本仍0.0.4，不改讀法／權限／verify。外部請在含此次修正的工作樹依序跑 `npm test`、`npm run verify`、`npm run e2e`，全過後提交／push；本沙箱未提交。尚未 READY。
