@@ -440,8 +440,8 @@ content.js 改 IIFE，避免與 0.0.2 的頂層 const 衝突；新 session 提�
 
 1. 有限互動查詢取最多 **96** 個候選，補左側 Post／既有 FAB 等。右下 **448×640px** 區域以 32px 步距 elementsFromPoint 取樣（最多 **320** 點，每點最多8個元素），可找到非 button 的圓形 div、徽章父層、DM／Grok 等。所有來源合計最多 **256** 個候選，排除自家 host／停放容器。
 2. 每候選最多向上 **12** 層，style cache 全部最多 **768** 節點。只計 fixed／sticky、非 display:none／hidden／collapse／opacity:0、矩形有尺寸且與 viewport 相交者；矩形去重。完整頁面 fixed backdrop 不當成整個右下抽屜，但其互動子元素仍可當障礙。
-3. 用快捷鈕＋上方 panel 的保守聯合矩形，保留 **8px** 間距，先向上再向左；候選加入障礙邊緣與有限步距，每軸至多64個位置。面板上方／左右保留16px空間。預設仍 right16／bottom112／44px Dagaz。
-4. 展開面板放不下時，最多12次缩短可捲內容，仍預留固定操作區。仍無空間只露出可避讓的快捷鈕；連快捷鈕都無安全位置就暫時隱藏自家 UI，避免覆蓋已偵測控制項。手動意圖保留，400ms poll／resize／頁面 mutation／scroll 會重試。
+3. 用快捷鈕＋上方 panel 的保守聯合矩形，保留 **8px** 間距，先向上再向左；候選加入障礙邊緣與有限步距，水平至多64個位置；垂直另含預設／底緣位置，保守上限66個。面板上方／左右保留16px空間。預設仍 right16／bottom112／44px Dagaz。
+4. 展開面板放不下時，最多12個步進縮短候選，另試最小高度候選，仍預留固定操作區。仍無空間只露出可避讓的快捷鈕；連快捷鈕都無安全位置就暫時隱藏自家 UI，避免覆蓋已偵測控制項。手動意圖保留，400ms poll／resize／頁面 mutation／scroll 會重試。
 
 這是有界幾何啟發式，不是對所有 X 布局的保證。新增 mock 是假的 DOM／CSS：收合 DM drawer、純 div＋紅點1的圓形、Grok，以及原桌面 Post／窄版 FAB。e2e 在 **1280×600、1100×820、390／600×820** 驗證 panel／shortcut 矩形不重疊、原生鈕 elementFromPoint 嚴格命中與物理點擊；圓形 div 允許命中其徽章子節點。沒有登入 X。
 
@@ -489,3 +489,41 @@ verify 原網路 API／資源 sink／HTML 注入／權限／固定導覽規則�
 新增2項 content 回歸與reader可見性斷言；e2e原0→1等待不改，另要求computed display仍none、診斷mounted=0。檢查後續骨架複製／textarea、virtual、SPA、mutations、composer、lifecycle、首頁／非Scheduled及network，無明顯需改的舊幾何假設；固定操作區與既有gate0.3幾何測試保留。
 
 本輪 `npm test` 8檔通過，細項 **115/115、0敗、0跳過**；verify **30 API bypass／14 icon／9 SVG／37 leak** 全過；e2e語法與diff檢查通過。Chrome因既有沙箱listen限制仍待外部在最新工作樹跑 `npm test` → `npm run verify` → `npm run e2e`，本輪不宣稱e2e／0請求驗收通過。外部失敗途中產生的24張gate0.3圖保留未動，完整圖片／網路證據需重跑。版本0.0.4不變，沒有改讀法、verify守門或權限；尚未READY。
+
+---
+
+# 閘 0.3 Codex 複審
+
+2026-10-10，接續同一獨立 Codex 複審 session（與寫碼 session `01a1212e` 不同）。已讀 AGENTS／ROADMAP／開工卡／競品／HANDOFF 與本文件閘0.3節，審查 `git diff fdc8096...65052dd` 全部改動，再核對本次工作樹修正。本節為最新審查狀態，前面的未複審／外部待跑紀錄保留為歷史。
+
+## 發現與修正
+
+| 嚴重度 | 檔案 | 發現與修正 |
+|---|---|---|
+| 高：讀法正確性 | `probe/reader.js` | 舊 cell／role／文字備援仍對整列 textContent 解析：時間標籤未知時，tweetText 內的日曆短句可被誤算為安排時間。已重現並修正為只讀 tweetText 外的文字節點；本文內的 role／aria-label 也不得成為 metadata。保留原選擇器、外部時間標籤及本文預覽／去重鍵；骨架已支持的 button 未解析列仍保留則數。timeFail 不再把本文年份當格式漂移。 |
+| 低：文件精確度 | 本文件避讓上限 | 垂直候選在64個有界位置之外另有預設／底緣位置；縮短迴圈外另試一次最小高度。文件已改為相應保守上限，程式仍有限，不改避讓算法。 |
+
+`test/calendar.test.mjs` 新增兩項回歸，覆蓋 cell／listitem／button role／文字備援、本文 role／aria-label、外部午夜標籤與另一個日期形狀的本文。`scripts/verify.mjs` 新增本文不能成為 metadata 的攻擊，自測37→38，原所有 API／注入／權限與洩漏斷言保留。`scripts/e2e.mjs` 新增真 content script 的同類 cell 情境：只保留第二則有正確外部時間的列，第一則本文日期不能變成時間或診斷。
+
+## 逐項核對
+
+- **時間**：繁簡週／周／星期及空白變體、48組上午／下午1–12點、午夜／中午、星期不符以日期為準、原五語與跨年全部通過。確認格式來自使用者真機回報；本 session 沒有登入 X 或重讀真頁。三份 real HTML 均與原骨架離線轉換結果逐字相同，隱私掃描通過；日期與本文為假，簡中明列對應變體，無年份／第二列明列合成情境。
+- **舊讀法比較**：10個舊 fixture×6路徑共60組，與 `fdc8096` 的則數、各列時間／preview／key、層級及其他計數無差異；只有刻意把 home fixture 放在 Scheduled 路徑的案例，移除本文年份的兩個假 timeFail，empty 因而0→1。沒有把這項安全修正宣稱為完整 JSON 零差異。
+- **浮層**：panel≤60vh，header／actions不縮小，body min-height:0＋overflow:auto；縮小與快捷鈕共用手動狀態，SPA／重掛保留。檢視已提交的短視窗捲動與未解析樣本假資料截圖，固定操作鈕可見；Chrome hit-test／物理點擊仍以外部實跑為證。沒有修改 X DOM、click 或自動捲動。
+- **避讓／mounted**：候選256、style768、點320、祖先12層及有限位置／縮短候選均有界；observer不監看shadow內部，host自身變動排除，重掛限速仍保留。無空間時暫藏自家 UI並重試；65052dd 的修正不覆寫外部 display:none，mounted 檢查 host連線、尺寸與display／visibility，相關真 content 回歸已過。避讓仍是有限區域幾何啟發式，不保證辨識所有真頁控制項或堆疊遮擋。
+- **隱私／硬規則**：遮罩樣本只取認證隔離時間節點，不取 item.time／本文備援；URL／email／handle／UUID先整段遮罩，未知格式拒絕任意本文數字。lang／doclang、骨架enum／class／iframe及診斷的舊攻擊保留。指定舊身份字串工作樹0命中（掃描含隱藏檔、排除node_modules／.git歷史）；常見token／私鑰格式掃描亦0命中。manifest僅升版，無新權限／host／資源公開；verify原靜態規則未放寬。$0、無新網路API／資源載入／儲存，未連真 X。
+
+## 實跑結果與外部交付
+
+- `npm test`退出0：8個測試檔全過；同程序細項 **117/117，0敗、0跳過**。
+- `npm run verify`退出0：**9 probe檔／4 Logo SVG；30 API bypass／14 icon／9 SVG／38 leak自測**。故意洩漏骨架／遮罩／語系／iframe的變體仍會失敗；CLI違規探針仍退出1。
+- `node --check scripts/e2e.mjs`、`git diff --check`通過。
+- **外部回報，非本 session 實跑**：`65052dd` 的 test115／verify37／e2e453斷言已通過；這是複審修正前的結果。最新 reader／新增Chrome情境尚未外部驗證，不能沿用453宣稱本次通過。本沙箱listen被擋、.git唯讀，本次沒有提交／push／merge／改main／生成新截圖。
+
+本次修改5檔：`probe/reader.js`、`test/calendar.test.mjs`、`scripts/verify.mjs`、`scripts/e2e.mjs`、`notes/GATE0.md`。外部請在最新工作樹重跑 `npm test`、`npm run verify`、`npm run e2e` 全過，再提交／合併；保留全部原情境與擴充0資源／背景請求斷言，仍僅接受一次可信使用者點擊的固定Scheduled頂層導覽。截图全部由本機假fixture生成，旧gate0／0.1／0.2不覆寫。
+
+## 結論與老闆實測
+
+**VERDICT: APPROVE（程式複審；合併前須外部最新三項測試全過）。** 阻擋問題已修且有回歸證據，未發現其他阻擋；不代表閘0真機驗收已完成。繁中格式已確認，0.0.4的逐則時間／布局仍待老闆自己的Chrome實测；簡中只確認對應假資料。
+
+老闆步驟保留 **≤5步**：pull main → reload確認0.0.4 → refresh X確認捲動／縮小／避讓 → Scheduled逐則對照日期＋時分 → 回傳浮層與失敗樣本截图及診斷。真機資料不提交公開repo。剩餘限制為有限幾何取樣、closed shadow／極小視窗、本地時區及無年份順序假設、DOM可見窗口累加與同時間同本文去重，不能把探針數字當即時權威總數。

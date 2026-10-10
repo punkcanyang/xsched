@@ -112,3 +112,11 @@ e2e保留舊情境，全部產物改gate0.3前綴，舊gate0／0.1／0.2圖與�
 本輪實跑：`npm test`退出0（8檔）；細項 `node --test --test-isolation=none test/` **115過／0敗／0跳過**；`npm run verify`退出0（**30 API bypass／14 icon／9 SVG／37 leak**，9 probe檔／4 Logo SVG）；`node --check scripts/e2e.mjs`與`git diff --check`通過。本轮未重跑受 listen 限制的 Chrome e2e，亦未生成／修改截圖；工作樹已有外部失敗途中產生的24張 gate0.3 圖，完整重跑仍待外部。
 
 修改7檔：`probe/content.js`、`probe/reader.js`、`test/content.test.mjs`、`test/reader.test.mjs`、`scripts/e2e.mjs`、`notes/GATE0.md`、本HANDOFF。版本仍0.0.4，不改讀法／權限／verify。外部請在含此次修正的工作樹依序跑 `npm test`、`npm run verify`、`npm run e2e`，全過後提交／push；本沙箱未提交。尚未 READY。
+
+## 外部狀態（产品开发，2026-10-10 09:02 UTC+8）— 卡在 Codex 額度
+
+- 寫碼 `01a1212e` 兩輪完成（`6e9cecf`、`65052dd`）：在 `65052dd` 外部實跑 npm test 115/115、verify OK（37）、e2e OK 453；截圖 `docs/gate0.3-*.png`，複本 `/workspace/xsched-shots/gate0.3/`。
+- PR：https://github.com/punkcanyang/xsched/pull/8
+- 複審 `01a12013` 第一輪：**VERDICT: APPROVE**，並修了「舊 cell 備援可能把 tweetText 內日期當排程時間」（高）。這批修正 commit 為本 commit 的前一個 WIP。修正後 npm test 117/117、verify OK（38），但 **e2e FAILED**：複審新增的情境 `legacy body schedule phrase cannot become a second row`（scripts/e2e.mjs:531–543）。實際狀態 count=2、times 仍含改寫前的 09:00、timeFail=1 但 samples=none；疑為同 scope 累加快取保留舊列（測試寫法），或 timeFail／samples 不一致（reader bug），未定。
+- 複審第二輪撞 Codex 額度：「try again at Oct 14th, 2026 12:50 PM」。**未合併**，main 仍 `fdc8096`（0.0.3）。依指示不掛等待腳本。
+- 接回：額度恢復後 `codex exec resume 01a12013-6780-77c1-9466-bb1e9f78097f "$(cat /tmp/g03-review2.txt)" </dev/null`（提示內容也在本節上方描述），修好 e2e 並給 VERDICT 後外部重跑三測試、`merge --no-ff`。

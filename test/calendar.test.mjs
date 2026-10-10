@@ -50,6 +50,28 @@ test('weekday grammar never exports calendar-shaped identities or tweet text', (
     assert.ok(!S.buildSkeleton(doc,{pathname:scheduled}).includes('calendar='));
   }
 });
+test('legacy cell, role and text fallbacks cannot parse a weekday date from tweetText', () => {
+  for (const attr of ['data-testid="cellInnerDiv"', 'role="listitem"', 'role="button"', '']) {
+    for (const bodyAttrs of ['', 'role="listitem" aria-label="將於 2026年11月3日 週二 下午11:19 發送"']) {
+      const {document} = parseHTML(`<html><body><section role="dialog"><div ${attr}><span>未知格式</span><div data-testid="tweetText" ${bodyAttrs}>將於 2026年11月3日 週二 下午11:19 發送</div></div></section></body></html>`);
+      const report = snap(document);
+      assert.equal(report.items.length, 0, attr);
+      assert.equal(report.timeOk, 0, attr);
+      assert.equal(report.fmt, '', attr);
+      assert.deepEqual(report.samples, [], attr);
+    }
+  }
+});
+test('legacy separate time label still reads correctly when the post contains another schedule', () => {
+  for (const attr of ['data-testid="cellInnerDiv"', 'role="listitem"', 'role="button"', '']) {
+    const {document} = parseHTML(`<html><body><section role="dialog"><div ${attr}><span>將於 2026年11月3日 週二 上午12:19 發送</span><div data-testid="tweetText">將於 2026年12月1日 週二 下午11:19 發送</div></div></section></body></html>`);
+    const report = snap(document);
+    assert.equal(report.items.length, 1, attr);
+    assert.equal(R.formatTime(report.items[0].at), '2026-11-03 00:19 (Tue)', attr);
+    assert.ok(report.items[0].key.endsWith('\u0000將於 2026年12月1日 週二 下午11:19 發送'), attr);
+    assert.equal(report.timeFail, 0, attr);
+  }
+});
 const labels = [
   ['en','Jan 1 at 12:05 AM', 0,5], ['en','Jan 1 at 12:05 PM',12,5], ['en','1 Jan at 23:59',23,59],
   ['zh-Hant','1月1日 上午12:05',0,5], ['zh-Hant','1月1日 下午12:05',12,5], ['zh-Hant','1月1日 23:59',23,59],

@@ -463,7 +463,22 @@ function readable(el, scope) {
   return true;
 }
 
+// Legacy aggregate rows may contain a post that itself looks like a schedule.
+// Read their label text without ever treating tweetText as time metadata. This
+// walks text nodes only; it neither clones nor changes the page DOM.
+function scheduleText(el) {
+  if (el.closest(READ_CONFIG.selectors.tweet)) return "";
+  if (!el.querySelector(READ_CONFIG.selectors.tweet)) return el.textContent;
+  const walker = el.ownerDocument.createTreeWalker(el, 4); // SHOW_TEXT
+  const parts = [];
+  for (let node; (node = walker.nextNode());) {
+    if (!node.parentElement?.closest(READ_CONFIG.selectors.tweet)) parts.push(node.nodeValue);
+  }
+  return parts.join("");
+}
+
 function parseElement(el, allowLoose, options = {}) {
+  if (el.closest(READ_CONFIG.selectors.tweet)) return null;
   // Boss skeleton L108–124: real HTML button, dedicated date span, separate body.
   // Count the structurally proven row even if its time grammar is unknown.
   if (el.matches(READ_CONFIG.selectors.structuralRow) && el.closest(READ_CONFIG.selectors.dialog) && el.querySelector(READ_CONFIG.selectors.tweet)) {
@@ -475,10 +490,10 @@ function parseElement(el, allowLoose, options = {}) {
     const body = normalize(el.querySelector(READ_CONFIG.selectors.tweet).textContent);
     return { ...toItem(parsed ? { ...parsed, body } : { time: raw, body, lang: "x", tier: "loose", at: null, unparsed: true }), sample: label ? timeSample(raw) : "" };
   }
-  const named = el.querySelector && el.querySelector(READ_CONFIG.selectors.namedRow);
+  const named = [...el.querySelectorAll(READ_CONFIG.selectors.namedRow)].find(node => !node.closest(READ_CONFIG.selectors.tweet));
   const aria = (el.getAttribute && el.getAttribute("aria-label")) || (named && named.getAttribute("aria-label")) || "";
   const fromAria = aria ? parseSchedule(aria, { ...options, allowLoose }) : null;
-  const fromText = parseSchedule(el.textContent, { ...options, allowLoose });
+  const fromText = parseSchedule(scheduleText(el), { ...options, allowLoose });
   let parsed = fromAria || fromText;
   if (!parsed) return null;
   {
@@ -498,15 +513,16 @@ function parseElement(el, allowLoose, options = {}) {
 }
 
 function textFallback(scope) {
-  const all = [...scope.querySelectorAll(READ_CONFIG.selectors.all)].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER) && parseSchedule(el.textContent, { allowLoose: false }));
+  const all = [...scope.querySelectorAll(READ_CONFIG.selectors.all)].filter((el) => readable(el, scope) && !el.querySelector(COMPOSER) && parseSchedule(scheduleText(el), { allowLoose: false }));
   const leaves = deepest(all);
   const items = [];
   for (const el of leaves) {
-    let hit = parseSchedule(el.textContent, { allowLoose: true });
+    let hit = parseSchedule(scheduleText(el), { allowLoose: true });
     const parent = el.parentElement;
     if (hit && !hit.body && parent && scope.contains(parent) && parent !== scope && readable(parent, scope) && !parent.querySelector(COMPOSER)) {
-      const parentHit = parseSchedule(parent.textContent, { allowLoose: true });
-      if (parentHit && parentHit.body) hit = parentHit;
+      const parentHit = parseSchedule(scheduleText(parent), { allowLoose: true });
+      const body = normalize(parent.querySelector(READ_CONFIG.selectors.tweet)?.textContent);
+      if (parentHit && (body || parentHit.body)) hit = { ...parentHit, body: body || parentHit.body };
     }
     if (hit && hit.body) items.push(toItem(hit));
   }
@@ -672,7 +688,7 @@ function readSnapshot(doc, { pathname = "", now = new Date() } = {}) {
   const pool = outermost([...cells, ...listitems, ...links, ...buttons]);
   let timeFail = 0;
   for (const el of pool) {
-    const text = normalize(`${(el.getAttribute && el.getAttribute("aria-label")) || ""} ${el.textContent || ""}`);
+    const text = normalize(`${(el.getAttribute && el.getAttribute("aria-label")) || ""} ${scheduleText(el) || ""}`);
     if (!READ_CONFIG.time.year.test(text)) continue;
     if (!parseSchedule(text, { allowLoose: true })) timeFail += 1;
   }

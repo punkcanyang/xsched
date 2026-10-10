@@ -483,7 +483,10 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   if (weekdayReport.timeFail !== 1 || weekdayReport.fmt !== weekdayLabel || weekdayReport.samples[0] !== weekdayLabel) throw new Error('self-test: weekday sample not safely preserved');
   const weekdayOutputs = [reader.buildDiagnostic(weekdayReport), decodeURIComponent(mapper.buildSkeleton(calendarPage, { pathname:'/compose/post/unsent/scheduled' }))];
   for (const output of weekdayOutputs) for (const leak of ['private','987654321','decoy_handle','decoy@example.invalid']) if (output.includes(leak)) throw new Error('self-test: weekday output leaked '+leak);
-  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 4, fragments: maskedCount };
+  const bodyTimePage = new DOMParser().parseFromString('<html><body><section role="dialog"><div data-testid="cellInnerDiv"><span>未知格式</span><div data-testid="tweetText">將於 2026年11月3日 週二 下午11:19 發送</div></div></section></body></html>', 'text/html');
+  const bodyTimeReport = reader.readSnapshot(bodyTimePage, { pathname:'/compose/post/unsent/scheduled' });
+  if (bodyTimeReport.items.length || bodyTimeReport.timeOk || bodyTimeReport.fmt || bodyTimeReport.samples.length) throw new Error('self-test: tweet body became schedule metadata');
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 5, fragments: maskedCount };
 }
 
 function selfTest() {

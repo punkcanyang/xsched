@@ -528,6 +528,29 @@ async function main() {
     assert(hans.diag.endsWith('fmt=将于 2026年11月3日 周二 下午11:19 发送'), 'Simplified Chinese masked fmt preserves only calendar label');
     await page.screenshot({ path: join(DOCS,'gate0.3-real-skeleton-zh-Hans.png') });
 
+    // A legacy cell's post body cannot rescue its unrecognized time metadata.
+    // Prepare a fresh scope before inserting it: virtual accumulation must not
+    // retain the initial fixture rows. Update both visible and accessible time
+    // labels so an unchanged aria-label cannot legitimately preserve 09:00.
+    await open('en');
+    await page.evaluate(() => {
+      const scope = document.querySelector('[role="dialog"]');
+      const replacement = scope.cloneNode(true);
+      const cell = replacement.querySelector('[data-testid="cellInnerDiv"]');
+      const unknownTime = 'Will send on 2027-01-01 23:59 UTC';
+      cell.querySelector('.when').textContent = unknownTime;
+      cell.querySelector('[role="button"]').setAttribute('aria-label', unknownTime);
+      cell.querySelector('[data-testid="tweetText"]').textContent = '將於 2026年11月3日 週二 下午11:19 發送';
+      scope.replaceWith(replacement);
+    });
+    const bodyTime = await until(async () => {
+      const state = await probeState(page);
+      return state.count === 1 ? state : null;
+    }, 'legacy body schedule phrase cannot become a second row');
+    assert(bodyTime.times.length === 1 && bodyTime.times[0] === '2026-11-09 20:05 (Mon)', 'legacy fallback reads only the separate recognized time label');
+    assert(/\btimeFail=1\b/.test(bodyTime.diag) && /\bsamples=none\nfmt=none$/.test(bodyTime.diag), 'legacy unknown metadata counts as a failure without exporting an uncertified sample');
+    assert(!bodyTime.diag.includes('11月3日'), 'legacy body time never enters diagnostic');
+
     await open('cross-year');
     await until(async () => (await probeState(page)).count === 2, 'cross-year structural rows');
     const yearContext = await findExtensionContext();
