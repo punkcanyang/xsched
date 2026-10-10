@@ -921,12 +921,12 @@ verify原API／注入／storage／激活與防送出規則全保留；只更新�
 - `docs/v1.0-quickfix-year-missing.png`
 - `docs/v1.0-quickfix-rollback.png`
 
-截圖由外部產生，全部使用 2027 年以後的假資料。舊情境另存 quickfix 前綴，既有 gate0 與 v1.0-quick 截圖不覆寫。這輪沒有 commit／push；仍待完整 e2e、另一 session 複審及老闆真頁逐欄驗收，**尚未 READY**。總覽沒有帶入此分支。
+上述四張快速時段截圖由外部產生，使用 2027 年以後的假資料。舊列表情境另存 quickfix 前綴，沿用既有合成日期（包含 2026 年），不是老闆真機資料；既有 gate0 與 v1.0-quick 截圖不覆寫。完整 e2e 已由外部實跑通過；複審結果見下節，老闆真頁逐欄驗收仍待完成。總覽沒有帶入此分支。
 
 ## 老闆實測（≤5步）
 
-1. `git pull main`。
-2. 在`chrome://extensions`重新載入probe/，確認0.1.1。
+1. 更新 repo 至本版 commit；PR 合併後，可在 main 執行 `git pull --ff-only origin main`。
+2. 在`chrome://extensions`重新載入probe/，確認0.1.1；回到 x.com 重新整理頁面。
 3. 在x.com發文框自己打開原生排程對話框，再點Dagaz浮層的一個快速時段。
 4. 逐欄核對月／日／年／時／分／上午下午與原生畫面一致，**不要按排程**；若必須送出測試，先手動選2027以後的年份，測完到Scheduled刪掉。
 5. 按「複製頁面結構」和「複製診斷」貼回；若出錯附畫面，真機資料不提交公開repo。
@@ -936,3 +936,17 @@ verify原API／注入／storage／激活與防送出規則全保留；只更新�
 需要0.1.1新版骨架及診斷，搭配逐欄實測確認偵測／React接受結果；原骨架已足夠證明結構，但**option真value、label實際詞與React受控行為尚未驗證**。空testid下一次仍為空；若出現非空且屬安全UI詞彙，新出口才可見，其他字串仍遮罩。option仍只輸出長度，不能靠新版骨架確認全部值編碼；若仍失敗，再請回報不含推文或真日期的label詞／下拉編碼類型（例如月份0基或1基、上下午顯示文字），不需帳號或真id。
 
 日曆input未直接同步，原生事件是否更新X內部狀態不能由合成fixture證明；若React重建欄位，原節點可能無法完整還原，錯誤會要求自行檢查。多個設定dialog、重複label id／多重aria-labelledby、未知上下午詞／選項順序、無法安全映射的值一律拒絕。原本X可接受提前量／上限、DST與本地時區、自訂／星期／佔用避讓未做的限制沿用0.1.0。本版仍不開X排程視窗、不確認／排程／發佈、不背景發文。
+
+## 1.0 快速時段 0.1.1 Codex 複審
+
+獨立 Codex session 審 PR #13，與寫碼 session `01a1212e` 不同。範圍為 `293589f...f3513d4` 全部差異，另親讀本機遮罩 picker 骨架並核對上表行號；原檔沒有轉存或提交。50 張新增 PNG 已逐張檢視，皆為 fixture 範例，未發現真機內容或文字型 metadata。
+
+沒有發現需改 production 的阻擋問題。唯一 writer 只對原生 select 設值與派送 input/change，事件後讀回整組，失敗時還原原節點；節點回收或還原遭拒會回報不完整。補強既有單元測試：change handler 以新 select 取代原節點，新節點保留頁面設定的值、收到 0 個事件，其餘原欄位全部還原，結果不得當成功。防 click／submit／滑鼠鍵盤事件規則與原 33 項 writer 攻擊仍在，新增六項及真 CLI 違規退出測試通過；摘要豁免仍只有 quick.js 的 dispatchEvent 一條。
+
+select／label 的 testid 出口只接受固定日曆 UI 詞彙，身份、URL、email、數字 ID、UUID、未知字串與 option 內容仍遮罩。manifest 除版本外與基準完全相同。已比對 network-policy.mjs 與 e2e 最後網路檢查區塊，兩者與基準逐字相同：沒有 data: 豁免，0 擴充資源／背景請求斷言保留。三份新 fixture 的日期均為 2027+ 合成資料，新增文字未發現密鑰或已禁用身份字串。
+
+本輪修正兩項文件問題：快速時段的四張截圖為 2027+，舊列表截圖沿用合成 2026 日期，不能混稱；外部完整 e2e 已通過，不再列為待跑。README／HANDOFF／本節實測步驟也修正 `git pull main` 的錯誤命令，補上重新整理 x.com，仍為五步。production、verify、fixture、e2e 均未修改。
+
+本輪實跑 `npm test` 通過 11 個測試檔；目前 Node 26 的預設報告以檔案彙總，另以 `node --test --test-isolation=none --test-reporter=tap test/*.test.mjs` 核對 **169 過／0 敗／0 跳過**。`npm run verify` 通過 **30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer 自測**。沙箱未跑 e2e；外部在 `f3513d4` 的結果為 **686 斷言、78 筆本機請求、0 擴充資源／背景請求**，本輪沒有改動其執行程式或頁面。未 commit／push／merge，也未碰 author 或 overview 工作。
+
+結論 **APPROVE**，適用於這個保守填欄位測試版。option 真編碼、React 接受事件與日期 input 同步仍待老闆逐欄驗證，不能宣稱真頁填值已驗收；靜態文字掃描也不是任意 JavaScript 的完整安全證明。外部提交本輪文件／測試補強後，依 repo 流程在最新提交跑三項測試，e2e 仍須在沙箱外執行。

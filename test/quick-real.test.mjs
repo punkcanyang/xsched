@@ -76,6 +76,17 @@ test('restoration refusal or replaced controls reports incomplete restoration, n
  assert.equal(Q.fillSlotResult(f.document,'evening',now),'rollbackFailed');assert.equal(f.counts.click+f.counts.submit,0);
  const g=fixture();g.field('hour').addEventListener('change',()=>g.field('hour').remove());
  assert.equal(Q.fillSlotResult(g.document,'evening',now),'rollbackFailed');assert.equal(g.counts.click+g.counts.submit,0);
+ const h=fixture(),before=h.values(),oldHour=h.field('hour');let replacement,replacementEvents=0;
+ oldHour.addEventListener('change',()=>{
+  replacement=oldHour.cloneNode(true);replacement.value='1';
+  for(const type of ['input','change'])replacement.addEventListener(type,()=>replacementEvents++);
+  oldHour.replaceWith(replacement);
+ });
+ assert.equal(Q.fillSlotResult(h.document,'evening',now),'rollbackFailed');
+ assert.equal(h.field('hour'),replacement);assert.equal(replacement.value,'1','replacement remains at the page-chosen value');
+ assert.equal(replacementEvents,0,'no guessed restoration writes or events on a replacement node');
+ for(const key of ['month','day','year','minute','period'])assert.equal(h.field(key).value,before[key],'all surviving original controls restored: '+key);
+ assert.equal(h.counts.click+h.counts.submit,0);
 });
 test('calendar bounds are checked but calendar input/button and min/max are never modified',()=>{
  for(const attrs of [{max:'2027-12-31'},{min:'2028-02-01'},{max:'unknown'},{min:'2028-02-30'}]) {

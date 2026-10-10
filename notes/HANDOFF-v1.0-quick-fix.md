@@ -47,10 +47,10 @@ option 的真 value 格式、label 詞與 React 是否接受原生事件仍待�
 
 ## 老闆實測（≤5 步）
 
-1. `git pull main`。
-2. 在 `chrome://extensions` 重新載入 `probe/`，確認版本 0.1.1。
+1. 更新 repo 至本版 commit；PR 合併後，可在 main 執行 `git pull --ff-only origin main`。
+2. 在 `chrome://extensions` 重新載入 `probe/`，確認版本 0.1.1；回到 x.com 重新整理頁面。
 3. 在 x.com 發文框自己打開原生排程對話框，再點 Dagaz 浮層的一個快速時段。
 4. 逐欄確認月／日／年／時／分／上午下午，**不要按排程**；若必須送出測試，先手動選 2027 年以後，測完到 Scheduled 刪掉。
 5. 按「複製頁面結構」和「複製診斷」貼回；錯誤可附畫面，真機內容不提交 repo。
 
-寫碼 session `01a1212e`；另個複審 session `01a12013` 待完成本版複審。完整 e2e、複審與老闆逐欄驗收完成前，狀態維持待驗證。
+寫碼 session `01a1212e`；獨立 Codex 複審結果見 GATE0「1.0 快速時段 0.1.1 Codex 複審」。完整 e2e 已由外部實跑通過；option 編碼與 React 接受結果仍待老闆逐欄驗收。

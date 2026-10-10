@@ -47,7 +47,7 @@
 
 尚未上架 Chrome Web Store。初次使用先下載 repo，在 `chrome://extensions` 開啟開發人員模式，以「載入未封裝項目」選擇 `probe/`；已有 clone 的更新流程如下：
 
-1. `git pull main`。
+1. 更新 repo 至本版 commit；PR 合併後，可在 main 執行 `git pull --ff-only origin main`。
 2. 在 `chrome://extensions` 重新載入 `probe/`，確認 0.1.1；回到 x.com 重新整理頁面。
 3. 自己打開 X 原生排程對話框，點 Dagaz 浮層的一個快速時段。
 4. 逐欄核對月／日／年／時／分／上午下午，**不要按排程**。若必須送出測試，先手動選 2027 年以後，測完到 Scheduled 刪掉。
