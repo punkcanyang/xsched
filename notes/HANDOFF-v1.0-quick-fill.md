@@ -23,6 +23,8 @@
 
 ## 本輪實跑
 
+接續核對：工作樹仍是 `v1.0/quick-fill`／`f1852a7`，上一輪實作完整保留。本次依更新後的 AGENTS.md 重跑以下三個本機命令，結果相同；兩個 `/tmp` 假頁重現也再次通過。沒有新增 production 改動，Chrome e2e／截圖仍待外部，不沿用歷史 e2e 結果。
+
 - `npm test`：**12 個測試檔通過**。
 - `node --test --test-isolation=none --test-reporter=tap test/*.test.mjs`：**196 過／0 敗／0 跳過**（含子測試）。
 - `npm run verify`：**OK**；30 API／14 icon／9 SVG／66 leak／21 storage／46 native writer／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測。原攻擊均保留，新增 11 個洩漏與 7 個 writer 邊界攻擊。
