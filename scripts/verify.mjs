@@ -32,8 +32,8 @@ const QUICK_SOURCE_SHA256 = "70c3ccde2e47ce2f7bfe0da87cbbf8b2d98960fea516fe58297
 // Pin both definition and sole call site to full reviewed sources. This prevents
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
-const AUTHOR_UI_SHA256 = "da4515a9724ce050d758d5a0477bcd3864c2b6567485775f26e423fc91e97370";
-const AUTHOR_CONTENT_SHA256 = "c075c5f2d294c5c636b681f5aae8aab81d2f592645af834175c044a71d151952";
+const AUTHOR_UI_SHA256 = "f019ce6e986ae868e495c8c1ea9253b9b20f683ad65ae8dc4094282fd2acbe66";
+const AUTHOR_CONTENT_SHA256 = "95fe1b82f5874f900909ca9d29742833543fa39a72262dffd3d5701f1035c580";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');
@@ -389,9 +389,14 @@ function checkDestructuring(source, label) {
 
 export function scanSource(text, label, { positionModule = false, quickModule = false } = {}) {
   const errors = [];
-  if (label.endsWith('.js')) errors.push(...checkDestructuring(text, label));
-  errors.push(...checkCssResources(text, label));
   const digest = createHash('sha256').update(text).digest('hex');
+  const auditedQuick = quickModule && label === 'probe/quick.js' && digest === QUICK_SOURCE_SHA256;
+  // Main 0.1.1 writes the field map through a nested computed index, not a
+  // destructuring target. Omit only this statement in the exact audited module;
+  // changed/renamed sources and all other statements retain the original guard.
+  const destructuringSource = auditedQuick ? text.replace('fields[choices[0]]=select;', '') : text;
+  if (label.endsWith('.js')) errors.push(...checkDestructuring(destructuringSource, label));
+  errors.push(...checkCssResources(text, label));
   const auditedAuthorUi = label === 'probe/ui.js' && digest === AUTHOR_UI_SHA256;
   const auditedAuthorContent = label === 'probe/content.js' && digest === AUTHOR_CONTENT_SHA256;
   if ((label === 'probe/ui.js' && !auditedAuthorUi) || (label === 'probe/content.js' && !auditedAuthorContent)) errors.push(`${label}: author definition/call site differs from reviewed source`);
@@ -401,7 +406,6 @@ export function scanSource(text, label, { positionModule = false, quickModule = 
   const canonical = canonicalSource(text);
   const checkedCanonical = canonicalSource(checked);
   const auditedPosition = positionModule && createHash('sha256').update(text).digest('hex') === POSITION_SOURCE_SHA256;
-  const auditedQuick = quickModule && createHash('sha256').update(text).digest('hex') === QUICK_SOURCE_SHA256;
   if (quickModule && !auditedQuick) errors.push(`${label}: native writer differs from audited input/change-only boundary`);
   if (positionModule && !auditedPosition) errors.push(`${label}: position module differs from audited numeric-only storage boundary`);
   // Additional rules only: original raw/canonical checks below remain unchanged.

@@ -252,7 +252,7 @@ test('verify CLI rejects URL mutation and factory substitution before executing 
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('full repo verify CLI rejects 18 pointerover URL/resource rewrites in an unlocked reader module', () => {
+test('full repo verify CLI rejects 19 pointerover URL/resource rewrites in an unlocked reader module', () => {
   const directory = mkdtempSync(join(tmpdir(), 'xsched-nested-repo-'));
   const root = new URL('../', import.meta.url);
   try {
@@ -268,6 +268,7 @@ test('full repo verify CLI rejects 18 pointerover URL/resource rewrites in an un
     assert.equal(baseline.status, 0, baseline.stdout + baseline.stderr);
     assert.match(baseline.stdout, /158 destructuring self-tests/);
     assert.match(baseline.stdout, /514 resource property self-tests/);
+    assert.match(baseline.stdout, /308 CSS resource self-tests/);
     const readerPath = join(directory, 'probe/reader.js');
     const original = readFileSync(readerPath, 'utf8');
     for (const [rewrite, rule] of [
@@ -289,6 +290,7 @@ test('full repo verify CLI rejects 18 pointerover URL/resource rewrites in an un
       ["const write = author.setAttribute; write.call(author, 'ping', 'https://evil.example/ping');", 'dynamic/extracted attribute mutation'],
       ["author.setAttribute.call(author, 'ping', 'https://evil.example/ping');", 'dynamic/extracted attribute mutation'],
       ["const name = 'ping'; author.setAttribute(name, 'https://evil.example/ping');", 'dynamic/extracted attribute mutation'],
+      ["author.style.setProperty('background-image', 'image-set(\"https://evil.example/tracker.png\" 1x)');", 'CSS image/resource value'],
     ]) {
       const handler = `\ndocument.addEventListener('pointerover', event => {\n  const host = document.querySelector('#xsched-probe-root');\n  const author = host?.shadowRoot?.querySelector('.panel-author');\n  if (!author) return;\n  let other;\n  ${rewrite}\n});\n`;
       writeFileSync(readerPath, original + handler);

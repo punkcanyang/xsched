@@ -1,6 +1,6 @@
 # HANDOFF：xsched 作者連結
 
-2026-10-10。分支 `docs/author-link`，基準 main `293589f`（PR #11 快速選時段），本輪起點 HEAD `eb945f7`／PR #12，probe 0.1.0。寫碼：同一個 Codex session 續作；另一個 Codex session 複審 REQUEST_CHANGES，本輪修正 P1 ping及資源IDL property寫入繞過。最新外部 e2e 與複審通過前不宣稱 READY。
+2026-10-10。分支 `docs/author-link`，最新合併基準 main `363b3ad`（快速時段0.1.1；原作者連結基準293589f），本輪起點 HEAD `1030e47`／PR #12，probe 0.1.1。寫碼：同一個Codex session 01a124fc續作；本輪依老闆「收斂」要求完成review-5的CSS圖片函式CLI案例及merge誤殺修復，保留既有CSS守門／308項自測，不再擴大靜態分析。最新外部e2e與複審通過前不宣稱READY。
 
 ## 做了什麼
 
@@ -21,18 +21,18 @@ scanner標籤必須精確為根目錄 `probe/ui.js`，且**整檔**SHA-256必須
 
 ## 版本與權限
 
-維持main的0.1.0：這是作者標示的小變更，沒有新增資料格式、權限或流程上的升版需求；現有版本一致性測試通過，manifest／版本常數不變；本輪package.json／lockfile僅明確加入既有esprima開發相依，版本欄位不變。manifest 完全未改、沒有新增網路 API 或遠端資源、花費$0。普通 anchor 僅由使用者點擊開啟作者頁，不會主動請求。
+維持合併後main的0.1.1，本輪不另升版。所有probe／manifest／版本常數及package.json／lockfile都未修改；沒有新增資料格式、權限、網路API或production遠端資源，花費$0。esprima是前輪已明確加入的開發相依，本輪不增加相依。普通anchor僅由使用者點擊開啟作者頁，不會主動請求。
 
 ## 本 session 驗證
 
 | 命令 | 結果 |
 |---|---|
-| `npm test` | 退出0，10檔通過／0敗／0跳過 |
-| `node --test --test-isolation=none test/`（細項計數） | 退出0，165過／0敗／0跳過 |
-| `npm run verify` | 退出0，11 probe檔／4 Logo SVG；30 API／14 icon／9 SVG／41 leak／21 storage／33 native writer／22 author-link／160 URL mutation／28 author boundary／158 destructuring／514 resource property自測全過 |
+| `npm test` | 退出0，11檔通過／0敗／0跳過 |
+| `node --test --test-isolation=none test/`（細項計數） | 退出0，178過／0敗／0跳過 |
+| `npm run verify` | 退出0，11 probe檔／4 Logo SVG；30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer／22 author-link／160 URL mutation／28 author boundary／158 destructuring／514 resource property／308 CSS resource自測全過 |
 | `npm run e2e` | 依指示未執行：sandbox不能listen，留給外部跑；本輪無Chrome結果及新截圖 |
 
-最新完整來源的標準npm test與細項計數全過；前輪164項保留，本輪新增資源屬性矩陣，完整repo CLI測試增加15個攻擊變體，共165項。
+merge後178個單元測試完整保留。本輪只在現有完整repo CLI清單增加1個image-set攻擊變體（18→19），未新增其他攻擊類別；現有308项CSS自測及main的55 leak／39 native writer全部保留。
 
 ## 修改檔案
 
@@ -113,3 +113,19 @@ Chrome真實排版、拖動、避讓、固定操作區仍需完整外部e2e確�
 另外自行補查144個變體（12個IDL×12種括號接收者、條件接收者、註解、模板literal key／插值、for-await、深層for-of、陣列default／rest、Unicode反射名與方法別名），全部拒絕。此次檢查範圍內未找到仍能重現的資源IDL寫入繞過；守門是有限靜態檢查，並非任意混淆JavaScript安全的證明。
 
 本輪只改4檔：scripts/verify.mjs、test/review.test.mjs、AGENTS.md、本HANDOFF。版本仍0.1.0，所有probe來源（包括quick.js／position.js／manifest）及SHA-256、package／lockfile、README、e2e腳本均未改。npm test 10檔全過；細項165過／0敗／0跳過；verify掃11 probe／4 Logo SVG全過，新增514資源自測及15完整CLI攻擊。e2e依指示交外部重跑，HEAD eb945f7的638是前輪證據。未執行Git寫入。
+
+## 1030e47續作：review-5 CSS必修與0.1.1 merge收斂
+
+外部將中斷時未完成的CSS改動commit為eeb6ffe，再merge origin/main 363b3ad，HEAD 1030e47；AGENTS／e2e衝突已由外部解決。起始工作目錄乾淨，verify報UI／content摘要不符連帶造成作者href、SVG動態attribute與dataset寫入被拒絕，quick.js另被解構規則誤殺。版本已0.1.1，並非本輪升版。
+
+確認与363b3ad相比：quick.js完全相同；ui.js只增加原作者factory與export，content.js只增加原factory import與底部padding連結。故只同步AUTHOR_UI_SHA256為 `f019ce6e986ae868e495c8c1ea9253b9b20f683ad65ae8dc4094282fd2acbe66`、AUTHOR_CONTENT_SHA256為 `95fe1b82f5874f900909ca9d29742833543fa39a72262dffd3d5701f1035c580`；原href精確豁免、固定SVG-key loop／dataset statement例外恢复正常，未再新增UI／content例外。quick摘要沿用main的 `70c3ccde2e47ce2f7bfe0da87cbbf8b2d98960fea516fe58297bf461ba5487cf`，position摘要不變。
+
+quick誤殺根因是 `fields[choices[0]]=select;` 的外層bracket接在賦值前，被原保守token規則當作解構pattern。最窄放行：只有quickModule為true、label精確 `probe/quick.js`、整檔SHA完全吻合既有QUICK_SOURCE_SHA256，才在解構掃描視圖移除這一句。其餘quick來源仍逐條掃描，CSS仍掃完整原文；任何quick改動／改名都失去例外。reader等未鎖模組不獲豁免，原158個解構攻擊與全部其他舊自測保留。未修改checkDestructuring或任何BANNED規則；沒有全檔略過靜態守門，也沒有將規則降級交由e2e替代。
+
+review-5收尾只增加1個完整repo CLI變體：在/tmp的完整副本reader.js追加pointerover handler，抓.panel-author後執行 `author.style.setProperty('background-image', 'image-set("https://evil.example/tracker.png" 1x)');`。先驗證乾淨副本退出0且執行308项CSS自測，再驗證此變體以 `probe/reader.js: CSS image/resource value forbidden` 退出1，不能被UI／content摘要不符或執行錯誤掩蓋；現有18個變體全部保留，總數19。checkCssResources／cssDecoded／CSS函式清單／308項CSS自測均與HEAD逐段核對未改。未增加其他CSS規則或新攻擊類別。
+
+e2e的checkAuthorLink保留浮層anchor恰1個及全部href／target／noopener／文字／可見矩形／命中／操作鈕避讓／隱私斷言，另增加整個shadow root的a元素恰1個，避免面板外還有其他anchor。Scheduled與短視窗捲到底兩處都執行；不點作者連結。全程既有0擴充資源／背景請求檢查與固定Scheduled使用者導覽政策不變，沒有新增網路白名單。node --check只確認e2e語法，Chrome／網路證據仍由外部重跑，不能把main 363b3ad的686或舊作者分支638當成本輪結果。
+
+本輪只改5檔：scripts/verify.mjs、test/review.test.mjs、scripts/e2e.mjs、AGENTS.md、本HANDOFF。npm test 11檔全過，細項178過／0敗／0跳過；verify掃11 probe檔／4 Logo SVG全過，30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer／22 author-link／160 URL mutation／28 author boundary／158 destructuring／514 resource property／308 CSS resource自測全部保留。所有probe檔案、manifest、package／lockfile、README和fixtures均與HEAD無差異；未執行Git寫入，版本維持0.1.1。
+
+已知限制：本輪依指示不擴大攻擊探查或靜態分析。review-5點名的直接image-set攻擊已由完整CLI證明拒絕；CSS檢查是字面值／模板片段與既有拼接視圖，不做任意跨變數資料流或執行期CSS生成的安全證明，不能宣稱所有可能的混淆繞過都已消除。正式來源保持摘要邊界、現有自測全過，外部e2e與獨立複審仍待確認。

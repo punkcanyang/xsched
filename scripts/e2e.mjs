@@ -266,13 +266,14 @@ async function main() {
         const shadow = host.shadowRoot;
         const panel = shadow.querySelector('section');
         const links = panel.querySelectorAll('a');
+        const shadowCount = shadow.querySelectorAll('a').length;
         const link = links[0];
-        if (!link) return { count: links.length };
+        if (!link) return { count: links.length, shadowCount };
         const r = link.getBoundingClientRect(), p = panel.getBoundingClientRect();
         const style = getComputedStyle(link);
         const x = r.left + r.width / 2, y = r.top + r.height / 2;
         return {
-          count: links.length, href: link.getAttribute('href'), target: link.getAttribute('target'),
+          count: links.length, shadowCount, href: link.getAttribute('href'), target: link.getAttribute('target'),
           rel: link.getAttribute('rel'), text: link.textContent,
           footer: link.classList.contains('panel-author') && link.parentElement === panel && style.position === 'absolute' && !shadow.querySelector('.panel-body').contains(link) && !shadow.querySelector('.panel-actions').contains(link),
           inside: r.left >= p.left && r.right <= p.right && r.top >= p.top && r.bottom <= p.bottom,
@@ -286,6 +287,7 @@ async function main() {
         };
       });
       assert(author.count === 1, `${label}: exactly one panel author anchor`);
+      assert(author.shadowCount === 1, `${label}: exactly one anchor in the entire shadow root`);
       assert(author.href === 'https://x.com/punkcan', `${label}: exact author href`);
       assert(author.target === '_blank', `${label}: author opens a new tab`);
       assert(author.rel?.split(/\s+/).includes('noopener'), `${label}: author has noopener`);
