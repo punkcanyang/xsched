@@ -10,6 +10,7 @@
     "e2e": "node scripts/e2e.mjs"
   },
   "devDependencies": {
+    "esprima": "4.0.1",
     "linkedom": "^0.18.11",
     "puppeteer-core": "^24.10.2"
   }

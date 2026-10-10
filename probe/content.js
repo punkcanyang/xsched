@@ -6,7 +6,7 @@ if (location.hostname !== "x.com" && location.hostname !== "twitter.com") return
 const { PROBE_VERSION, buildDiagnostic, mergeItems, readSnapshot, hostMounted, versionLine, formatTime, maskSample } = globalThis.XSCHED_READER;
 const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 
-const { stringsFor, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition } = globalThis.XSCHED_UI;
+const { stringsFor, createAuthorLink, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition } = globalThis.XSCHED_UI;
 const positionStore = globalThis.XSCHED_POSITION;
 const quick = globalThis.XSCHED_QUICK;
 let quickSignature = "";
@@ -588,6 +588,11 @@ function render(report, items) {
       applyAnchor(true); positionUI();
     });
     controls.append(reset);
+    // Use the existing 12px bottom padding, outside flex layout. An extra action
+    // row changes the measured minimum and can cover the independent shortcut.
+    const author = css(createAuthorLink(), { position:'absolute', right:'12px', bottom:'1px', margin:'0', font:'10px/1 ui-sans-serif, system-ui, sans-serif', color:'#8b98a5', 'text-decoration':'underline' });
+    author.className = 'panel-author';
+    panel.append(author);
     body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
   }
 

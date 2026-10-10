@@ -9,6 +9,7 @@ await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 await import('../probe/quick.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
+const uiSource = readFileSync(new URL('../probe/ui.js', import.meta.url), 'utf8');
 const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
 function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com', startReady = true) {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
@@ -48,6 +49,10 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   });
   function flush() { for (let n = 0; timers.size && n < 10; n++) { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()); } }
   function poll() { [...polls.values()].forEach((fn) => fn()); flush(); }
+  // Match the browser isolated world: the zero-argument factory closes over this
+  // document, while geometry overrides remain available to the existing fixtures.
+  vm.runInContext(uiSource, context);
+  context.XSCHED_UI = { ...ui, createAuthorLink: context.XSCHED_UI.createAuthorLink };
   vm.runInContext(positionSource, context);
   vm.runInContext(source, context); if (startReady) flush();
   const host = () => document.getElementById('xsched-probe-root');
@@ -69,6 +74,37 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
     mutate(records) { mutationCallback(records); flush(); },
     setManifest(value) { manifest = value; }, invalidate() { invalidated = true; } };
 }
+test('panel author link stays outside scrolling content and is excluded from skeleton/diagnostics', () => {
+  const f = fixture();
+  const check = () => {
+    const links = f.shadow().querySelectorAll('a');
+    assert.equal(links.length, 1);
+    const link = links[0];
+    assert.equal(link.getAttribute('href'), 'https://x.com/punkcan');
+    assert.equal(link.getAttribute('target'), '_blank');
+    assert.ok(link.getAttribute('rel').split(/\s+/).includes('noopener'));
+    assert.equal(link.textContent, '@punkcan');
+    assert.equal(link.className, 'panel-author');
+    assert.equal(link.parentElement, f.shadow().querySelector('section'));
+    assert.equal(link.style.position, 'absolute', 'author cannot add a flex row to the fixed chrome');
+    const actions = f.shadow().querySelector('.panel-actions');
+    assert.equal(actions.contains(link), false);
+    assert.deepEqual([...actions.children].map(el => el.tagName), ['BUTTON', 'BUTTON', 'BUTTON'], 'original fixed actions keep exactly their three buttons');
+    assert.equal(f.shadow().querySelector('.panel-body').contains(link), false);
+    for (const output of [f.host().dataset.xschedDiag, globalThis.XSCHED_SKELETON.buildSkeleton(f.document)]) {
+      assert.ok(!output.includes('punkcan'));
+      assert.ok(!output.includes('https://x.com/punkcan'));
+    }
+  };
+  check(); f.poll(); check();
+  f.click('[data-xsched-minimize]');
+  assert.equal(f.shadow().querySelector('a'), null);
+  f.click('.shortcut'); check();
+  const skeleton = globalThis.XSCHED_SKELETON.buildSkeleton(f.document);
+  f.host().remove();
+  assert.equal(globalThis.XSCHED_SKELETON.buildSkeleton(f.document), skeleton, 'entire extension host is excluded');
+  f.poll(); check();
+});
 test('real content script mounts shadow Dagaz, toggles Scheduled and preserves choice across SPA/remount', () => {
   const f = fixture();
   assert.equal(f.host().dataset.xschedCount, '2');

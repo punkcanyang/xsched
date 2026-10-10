@@ -2,10 +2,47 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseHTML } from 'linkedom';
+import vm from 'node:vm';
 await import('../probe/ui.js');
 await import('../probe/reader.js');
 const U = globalThis.XSCHED_UI;
 const R = globalThis.XSCHED_READER;
+test('author anchor uses DOM APIs with exactly the approved attributes and text', async () => {
+  const { document } = parseHTML('<html><body></body></html>');
+  const create = document.createElement.bind(document);
+  const created = [];
+  document.createElement = tag => {
+    created.push(tag);
+    const node = create(tag);
+    for (const property of ['innerHTML', 'outerHTML']) Object.defineProperty(node, property, { set() { assert.fail('markup setter used'); } });
+    node.insertAdjacentHTML = () => assert.fail('markup insertion used');
+    return node;
+  };
+  const context = vm.createContext({ document });
+  vm.runInContext(readFileSync(new URL('../probe/ui.js', import.meta.url), 'utf8'), context);
+  const factory = context.XSCHED_UI.createAuthorLink;
+  assert.equal(factory.length, 0);
+  const link = factory();
+  assert.deepEqual(created, ['a']);
+  assert.equal(link.tagName, 'A');
+  assert.equal(link.getAttribute('href'), 'https://x.com/punkcan');
+  assert.equal(link.getAttribute('target'), '_blank');
+  assert.ok(link.getAttribute('rel').split(/\s+/).includes('noopener'));
+  assert.equal(link.textContent, '@punkcan');
+  assert.equal(link.childNodes.length, 1);
+  assert.equal(link.firstChild.nodeType, 3);
+  const fake = { createElement() { assert.fail('caller-supplied document used'); } };
+  assert.equal(factory(fake).tagName, 'A', 'extra caller arguments cannot replace the document');
+  const wrong = create('link');
+  document.createElement = () => wrong;
+  assert.throws(() => factory(), /Expected author anchor/);
+  assert.equal(wrong.getAttribute('href'), null, 'wrong element is rejected before setting the remote href');
+  // A separate classic script can introduce a lexical document binding after
+  // UI initialization. Verify must reject it before any probe code executes.
+  const lexicalFake = "const {document, unused} = {document: {createElement() { return {tagName:'A', setAttribute(name, value) { calls.push([name, value]); }}; }}};";
+  const { scanSource } = await import('../scripts/verify.mjs');
+  assert.ok(scanSource(lexicalFake, 'probe/other.js').some(error => error.includes('document/element factory mutation')));
+});
 test('shortcut aria-label/title vocabulary includes exactly nine complete languages', () => {
   assert.deepEqual(Object.keys(U.STRINGS).sort(), ['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt'].sort());
   for (const [key, value] of Object.entries(U.STRINGS)) {

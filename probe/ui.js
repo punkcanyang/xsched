@@ -35,6 +35,15 @@ function stringsFor(doclang, navlang) {
   // Prefer X's document language; fall back to browser language, then English.
   return STRINGS[languageKey(doclang) || languageKey(navlang) || 'en'];
 }
+function createAuthorLink() {
+  const link = document.createElement('a');
+  if (link.tagName !== 'A') throw new Error('Expected author anchor');
+  link.setAttribute('href', 'https://x.com/punkcan');
+  link.setAttribute('target', '_blank');
+  link.setAttribute('rel', 'noopener');
+  link.textContent = '@punkcan';
+  return link;
+}
 function overlaps(a, b, gap = 8) {
   return a.left < b.right + gap && a.right > b.left - gap && a.top < b.bottom + gap && a.bottom > b.top - gap;
 }
@@ -167,5 +176,5 @@ function panelPlacement(width, height, anchor, obstacles, naturalHeight, minimum
   }
   return { clear:false };
 }
-globalThis.XSCHED_UI = { STRINGS, QUICK_STRINGS, quickStringsFor, stringsFor, overlaps, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition };
+globalThis.XSCHED_UI = { STRINGS, QUICK_STRINGS, quickStringsFor, stringsFor, createAuthorLink, overlaps, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition };
 })();

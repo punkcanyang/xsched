@@ -260,6 +260,42 @@ async function main() {
       assert(state.label === state.title && Boolean(state.title), 'localized aria-label matches tooltip');
       return state;
     }
+    async function checkAuthorLink(label) {
+      const author = await page.evaluate(() => {
+        const host = document.getElementById('xsched-probe-root');
+        const shadow = host.shadowRoot;
+        const panel = shadow.querySelector('section');
+        const links = panel.querySelectorAll('a');
+        const shadowCount = shadow.querySelectorAll('a').length;
+        const link = links[0];
+        if (!link) return { count: links.length, shadowCount };
+        const r = link.getBoundingClientRect(), p = panel.getBoundingClientRect();
+        const style = getComputedStyle(link);
+        const x = r.left + r.width / 2, y = r.top + r.height / 2;
+        return {
+          count: links.length, shadowCount, href: link.getAttribute('href'), target: link.getAttribute('target'),
+          rel: link.getAttribute('rel'), text: link.textContent,
+          footer: link.classList.contains('panel-author') && link.parentElement === panel && style.position === 'absolute' && !shadow.querySelector('.panel-body').contains(link) && !shadow.querySelector('.panel-actions').contains(link),
+          inside: r.left >= p.left && r.right <= p.right && r.top >= p.top && r.bottom <= p.bottom,
+          visible: r.width > 0 && r.height > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && style.display !== 'none' && style.visibility === 'visible' && Number(style.opacity) > 0,
+          hit: document.elementFromPoint(x, y) === host && shadow.elementFromPoint(x, y) === link,
+          clear: [...shadow.querySelectorAll('.panel-actions button')].every(button => {
+            const b = button.getBoundingClientRect();
+            return !(r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top);
+          }),
+          private: !host.dataset.xschedDiag.includes('punkcan'),
+        };
+      });
+      assert(author.count === 1, `${label}: exactly one panel author anchor`);
+      assert(author.shadowCount === 1, `${label}: exactly one anchor in the entire shadow root`);
+      assert(author.href === 'https://x.com/punkcan', `${label}: exact author href`);
+      assert(author.target === '_blank', `${label}: author opens a new tab`);
+      assert(author.rel?.split(/\s+/).includes('noopener'), `${label}: author has noopener`);
+      assert(author.text === '@punkcan', `${label}: author text`);
+      assert(author.footer && author.inside && author.visible && author.hit && author.clear, `${label}: footer link visible within panel padding, outside flex/scroll areas, hit-testable and clear of action buttons`);
+      assert(author.private, `${label}: author excluded from diagnostic`);
+      // Inspect only: never click the author link or authorize its navigation.
+    }
     async function checkNative(label) {
       const results = await page.evaluate(() => {
         const host = document.getElementById('xsched-probe-root');
@@ -293,6 +329,8 @@ async function main() {
     }, 'shortcut Scheduled defaults open');
     assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
     assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.1.1 (manifest 0.1.1)', 'diagnostic first line includes both versions');
+    await checkAuthorLink('Scheduled author');
+    await page.screenshot({ path: join(DOCS, 'author-link-scheduled.png') });
     await checkNative('desktop scheduled open');
     await page.screenshot({ path: join(DOCS, 'v1.0-quickfix-scheduled-open.png') });
     await page.screenshot({ path: join(DOCS, 'v1.0-quickfix-diag-version.png') });
@@ -469,6 +507,7 @@ async function main() {
     await checkNative('1280x600 native avoidance');
     await page.evaluate(() => {const body=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');body.scrollTop=body.scrollHeight;});
     assert(await page.evaluate(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body').scrollTop>0), 'panel content actually scrolls');
+    await checkAuthorLink('Scrolled short viewport author');
     await checkActions('short viewport after scroll');
     await page.screenshot({path:join(DOCS,'v1.0-quickfix-small-viewport-scroll.png')});
     await page.screenshot({path:join(DOCS,'v1.0-quickfix-avoid-native.png')});
@@ -764,7 +803,7 @@ async function main() {
     const skeleton = skeletonCopies.result.value[0];
     assert(/^xsched-skeleton v0\.1\.1 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
-    for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture"]) {
+    for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture", "punkcan", "https://x.com/punkcan"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
     }
     writeFileSync(join(DOCS, "v1.0-quickfix-skeleton-sample.txt"), skeleton + "\n");

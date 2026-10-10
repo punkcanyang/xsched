@@ -101,4 +101,6 @@ npm run e2e       # Chrome for Testing 載入真 probe/，本機 fixture，零�
 
 ## 授權
 
+作者：[@punkcan](https://x.com/punkcan)
+
 [MIT](LICENSE)。

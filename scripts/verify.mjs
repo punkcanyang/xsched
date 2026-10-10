@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { inflateSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { DOMParser } from "linkedom";
+import esprima from "esprima";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROBE = join(ROOT, "probe");
@@ -26,6 +27,23 @@ const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d
 // Exact-source exception only for the sole native select input/change writer.
 // All other activation, network, storage and markup rules still scan this file.
 const QUICK_SOURCE_SHA256 = "70c3ccde2e47ce2f7bfe0da87cbbf8b2d98960fea516fe58297bf461ba5487cf";
+
+// Owner-authorized exception: one exact DOM factory in root probe/ui.js only.
+// Pin both definition and sole call site to full reviewed sources. This prevents
+// aliases, fake documents, shadowed bindings and changes to the returned element.
+// Any edit to either module requires review before updating these digests.
+const AUTHOR_UI_SHA256 = "f019ce6e986ae868e495c8c1ea9253b9b20f683ad65ae8dc4094282fd2acbe66";
+const AUTHOR_CONTENT_SHA256 = "95fe1b82f5874f900909ca9d29742833543fa39a72262dffd3d5701f1035c580";
+const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
+  const link = document.createElement('a');
+  if (link.tagName !== 'A') throw new Error('Expected author anchor');
+  link.setAttribute('href', 'https://x.com/punkcan');
+  link.setAttribute('target', '_blank');
+  link.setAttribute('rel', 'noopener');
+  link.textContent = '@punkcan';
+  return link;
+}`;
+const AUTHOR_HREF_STATEMENT = "  link.setAttribute('href', 'https://x.com/punkcan');";
 
 // Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
 // on a hostile synthetic page, that no page content can reach the skeleton or the samples.
@@ -177,6 +195,20 @@ export function checkLogoDir(dir = DOCS) {
   return { errors, scanned: names.length };
 }
 
+// One table keeps forbidden content attributes and reflected IDL writes aligned.
+// Retain the original eight attributes; add attribution/legacy background/request
+// policy and inline iframe HTML. A name here grants no factory exception: only
+// its digest-locked href statement gets the existing resource-attribute exemption.
+const RESOURCE_ATTRIBUTE_IDL = {
+  src: 'src', href: 'href', srcset: 'srcset', action: 'action',
+  poster: 'poster', data: 'data', ping: 'ping', formaction: 'formAction',
+  attributionsrc: 'attributionSrc', background: 'background',
+  referrerpolicy: 'referrerPolicy', srcdoc: 'srcdoc',
+};
+const URL_COMPONENT_PROPERTIES = ['href', 'search', 'hostname', 'host', 'pathname', 'protocol', 'port', 'hash', 'origin', 'username', 'password'];
+const PROTECTED_WRITE_PROPERTIES = [...new Set([...URL_COMPONENT_PROPERTIES, ...Object.values(RESOURCE_ATTRIBUTE_IDL)])];
+const resourceAttributeRule = pattern => new RegExp(pattern.source.replace('RESOURCE_ATTRIBUTES', Object.keys(RESOURCE_ATTRIBUTE_IDL).join('|')), pattern.flags);
+
 // Things the probe must never contain. (Whole probe/ tree, any file type.)
 const BANNED = [
   { name: "native event dispatch outside audited writer", re: /\bdispatchEvent\b/ },
@@ -187,7 +219,7 @@ const BANNED = [
   // Match the same static property names after comment removal/string folding.
   { name: "activation method extraction", re: /\{[^{};]*\b(?:click|submit)["']?\s*(?=[:,}])|\.\s*(?:get|getOwnPropertyDescriptor)\s*\([^;]*["'](?:click|submit)["']/ },
   { name: "activation handler alias", re: /\.\s*on(?:click|submit)\b/ },
-  { name: "namespaced resource attribute", re: /\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
+  { name: "namespaced resource attribute", re: resourceAttributeRule(/\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*["'`](?:RESOURCE_ATTRIBUTES)["'`]/i) },
   { name: "markup parsing", re: /\b(?:createContextualFragment|parseFromString)\b/ },
   { name: "fetch(", re: /\bfetch\s*\(/ },
   { name: "XMLHttpRequest", re: /XMLHttpRequest/ },
@@ -212,7 +244,7 @@ const BANNED = [
   { name: "storage accessor/alias", re: /\b(?:getItem|setItem|removeItem)\b/ },
   { name: "programmatic click/scroll", re: /\.\s*(?:click|scroll|scrollBy|scrollTo|scrollIntoView)\s*\(|\.\s*(?:scrollTop|scrollLeft)\s*=/ },
   { name: "resource URL/sink", re: /\b(?:src|href|srcset)\s*=|\burl\s*\(/i },
-  { name: "resource attribute", re: /\.\s*setAttribute\s*\(\s*["'`](?:src|href|srcset|action|poster|data|ping|formaction)["'`]/i },
+  { name: "resource attribute", re: resourceAttributeRule(/\.\s*setAttribute\s*\(\s*["'`](?:RESOURCE_ATTRIBUTES)["'`]/i) },
   { name: "CSS import", re: /@import\b/i },
   { name: "network-capable constructors/workers", re: /\b(?:Image|Audio|Worker|SharedWorker|RTCPeerConnection|WebTransport)\b|\bserviceWorker\b/ },
   { name: "remote import", re: /\bimport\s*\(\s*["'`]\s*(?:https?:|\/\/)/ },
@@ -238,6 +270,55 @@ function canonicalSource(source) {
   return text.replace(/\[\s*(["'`])([\w$]+)\1\s*\]/g, ".$2");
 }
 
+// Entry-independent: a CSS resource value is forbidden regardless of whether
+// it reaches setProperty, cssText, a style property/attribute, or a stylesheet.
+// Retain the original url()/@import rules; this additional view also covers CSS
+// escapes inside cooked JS strings and literal concatenations/templates.
+const CSS_RESOURCE_FUNCTIONS = ['url', 'src', 'image', 'image-set', '-webkit-image-set', 'cross-fade', '-webkit-cross-fade', 'element', '-moz-element', 'paint', '-webkit-canvas'];
+const CSS_RESOURCE_VALUE = new RegExp(`(?:^|[^\\w-])(?:${CSS_RESOURCE_FUNCTIONS.join('|')})\\s*\\(|@import\\b`, 'i');
+function cssDecoded(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\\(?:\r\n|[\n\r\f])/g, '')
+    .replace(/\\([0-9a-f]{1,6})(?:\r\n|[\t\n\r\f ])?|\\([^\n\r\f])/gi, (escape, hex, character) => {
+      if (!hex) return character;
+      const code = parseInt(hex, 16);
+      return !code || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff) ? '\ufffd' : String.fromCodePoint(code);
+    });
+}
+
+function checkCssResources(source, label) {
+  const views = [source, canonicalSource(source)];
+  if (label.endsWith('.js')) {
+    try {
+      const tokens = esprima.tokenize(source);
+      // Parse only isolated literal tokens, never execute them or feed modern
+      // production JS into Esprima's older full parser. Tagged templates may
+      // use raw text, so scan both raw and cooked literal fragments.
+      let raw = '', cooked = '';
+      const flush = () => { views.push(raw, cooked); raw = ''; cooked = ''; };
+      for (const token of tokens) {
+        if (token.type === 'String') {
+          const value = esprima.parseScript(token.value).body[0].expression.value;
+          views.push(value);
+          raw += value;
+          cooked += value;
+        } else if (token.type === 'Template') {
+          const fragment = token.value.slice(1, token.value.endsWith('`') ? -1 : -2);
+          const value = esprima.parseScript('`' + fragment + '`').body[0].expression.quasis[0].value.cooked;
+          views.push(fragment, value ?? fragment);
+          raw += fragment;
+          cooked += value ?? fragment;
+        } else if (token.type !== 'Punctuator' || !['+', '(', ')'].includes(token.value)) flush();
+      }
+      flush();
+    } catch {
+      return [`${label}: CSS literal analysis failed closed`];
+    }
+  }
+  return views.some(view => CSS_RESOURCE_VALUE.test(view) || CSS_RESOURCE_VALUE.test(cssDecoded(view)))
+    ? [`${label}: CSS image/resource value forbidden`] : [];
+}
+
 // content_scripts may only touch X itself over https.
 const ALLOWED_MATCHES = new Set([
   "https://x.com/*",
@@ -257,17 +338,118 @@ function listFiles(dir, base = dir) {
   return out;
 }
 
+// Esprima's tokenizer handles the probe's modern operators without attempting
+// its older ES2017 parser. Work on original tokens, never canonicalized code:
+// comments, strings, regex literals and templates cannot fake delimiters.
+// This deliberately rejects even member reads in destructuring defaults/keys.
+// No reviewed source needs them; a new pattern requires review, not an exception.
+function checkDestructuring(source, label) {
+  let tokens;
+  try { tokens = esprima.tokenize(source); }
+  catch (error) { return [`${label}: JS tokenization failed: ${error.message}`]; }
+  const groups = [], stack = [];
+  const opening = new Set(['(', '[', '{']);
+  const matching = { ')':'(', ']':'[', '}':'{' };
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    if (token.type !== 'Punctuator') continue;
+    if (opening.has(token.value)) {
+      const group = { start:index, kind:token.value, parent:stack.at(-1) };
+      groups.push(group); stack.push(group);
+    } else if (matching[token.value]) {
+      const group = stack.pop();
+      if (!group || group.kind !== matching[token.value]) return [`${label}: unbalanced JS delimiters`];
+      group.end = index;
+    }
+  }
+  if (stack.length) return [`${label}: unbalanced JS delimiters`];
+  const errors = new Set();
+  for (const group of groups) {
+    if (group.kind === '(') continue;
+    let after = group.end + 1;
+    while (tokens[after]?.value === ')' && tokens[after]?.type === 'Punctuator') after++;
+    let pattern = ['=', 'of', 'in'].includes(tokens[after]?.value);
+    // Destructured parameters (functions/methods/arrows/catch) may have no '='.
+    for (let parent = group.parent; !pattern && parent; parent = parent.parent) {
+      if (parent.kind !== '(') continue;
+      const next = tokens[parent.end + 1]?.value;
+      const before = tokens[parent.start - 1]?.value;
+      if (next === '=>' || (next === '{' && !['if', 'while', 'switch', 'with', 'for'].includes(before))) pattern = true;
+    }
+    if (!pattern) continue;
+    for (let index = group.start + 1; index < group.end; index++) {
+      const token = tokens[index], previous = tokens[index - 1];
+      if (token.type === 'Identifier' && ['document', 'createElement'].includes(canonicalSource(token.value))) errors.add(`${label}: destructuring document/createElement forbidden`);
+      if (token.type === 'Punctuator' && (token.value === '.' || (token.value === '[' &&
+          (['Identifier', 'String', 'Numeric', 'Boolean', 'Null', 'RegularExpression', 'Template'].includes(previous?.type) || [')', ']', '}', 'this', 'super'].includes(previous?.value))))) errors.add(`${label}: destructuring member access forbidden`);
+    }
+  }
+  return [...errors];
+}
+
 export function scanSource(text, label, { positionModule = false, quickModule = false } = {}) {
   const errors = [];
+  const digest = createHash('sha256').update(text).digest('hex');
+  const auditedQuick = quickModule && label === 'probe/quick.js' && digest === QUICK_SOURCE_SHA256;
+  // Main 0.1.1 writes the field map through a nested computed index, not a
+  // destructuring target. Omit only this statement in the exact audited module;
+  // changed/renamed sources and all other statements retain the original guard.
+  const destructuringSource = auditedQuick ? text.replace('fields[choices[0]]=select;', '') : text;
+  if (label.endsWith('.js')) errors.push(...checkDestructuring(destructuringSource, label));
+  errors.push(...checkCssResources(text, label));
+  const auditedAuthorUi = label === 'probe/ui.js' && digest === AUTHOR_UI_SHA256;
+  const auditedAuthorContent = label === 'probe/content.js' && digest === AUTHOR_CONTENT_SHA256;
+  if ((label === 'probe/ui.js' && !auditedAuthorUi) || (label === 'probe/content.js' && !auditedAuthorContent)) errors.push(`${label}: author definition/call site differs from reviewed source`);
+  const checked = auditedAuthorUi
+    ? text.replace(AUTHOR_LINK_SOURCE, AUTHOR_LINK_SOURCE.replace(AUTHOR_HREF_STATEMENT, ''))
+    : text;
   const canonical = canonicalSource(text);
+  const checkedCanonical = canonicalSource(checked);
   const auditedPosition = positionModule && createHash('sha256').update(text).digest('hex') === POSITION_SOURCE_SHA256;
-  const auditedQuick = quickModule && createHash('sha256').update(text).digest('hex') === QUICK_SOURCE_SHA256;
   if (quickModule && !auditedQuick) errors.push(`${label}: native writer differs from audited input/change-only boundary`);
   if (positionModule && !auditedPosition) errors.push(`${label}: position module differs from audited numeric-only storage boundary`);
+  // Additional rules only: original raw/canonical checks below remain unchanged.
+  // Bracket literals/escapes/concatenations are normalized before these checks.
+  const writeOperator = String.raw`(?:[+\-*/%&|^<>?]*=(?!=|>)|\+\+|--)`;
+  const targetEnd = String.raw`(?:[)}\]\s]*|(?:\s*,\s*(?:[\w$]+\s*:\s*)?[\w$.]+\s*)+[)}\]\s]*)`;
+  const component = `(${PROTECTED_WRITE_PROPERTIES.join('|')})`;
+  const componentWrite = new RegExp(String.raw`\.\s*${component}\b\s*(?:${targetEnd}${writeOperator}|[)}\]\s]*\b(?:of|in)\b)|(?:\+\+|--|delete\b)[^;]*?\.\s*${component}\b`, 'gi');
+  const writeKinds = new Set();
+  for (const propertyWrite of canonical.matchAll(componentWrite)) {
+    const property = (propertyWrite[1] || propertyWrite[2]).toLowerCase();
+    writeKinds.add(URL_COMPONENT_PROPERTIES.includes(property) ? 'URL component' : 'resource property');
+  }
+  for (const kind of writeKinds) errors.push(`${label}: ${kind} write forbidden`);
+  // A forbidden IDL write must not be laundered through an extracted DOM
+  // attribute setter or a runtime attribute name. Allow direct, fixed safe
+  // names only; the existing SVG-key loop is safe in the digest-locked content.
+  let attributeMethods = checkedCanonical;
+  if (auditedAuthorContent) attributeMethods = attributeMethods.replace('path.setAttribute(key, value);', '');
+  const safeAttributeCall = (call, quote, name) => Object.hasOwn(RESOURCE_ATTRIBUTE_IDL, name.toLowerCase()) ? call : '';
+  attributeMethods = attributeMethods
+    .replace(/\.\s*setAttribute\s*\(\s*(["'`])([\w:-]+)\1\s*,/g, safeAttributeCall)
+    .replace(/\.\s*setAttributeNS\s*\(\s*(?:null|["'`][^"'`]*["'`])\s*,\s*(["'`])([\w:-]+)\1\s*,/g, safeAttributeCall);
+  if (/\b(?:setAttribute|setAttributeNS|setAttributeNode|setAttributeNodeNS|setNamedItem|setNamedItemNS)\b/.test(attributeMethods)) errors.push(`${label}: dynamic/extracted attribute mutation forbidden`);
+  // Methods and aliases are forbidden regardless of the receiver or property
+  // spelling. Preserve only the existing fixed Scheduled navigation and the
+  // exact audited native-select setter read; neither permits URL mutation.
+  let writes = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, '');
+  if (auditedQuick) writes = writes.replace("Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype,'value')", '');
+  if (/\b(?:Reflect|assign|defineProperty|defineProperties|setPrototypeOf|getOwnPropertyDescriptor|getOwnPropertyDescriptors|__defineSetter__|__defineGetter__|__lookupSetter__|__proto__)\b/.test(writes)) errors.push(`${label}: reflective property mutation/extraction forbidden`);
+  // Unknown computed keys could name any URL component. The only existing
+  // dynamic writes are the digest-locked native select map and DOM dataset keys.
+  const dynamicWrites = writes.replace(auditedAuthorContent ? 'button.dataset[datasetKey] = "1";' : /$^/, '');
+  if (!auditedQuick && new RegExp(String.raw`\]\s*${targetEnd}${writeOperator}|(?:\+\+|--|delete\b)[^;]*?\[[^;]*?\]|\b(?!const\b|let\b|var\b)[\w$.]+\s*\[[^\]]+\][)}\]\s]+(?:of|in)\b`).test(dynamicWrites)) errors.push(`${label}: dynamic property write forbidden`);
+  // A top-level destructured binding can shadow the isolated world's document
+  // too (including when another field follows it). Fail closed on these binding
+  // patterns; inspecting only a scalar `document = ...` misses that case.
+  if (new RegExp(String.raw`\b(?:document|createElement)\s*(?:${targetEnd}${writeOperator}|[)}\]\s]*\b(?:of|in)\b)|\b(?:const|let|var|function|class)\s+document\b|\b(?:const|let|var)\s*[\[{][^;]*\bdocument\b`).test(canonical)) errors.push(`${label}: document/element factory mutation forbidden`);
+  if (/\b(?:createAuthorLink|XSCHED_UI)\b/.test(canonical) && !auditedAuthorUi && !auditedAuthorContent) errors.push(`${label}: author factory references are restricted to reviewed UI/content`);
   for (const rule of BANNED) {
     if (auditedQuick && rule.name === "native event dispatch outside audited writer") continue;
     if (auditedPosition && ['persistent storage','storage accessor/alias'].includes(rule.name)) continue;
-    if (rule.re.test(text) || rule.re.test(canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
+    const authorAttribute = rule.name === 'resource attribute';
+    if (rule.re.test(authorAttribute ? checked : text) || rule.re.test(authorAttribute ? checkedCanonical : canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
   }
   const navigation = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, "");
   if (/\blocation\s*(?:=|\.\s*(?:assign|replace)\s*\(|\.\s*(?:href|pathname|search|hash)\s*=)/.test(navigation)) errors.push(`${label}: only the fixed Scheduled navigation is allowed`);
@@ -604,6 +786,363 @@ export function nativeWriterSelfTest() {
   return attacks.length+edits.length+1+realEdits.length;
 }
 
+export function authorLinkSelfTest() {
+  const ui = readFileSync(join(PROBE, 'ui.js'), 'utf8');
+  if (!ui.includes(AUTHOR_LINK_SOURCE) || scanSource(ui, 'probe/ui.js').length) throw new Error('author-link self-test: fixed anchor rejected');
+  const attacks = [
+    ...['https://x.com/punkcan2', 'https://evil.example/', 'http://x.com/punkcan', 'https://x.com/punkcan/', 'https://x.com/punkcan?x=1', 'https://x.com/punkcan#x']
+      .map(url => [AUTHOR_LINK_SOURCE.replace('https://x.com/punkcan', url), 'probe/ui.js']),
+    [AUTHOR_LINK_SOURCE.replace("createElement('a')", "createElement('img')"), 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE.replace("'href'", "'src'"), 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE.replace("createElement('a')", "createElement('img')").replace("'href'", "'src'"), 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE.replace("const link = document.createElement('a');", "let link = document.createElement('a');\n  link = document.createElement('img');"), 'probe/ui.js'],
+    ...['probe/content.js', 'probe/other.js', 'probe/nested/ui.js', 'ui.js'].map(label => [AUTHOR_LINK_SOURCE, label]),
+    [AUTHOR_HREF_STATEMENT, 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + '\n' + AUTHOR_LINK_SOURCE, 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nconst img = document.createElement('img'); img.src = 'https://x.com/punkcan';", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nfetch('https://x.com/punkcan');", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nnode.setAttribute('href', 'https://evil.example/');", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nnode.setAttributeNS(null, 'href', 'https://x.com/punkcan');", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nnode.innerHTML = '<a>';", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nwindow.localStorage.setItem('x', 'y');", 'probe/ui.js'],
+  ];
+  for (const [source, label] of attacks) {
+    // Mutate the complete approved UI, rather than rejecting only fragments
+    // because their digest differs. Other-file cases retain their actual label.
+    const fullSource = ui.replace(AUTHOR_LINK_SOURCE, source);
+    if (fullSource === ui && label === 'probe/ui.js') throw new Error('author-link self-test: unchanged attack');
+    if (!scanSource(fullSource, label).length) throw new Error('author-link self-test: unsafe href/source allowed');
+  }
+  return attacks.length;
+}
+
+export function urlMutationSelfTest() {
+  const cases = [];
+  for (const key of ['href', 'search', 'hostname', 'host', 'pathname', 'protocol', 'port', 'hash', 'origin', 'username', 'password']) {
+    for (const source of [
+      `author.${key} = 'x';`, `author['${key}'] = 'x';`,
+      `author['\\u${key.charCodeAt(0).toString(16).padStart(4, '0')}${key.slice(1)}'] = 'x';`,
+      `author['${key.slice(0, 1)}' + '${key.slice(1)}'] = 'x';`,
+      `author.${key} += 'x';`, `author.${key}++;`, `++author.${key};`,
+      `({value: author.${key}} = input);`, `(author.${key}) = 'x';`,
+      `for (author.${key} of values) {}`, `delete author.${key};`,
+    ]) cases.push([source, 'URL component write']);
+  }
+  for (const source of [
+    "author.search = '?x=1';", "author.hostname = 'evil.example';",
+    "author.search ||= '?x=1';", "author.search ??= '?x=1';", "author.search &&= '?x=1';",
+    '++(author).search', '--(getAuthor()).hostname', 'delete (getAuthor()).search',
+    '({first:author.search, second:other.value} = input)', 'for ((author.search) of values) {}',
+  ]) cases.push([source, 'URL component write']);
+  for (const source of [
+    'Reflect.set(author, "search", "?x=1")', 'Reflect["s"+"et"](author, key, value)',
+    'const {set: write}=Reflect; write(author,key,value)', 'const write=Reflect.set; write(author,key,value)',
+    'Reflect.defineProperty(author,"hostname",{value:"evil.example"})',
+    'Object.assign(author,{search:"?x=1"})', 'Object["ass"+"ign"](author,values)',
+    'const {assign: write}=Object; write(author,values)', 'const write=Object.assign; write(author,values)',
+    'Object.defineProperty(author,"search",{value:"?x=1"})',
+    'Object.defineProperties(author,{search:{value:"?x=1"}})',
+    'const {defineProperty: write}=Object; write(author,key,descriptor)',
+    'Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype,"search").set.call(author,"?x=1")',
+    'Object.getOwnPropertyDescriptors(HTMLAnchorElement.prototype).hostname.set.call(author,"evil.example")',
+    'author.__defineSetter__("search",write)', 'Object.setPrototypeOf(author,other)',
+  ]) cases.push([source, 'reflective property mutation/extraction']);
+  for (const source of [
+    'author[key] = value', 'author[key] += value', 'author[key]++', '++author[key]',
+    '(author[key]) = value', '({value:author[key]} = input)', 'for(author[key] of values) {}',
+    'delete author[key]', 'author[key] ??= value',
+    '++(author[key])', '--(getAuthor()[key])',
+    '({first:author[key], second:other.value} = input)', 'for ((author[key]) of values) {}',
+  ]) cases.push([source, 'dynamic property write']);
+  for (const [source, rule] of cases) {
+    // No UI/content digest failure can mask a missing global URL-write rule.
+    if (!scanSource(source, 'probe/elsewhere.js').some(error => error.includes(rule))) throw new Error(`URL mutation self-test: missed ${source}`);
+  }
+  if (scanSource('const name = address.hostname; const search = address.search;', 'probe/elsewhere.js').length) throw new Error('URL mutation self-test: reads rejected');
+  return cases.length;
+}
+
+export function authorBoundarySelfTest() {
+  const ui = readFileSync(join(PROBE, 'ui.js'), 'utf8');
+  const content = readFileSync(join(PROBE, 'content.js'), 'utf8');
+  if (scanSource(content, 'probe/content.js').length) throw new Error('author boundary self-test: approved call rejected');
+  const call = 'createAuthorLink()';
+  if (content.split(call).length !== 2) throw new Error('author boundary self-test: expected one zero-argument call');
+  const contentEdits = [
+    content.replace(call, "createAuthorLink({createElement: () => document.createElement('link')})"),
+    content.replace(call, 'createAuthorLink(document)'),
+    content.replace(call, 'createAuthorLink.call(fake)'),
+    content.replace(call, 'createAuthorLink.apply(null,[fake])'),
+    content.replace(call, 'Reflect.apply(createAuthorLink,null,[fake])'),
+    content.replace(call, 'globalThis.XSCHED_UI.createAuthorLink(fake)'),
+    content.replace(call, 'otherFactory()'),
+    content.replace(call, '(createAuthorLink(), createAuthorLink())'),
+    content.replace('panel.append(author);', "author.search = '?x=1'; panel.append(author);"),
+    content.replace('panel.append(author);', "author.hostname = 'evil.example'; panel.append(author);"),
+    content.replace('panel.append(author);', "author.rel = 'stylesheet'; document.head.append(author);"),
+    content + '\nconst factory = globalThis.XSCHED_UI.createAuthorLink; factory(fake);',
+  ];
+  const uiEdits = [
+    ui.replace('function createAuthorLink() {', 'function createAuthorLink(document) {'),
+    ui.replace("document.createElement('a')", "document.createElement('link')"),
+    ui.replace("  if (link.tagName !== 'A') throw new Error('Expected author anchor');\n", ''),
+    ui.replace('function createAuthorLink() {', "function createAuthorLink() {\n  const document = {createElement: () => globalThis.document.createElement('link')};"),
+    ui + "\ndocument.createElement = () => document.createElement('link');",
+  ];
+  for (const [sources, original, label] of [[contentEdits, content, 'probe/content.js'], [uiEdits, ui, 'probe/ui.js']]) {
+    for (const source of sources) {
+      if (source === original || !scanSource(source, label).some(error => error.includes('differs from reviewed source'))) throw new Error('author boundary self-test: modified definition/call allowed');
+    }
+  }
+  const extraFiles = [
+    'globalThis.XSCHED_UI.createAuthorLink()',
+    'const {createAuthorLink: factory}=globalThis.XSCHED_UI; factory(fake)',
+    'globalThis["XSCHED_"+"UI"]["createAuthor"+"Link"](fake)',
+    'document.createElement = fake',
+    'globalThis["document"] = fake',
+    'const {document, unused} = fake',
+    'let {value: {document, unused}} = fake',
+    'var {first = 1, document, unused} = fake',
+    '({method: Document.prototype.createElement, unused} = fake)',
+    '({document, unused} = fake)',
+    'for (Document.prototype.createElement of values) {}',
+  ];
+  for (const source of extraFiles) if (!scanSource(source, 'probe/other.js').length) throw new Error('author boundary self-test: alternate file/factory allowed');
+  return contentEdits.length + uiEdits.length + extraFiles.length;
+}
+
+export function destructuringSelfTest() {
+  const attacks = [];
+  const targets = ['href', 'search', 'hostname', 'host', 'pathname', 'protocol', 'port', 'hash', 'origin', 'username', 'password'].map(key => `author.${key}`);
+  targets.push('document', 'Document.prototype.createElement');
+  for (const target of targets) {
+    const pattern = `{first: ${target}, second: {value: other}}`;
+    attacks.push(
+      `(${pattern} = {first: '?x=1', second: {value: 0}});`,
+      `for (${pattern} of values) {}`,
+      `for (${pattern} in values) {}`,
+      `({outer: ${pattern}} = values);`,
+      `([{outer: ${pattern}}, ...rest] = values);`,
+      `({first: ${target} = fallback, second: {value: other = 0}} = values);`,
+      `for ({outer: ${pattern}} of values) {}`,
+      `for ([${pattern}] in values) {}`,
+      '`x${(' + pattern + ' = values)}`',
+      `({first: ${target}, second: {value: [other, {deep: tail}]}} = values);`,
+    );
+  }
+  for (const name of ['document', 'createElement']) {
+    const pattern = `{nested: {${name}, after: {value: other}}}`;
+    attacks.push(
+      `const ${pattern} = input;`, `let ${pattern} = input;`,
+      `for (const ${pattern} of values) {}`, `for (let ${pattern} in values) {}`,
+      `function f(${pattern}) {}`, `const f = (${pattern}) => 0;`,
+      `try {} catch (${pattern}) {}`, `function f(${pattern} = {}) {}`,
+    );
+  }
+  attacks.push(
+    '({nested:{docu\\u006dent, after:{value: other}}} = input)',
+    'const {nested:{create\\u0045lement, after:{value: other}}} = input',
+    '({nested:{value: author["search"]}, after:{value: other}} = input)',
+    '({nested:{value: author[key]}, after:{value: other}} = input)',
+    '({nested:{value: author["se"+"arch"]}, after:{value: other}} = input)',
+    '({value: author.search, ...rest} = input)',
+    '({value: other = (author.hostname = "evil.example"), after:{nested: tail}} = input)',
+    '({value: this["search"], after:{nested: tail}} = input)',
+    '({value: super[key], after:{nested: tail}} = input)',
+    '({value: /x/[key], after:{nested: tail}} = input)',
+    '({value: tag`x`[key], after:{nested: tail}} = input)',
+  );
+  let deep = '{value: author.search}';
+  for (let level = 0; level < 64; level++) deep = `{level: [${deep}]}`;
+  attacks.push(`(${deep} = input)`);
+  for (const source of attacks) {
+    if (!scanSource(source, 'probe/reader.js').some(error => /destructuring .* forbidden/.test(error))) throw new Error(`destructuring self-test: missed ${source}`);
+  }
+  for (const source of [
+    'const {first, second:{value: other}} = input;',
+    'for (const [key, value] of entries) {}',
+    'function f({first = 0, second: [value]}) {}',
+    'const data = {nested: {value: author.search}};',
+    'const text = "({value: author.search} = input)";',
+    'const pattern = /[{](author.search)[}]/;',
+    'const text = `({value: author.search} = input)`;',
+    '/* ({value: author.search} = input) */ const value = 0;',
+  ]) if (checkDestructuring(source, 'probe/reader.js').length) throw new Error('destructuring self-test: safe source rejected');
+  return attacks.length;
+}
+
+export function resourcePropertySelfTest() {
+  // Explicit pairs make missing mappings fail rather than shrink the matrix.
+  const pairs = [
+    ['src', 'src'], ['href', 'href'], ['srcset', 'srcset'], ['action', 'action'],
+    ['poster', 'poster'], ['data', 'data'], ['ping', 'ping'], ['formaction', 'formAction'],
+    ['attributionsrc', 'attributionSrc'], ['background', 'background'],
+    ['referrerpolicy', 'referrerPolicy'], ['srcdoc', 'srcdoc'],
+  ];
+  if (JSON.stringify(Object.entries(RESOURCE_ATTRIBUTE_IDL)) !== JSON.stringify(pairs)) throw new Error('resource self-test: attribute/IDL map changed');
+  const cases = [];
+  for (const [attribute, key] of pairs) {
+    const escape = `\\u${key.charCodeAt(0).toString(16).padStart(4, '0')}${key.slice(1)}`;
+    const kind = key === 'href' ? 'URL component write' : 'resource property write';
+    for (const source of [
+      `author.${key} = value;`, `author.${escape} = value;`,
+      `author.\\u{${key.charCodeAt(0).toString(16)}}${key.slice(1)} = value;`,
+      `author['${key}'] = value;`, `author['${escape}'] = value;`,
+      `author['\\x${key.charCodeAt(0).toString(16)}${key.slice(1)}'] = value;`,
+      `author['${key[0]}' + '${key.slice(1)}'] = value;`,
+      `author[/*key*/'${key}'] = value;`,
+      `author.${key} += value;`, `author.${key} ||= value;`, `author.${key} ??= value;`,
+      `author.${key}++;`, `++author.${key};`, `delete author.${key};`,
+      `(getAuthor()).${key} = value;`,
+      `for (author.${key} of values) {}`, `for (author.${key} in values) {}`,
+    ]) cases.push([source, kind]);
+    cases.push([`author[('${key}')] = value;`, 'dynamic property write']);
+    for (const source of [
+      `Reflect.set(author, '${key}', value);`, `Reflect['s'+'et'](author, '${escape}', value);`,
+      `Object.assign(author, {'${key}': value});`, `Object['ass'+'ign'](author, {'${escape}': value});`,
+      `Object.defineProperty(author, '${key}', {value});`,
+      `Object.defineProperties(author, {'${key}': {value}});`,
+      `Reflect.defineProperty(author, '${key}', {value});`,
+      `Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype, '${key}').set.call(author, value);`,
+    ]) cases.push([source, 'reflective property mutation/extraction']);
+    for (const source of [
+      `({first: author.${key}, second: {value: other}} = input);`,
+      `({first: author['${escape}'], second: {value: other}} = input);`,
+      `({first: author.${key} = value, second: {value: other}} = input);`,
+      `for ({first: author.${key}, second: {value: other}} of values) {}`,
+      `for ([{first: author.${key}, second: {value: other}}] in values) {}`,
+      `const {first = (author.${key} = value), second: {value: other}} = input;`,
+      `function f({first = (author.${key} = value), second: {value: other}}) {}`,
+    ]) cases.push([source, 'destructuring member access']);
+    for (const source of [
+      `author.setAttribute('${attribute}', value);`,
+      `author['set'+'Attribute']('${attribute}', value);`,
+      `author.setAttribute('\\u${attribute.charCodeAt(0).toString(16).padStart(4, '0')}${attribute.slice(1)}', value);`,
+      `author.setAttribute('${attribute[0]}'+'${attribute.slice(1)}', value);`,
+      `author.setAttribute('${attribute.toUpperCase()}', value);`,
+      `author.setAttrib\\u0075te('${attribute}', value);`,
+    ]) cases.push([source, 'banned API "resource attribute"']);
+    for (const source of [
+      `author.setAttributeNS(null, '${attribute}', value);`,
+      `author['setAttributeNS']('namespace', '${attribute[0]}'+'${attribute.slice(1)}', value);`,
+    ]) cases.push([source, 'banned API "namespaced resource attribute"']);
+  }
+  cases.push(
+    ["author.ping = 'https://evil.example/ping';", 'resource property write'],
+    ["author.ping = 'https://x.com/punkcan';", 'resource property write'],
+    ['const key = "ping"; author[key] = value;', 'dynamic property write'],
+    ['author[`pi${suffix}`] = value;', 'dynamic property write'],
+    ['const {set: write} = Reflect; write(author, "ping", value);', 'reflective property mutation/extraction'],
+    ['const {assign: write} = Object; write(author, {ping: value});', 'reflective property mutation/extraction'],
+    ['const write = Object.defineProperty; write(author, "ping", {value});', 'reflective property mutation/extraction'],
+    ['author.ping = value; author.search = "?x=1";', 'URL component write'],
+  );
+  for (const source of [
+    "const write = author.setAttribute; write.call(author, 'ping', value);",
+    "author.setAttribute.call(author, 'ping', value);",
+    "const name = 'ping'; author.setAttribute(name, value);",
+    "const write = author.setAttribute.bind(author); write('ping', value);",
+    "author.setAttribute.apply(author, ['ping', value]);",
+    "const {setAttribute: write} = author; write.call(author, 'ping', value);",
+    "author['set'+'Attribute'](name, value);",
+    "author.setAttrib\\u0075te(name, value);",
+    "author.setAttributeNS(namespace, name, value);",
+    "const write = author.setAttributeNS; write.call(author, null, 'ping', value);",
+    'author.setAttributeNode(attribute);', 'author.setAttributeNodeNS(attribute);',
+    'author.attributes.setNamedItem(attribute);', 'author.attributes.setNamedItemNS(attribute);',
+  ]) cases.push([source, 'dynamic/extracted attribute mutation']);
+  for (const [source, rule] of cases) {
+    if (!scanSource(source, 'probe/reader.js').some(error => error.includes(rule))) throw new Error(`resource self-test: missed ${source}`);
+  }
+  for (const source of [
+    'const ping = author.ping; const source = image.src; const policy = image.referrerPolicy;',
+    'const style = {background: "white", color: "black"}; element.style.setProperty("background", style.background);',
+    'const {first, second: {value: other}} = input;',
+    'element.setAttribute("aria-label", label); element.setAttribute("data-xsched-host", "1");',
+  ]) if (scanSource(source, 'probe/reader.js').length) throw new Error('resource self-test: safe source rejected');
+  return cases.length;
+}
+
+export function cssResourceSelfTest() {
+  // Keep the explicit function list/count independent of the guard's list.
+  const names = ['url', 'src', 'image', 'image-set', '-webkit-image-set', 'cross-fade', '-webkit-cross-fade', 'element', '-moz-element', 'paint', '-webkit-canvas'];
+  if (JSON.stringify(names) !== JSON.stringify(CSS_RESOURCE_FUNCTIONS)) throw new Error('CSS self-test: function list changed');
+  const cases = [];
+  for (const name of names) {
+    const value = `${name}("https://evil.example/tracker.png" 1x)`;
+    const literal = JSON.stringify(value);
+    const declaration = JSON.stringify(`background-image: ${value}`);
+    const rule = JSON.stringify(`.synthetic {background-image: ${value}}`);
+    cases.push(
+      `const value = ${literal};`,
+      `author.style.setProperty('background-image', ${literal});`,
+      `author.style.cssText = ${declaration};`,
+      `author.style.backgroundImage = ${literal};`,
+      `author.style['background-image'] = ${literal};`,
+      `author.setAttribute('style', ${declaration});`,
+      `Object.assign(author.style, {backgroundImage: ${literal}});`,
+      `document.createElement('style').textContent = ${rule};`,
+      `sheet.insertRule(${rule});`, `sheet.replace(${rule});`, `sheet.replaceSync(${rule});`,
+      `new CSSStyleSheet().replaceSync(${rule});`,
+      `CSSStyleSheet.prototype.insertRule.call(sheet, ${rule});`,
+      `CSS.supports('background-image', ${literal});`,
+      `author.style.setProperty('--synthetic-image', ${literal});`,
+    );
+    const first = name.charCodeAt(0).toString(16);
+    const split = Math.max(1, Math.floor(name.length / 2));
+    const head = JSON.stringify(name.slice(0, split));
+    const tail = JSON.stringify(value.slice(split));
+    cases.push(
+      `const value = ${JSON.stringify(value.toUpperCase())};`,
+      `const value = ${literal.replace(name[0], '\\u' + first.padStart(4, '0'))};`,
+      `const value = ${literal.replace(name[0], '\\x' + first.padStart(2, '0'))};`,
+      `const value = ${JSON.stringify('\\' + first + ' ' + value.slice(1))};`,
+      `const value = ${JSON.stringify('\\' + first.padStart(6, '0') + value.slice(1))};`,
+      `const value = ${JSON.stringify([...name].map(char => '\\' + char.charCodeAt(0).toString(16) + ' ').join('') + value.slice(name.length))};`,
+      `const value = ${head} + ${tail};`,
+      `const value = (${head}) + (${tail});`,
+      `const value = ${head} /* split */ + ${tail};`,
+      'const value = `' + value + '`;',
+      'const value = `' + name.slice(0, split) + '${' + JSON.stringify(name.slice(split)) + '}' + value.slice(name.length) + '`;',
+      `const value = ${literal.slice(0, 2)}\\\n${literal.slice(2)};`,
+    );
+  }
+  cases.push(
+    `author.style.setProperty('background-image', 'image-set("https://evil.example/tracker.png" 1x)');`,
+    `const value = 'image-set("relative.png" 1x)';`,
+    `const value = 'image-set("//evil.example/tracker.png" 1x)';`,
+    `const value = 'image-set("data:image/png,synthetic" 1x)';`,
+    `const value = 'image-set("https://x.com/punkcan" 1x)';`,
+    `const value = '@import "relative.css"';`,
+    `const value = ${JSON.stringify('@\\69 mport "relative.css"')};`,
+    `const value = 'image/**/-set("relative.png" 1x)';`,
+  );
+  for (const source of cases) {
+    if (!scanSource(source, 'probe/reader.js').includes('probe/reader.js: CSS image/resource value forbidden')) throw new Error(`CSS self-test: missed ${source}`);
+  }
+  // CSS files get the same CSS-level normalization without JS literal parsing.
+  for (const source of [
+    '.synthetic {background: image-set("relative.png" 1x)}',
+    '.synthetic {background: im\\61 ge-set("relative.png" 1x)}',
+    '@\\69 mport "relative.css";',
+  ]) {
+    cases.push(source);
+    if (!scanSource(source, 'probe/synthetic.css').includes('probe/synthetic.css: CSS image/resource value forbidden')) throw new Error(`CSS self-test: missed stylesheet ${source}`);
+  }
+  for (const source of [
+    'author.style.setProperty("background", "white");',
+    'author.style.cssText = "display:flex;color:#123456";',
+    'author.setAttribute("style", "position:fixed;opacity:1");',
+    'sheet.insertRule(".synthetic {color: blue}");',
+    'const gradient = "linear-gradient(red, blue)";',
+    'const value = "radial-gradient(circle, red, blue)";',
+    'const value = "translateY(10px) calc(100% - 20px)";',
+    'const address = "https://x.com/punkcan";',
+  ]) if (scanSource(source, 'probe/reader.js').length) throw new Error(`CSS self-test: safe source rejected ${source}`);
+  if (!checkCssResources('const value = "unterminated', 'probe/reader.js').some(error => error.includes('failed closed'))) throw new Error('CSS self-test: literal failure passed');
+  return cases.length;
+}
+
 function selfTest() {
   const violations = [
     'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
@@ -626,6 +1165,12 @@ function selfTest() {
   }
   const storageCases = positionStorageSelfTest();
   const nativeCases = nativeWriterSelfTest();
+  const authorCases = authorLinkSelfTest();
+  const urlCases = urlMutationSelfTest();
+  const boundaryCases = authorBoundarySelfTest();
+  const destructuringCases = destructuringSelfTest();
+  const resourceCases = resourcePropertySelfTest();
+  const cssCases = cssResourceSelfTest();
   // Prove the scanner fails closed: a synthetic probe with a network call AND a bad
   // manifest must produce errors, while a clean synthetic probe must not.
   const dir = mkdtempSync(join(tmpdir(), "xsched-verify-selftest-"));
@@ -688,23 +1233,26 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases, destructuring:destructuringCases, resource:resourceCases, css:cssCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
 function main() {
-  const problems = [];
-  let selfTests;
-  try {
-    selfTests = selfTest();
-  } catch (err) {
-    problems.push(`SELF-TEST FAILED: ${err.message}`);
-  }
-
   const { errors, scanned } = checkProbeDir(PROBE);
-  problems.push(...errors);
+  const problems = [...errors];
+  let selfTests;
+  // Static failures already prevented pure-module imports. Report that failure
+  // without trying DOM self-tests against unavailable modules. Clean production
+  // sources still run every self-test before they can receive an OK result.
+  if (!errors.length) {
+    try {
+      selfTests = selfTest();
+    } catch (err) {
+      problems.push(`SELF-TEST FAILED: ${err.message}`);
+    }
+  }
   // Optional synthetic directory is checked in addition to the real probe. It must
   // never provide a way to skip the production guard.
   if (process.argv[2]) problems.push(...checkProbeDir(process.argv[2]).errors);
@@ -716,7 +1264,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary, ${selfTests.destructuring} destructuring self-tests; ${selfTests.resource} resource property self-tests; ${selfTests.css} CSS resource self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call
