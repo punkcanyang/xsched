@@ -27,9 +27,9 @@ function build(document, pathname = SCHEDULED) {
 
 test("header names the version and only says whether the path is scheduled", () => {
   const out = build(doc("<html><body><div></div></body></html>"));
-  assert.match(out.split("\n")[0], /^xsched-skeleton v0\.0\.3 path=scheduled nodes=\d+$/);
+  assert.match(out.split("\n")[0], /^xsched-skeleton v0\.0\.4 path=scheduled nodes=\d+$/);
   const other = build(doc("<html><body></body></html>"), "/home");
-  assert.match(other.split("\n")[0], /^xsched-skeleton v0\.0\.3 path=other nodes=\d+$/);
+  assert.match(other.split("\n")[0], /^xsched-skeleton v0\.0\.4 path=other nodes=\d+$/);
   assert.ok(!out.includes("/compose"), "must not echo the URL/path");
 });
 
@@ -78,7 +78,7 @@ test("class tokens keep only known X namespaces; readable usernames are masked",
   // ...but a long pure-hex run is hash-like and collapses to "h".
   assert.equal(S.classToken("a".repeat(40)), "h");
   assert.equal(S.classToken("plain"), "x");
-  assert.equal(S.classToken("VibeEyeX-profile"), "x");
+  assert.equal(S.classToken("decoy_handle-profile"), "x");
   assert.equal(S.classToken("使用者名稱"), "x");
   assert.equal(S.classToken("r"), "r");
 });
@@ -137,8 +137,8 @@ test("iframe hostname excludes credentials/port and parses IPv6", () => {
 });
 
 test("arbitrary short account tokens never survive enum-valued attributes", () => {
-  const out = build(doc('<html><body><div role="VibeEyeX" data-testid="VibeEyeX" aria-selected="VibeEyeX" class="VibeEyeX-profile"></div></body></html>'));
-  assert.ok(!out.includes("VibeEyeX"), out);
+  const out = build(doc('<html><body><div role="decoy_handle" data-testid="decoy_handle" aria-selected="decoy_handle" class="decoy_handle-profile"></div></body></html>'));
+  assert.ok(!out.includes("decoy_handle"), out);
   assert.ok(out.includes("role=x"), out);
   assert.ok(out.includes("data-testid=x"), out);
   assert.equal(S.enumValue("button", "aria-hidden"), "x");

@@ -1,5 +1,7 @@
 # 閘 0：可行性（Scheduled 列表讀取）
 
+最新階段見本檔末尾「閘 0.3」；之前各節保留歷史驗收與複審紀錄。
+
 更新：2026-10-09（UTC+8），產品開發（CodeWhale）；Codex 獨立 session 複審並修正。
 分支：`gate0/scheduled-read`。**本階段只做可行性探針，不做任何 1.0 功能。**
 
@@ -397,3 +399,201 @@ content.js 改 IIFE，避免與 0.0.2 的頂層 const 衝突；新 session 提�
 **VERDICT: APPROVE（程式複審；合併前仍須外部最新 e2e 全過）。** 已修正的阻擋問題有回歸證據，沒有發現其他程式阻擋；這不代表真頁時間驗收或 STATUS READY。產品結論維持：**則數依骨架可讀、時間格式待老闆診斷確認**。
 
 老闆實測沿用上節 **5 步**：取得 main → reload 擴充 → refresh X → Scheduled 逐則對照日期＋時分／則數 → 先複製診斷貼草稿，再在 Scheduled 頁按一下「複製頁面結構」，把結果與新診斷一起貼回（附語系）。fmt 現在可直接讀；samples 仍 encoded，可連同整份診斷貼回，不需老闆手工解碼。兩欄皆 none 時另提供一則不含本文／帳號／網址的安排時間短句。
+
+---
+
+# 閘 0.3：真格式星期修正、浮層捲動／縮小／右下避讓（probe 0.0.4）
+
+2026-10-10，同一 Codex 寫碼 session，分支 `gate0.3/overlay-scroll-avoid`，基準 main `fdc8096`（PR #5、probe 0.0.3），開工提交 `568ff16`。本機實作與單元／守門完成，待外部 Chrome e2e、假資料截圖、另一 session 複審與老闆真機逐則對照，尚未 READY。
+
+## 0.0.3 失敗根因與證據
+
+老闆確認繁中介面與安排時間的結構：L117–118 的單一 span 文字，日曆圖示在旁、含年份、日期後有未加括號的星期、上午／下午在時分之前，後綴發送。**節點選擇已確認正確，不需要猜新列表選擇器。** 這裡只記格式，所有範例日期／本文換成假值，不存老闆真日期時間或真畫面。
+
+用假日期重現：`將於 2026年11月3日 週二 下午11:19 發送`。在 0.0.3 上 `parseSchedule=null`、`timeSample=""`，真骨架重建仍讀 1 則、timeFail=1、fmt 空；直接 `maskSample` 能保留整個日曆短句。去掉 `週二 ` 就能解析成 `2026-11-03 23:19 (Tue)`。
+
+因此根因是 **日期後的未加括號星期不在文法裡**：legacy strict／loose、中文 labelPatterns 只允許括號星期或直接接上午下午／時分；unknown numeric timeSample 的日期→時鐘提取也沒有週／周／星期分支。不是將於／發送片語、不是真時間節點隔離失敗、不屬於上午下午位置或普通空白問題，也不是遮罩順序造成。先遮罩身份再提取的複審隱私修正仍保持。
+
+原浮層已經有 overflow:auto，但操作鈕在一般內容流底部，避讓又可以把整個面板縮到很短，沒有為操作區保留空間。使用者看不到操作鈕，且缺少明顯縮小入口。舊幾何偵測從 button／a／role 等互動候選往上找 fixed 祖先，可能漏掉純 div 的紅點圓形元件；查詢後遍歷亦無上限，clear=false 的最後預設位置仍可能遮到原生元件。這些是程式的風險分析，沒有把真頁圓形元件猜成某個新 testid。
+
+## 修法與 fixture
+
+- `READ_CONFIG.time` 內既有中英文／日韓規則保留；繁簡中文 strict／loose／labelPatterns 與 unknown sample 提取增添有界、非 capturing 的 `週|周|星期`＋一至六／日／天，位置在日期後、上午下午之前，不改既有 parts 索引。普通空白、NBSP、全形冒號與時鐘兩側空白也接受。
+- 有年份以明確日期為準。星期與日期不同不崩潰、不令時間失敗；浮層星期從 Date 計算，忽略文案星期，沒有增加包含原文字的診斷。例：假日期 11/3 加週五，仍顯示 Tue。
+- 單元覆盖繁簡兩套片語的 1–12 點 × 上午下午（48 組例子）；上午12:19→00:19、下午12:19→12:19。週／周／星期、有無空白、全年份／無年份與跨年例子一起跑。0.0.3 原五語、跨年、隱私與備援回歸都保留。
+- `fixtures/real/boss-skeleton.html/.json` 改成「格式由老闆真機樣本確認、日期／本文為假」：`將於 2026年11月3日 週二 下午11:19 發送`，預期 **1 則、2026-11-03 23:19 (Tue)、timeFail=0**。雙 dialog／未知 tab／獨立時間 span／背景 article 結構不變。
+- 新增 `boss-skeleton-zh-Hans.html/.json`：`将于 2026年11月3日 周二 下午11:19 发送`，同一假日期与預期。簡中是需求指定的對應變體；不宣稱老闆使用簡中真機測過。
+- 轉換腳本仍只取原遮罩骨架安全結構與 enum，文字全部明寫替代；新增 `--zh-Hans`。`cross-year` 的缺年份／第二列仍是合成測試例子，不能把它當真機格式／真頁兩列。
+- 原 340KB 骨架留在 repo 外。已重跑轉換／scanFixture，拒絕網址／email／handle／UUID 與非允許屬性；三個 real fixtures 自動配 JSON 驗收。沒有把這次老闆真時間字串存進 repo。
+
+## 浮層、固定操作鈕與安全樣本
+
+整個 panel（含標頭／按鈕）max-height ≤視窗 **60%**，並取 viewport 剩餘空間的較小值；box-sizing:border-box。用 flex column 分成不縮小的 header、min-height:0／overflow:auto 的 `.panel-body`、不縮小的 `.panel-actions`。只有內容列／診斷／textarea 在內部捲動，複製診斷與骨架始終在操作列；非 Scheduled 的前往 Scheduled 也在同列。操作區被避讓後的面板最小高度計算保留，沒有再縮成看不到按鈕的 80px 面板。
+
+標頭有九語「縮小」按鈕，與快捷鈕共用 `collapsed`；縮成只剩 Dagaz，按快捷鈕再展開。手動選擇跨 SPA／host 重掛保留。前往 Scheduled 仍只接受可信使用者點擊、固定 location.assign 目標，沒有 href sink／合成點擊導覽。
+
+每個未解析時間列在「時間未解析」下方顯示 `.sample`：只用 reader 認證的獨立時間樣本，重用 `maskSample`、≤60 code points；不用 item.time、preview／本文當備援。沒有安全樣本則顯示「無可安全匯出的樣本」。網址／email／handle／UUID 先整段遮罩，未知格式拒絕任意本文數字；時間節點後的內文、日期形狀的身份，以及 tweetText 裡的日曆短句都不能匯出。fmt 保持第三行可讀，samples 保持 encoded／最多3筆；所有複審修正保留。
+
+## 右下避讓策略與上限
+
+只用讀取 DOM 與 getComputedStyle／getBoundingClientRect；不 click、不捲 X、不修改 X DOM，不新增任何 X 選擇器或權限。
+
+1. 有限互動查詢取最多 **96** 個候選，補左側 Post／既有 FAB 等。右下 **448×640px** 區域以 32px 步距 elementsFromPoint 取樣（最多 **320** 點，每點最多8個元素），可找到非 button 的圓形 div、徽章父層、DM／Grok 等。所有來源合計最多 **256** 個候選，排除自家 host／停放容器。
+2. 每候選最多向上 **12** 層，style cache 全部最多 **768** 節點。只計 fixed／sticky、非 display:none／hidden／collapse／opacity:0、矩形有尺寸且與 viewport 相交者；矩形去重。完整頁面 fixed backdrop 不當成整個右下抽屜，但其互動子元素仍可當障礙。
+3. 用快捷鈕＋上方 panel 的保守聯合矩形，保留 **8px** 間距，先向上再向左；候選加入障礙邊緣與有限步距，水平至多64個位置；垂直另含預設／底緣位置，保守上限66個。面板上方／左右保留16px空間。預設仍 right16／bottom112／44px Dagaz。
+4. 展開面板放不下時，最多12個步進縮短候選，另試最小高度候選，仍預留固定操作區。仍無空間只露出可避讓的快捷鈕；連快捷鈕都無安全位置就暫時隱藏自家 UI，避免覆蓋已偵測控制項。手動意圖保留，400ms poll／resize／頁面 mutation／scroll 會重試。
+
+這是有界幾何啟發式，不是對所有 X 布局的保證。新增 mock 是假的 DOM／CSS：收合 DM drawer、純 div＋紅點1的圓形、Grok，以及原桌面 Post／窄版 FAB。e2e 在 **1280×600、1100×820、390／600×820** 驗證 panel／shortcut 矩形不重疊、原生鈕 elementFromPoint 嚴格命中與物理點擊；圓形 div 允許命中其徽章子節點。沒有登入 X。
+
+## 版本、公開 repo 衛生與守門
+
+manifest／package／lockfile／reader／skeleton 都 **0.0.4**，診斷與浮層正常首行 `xsched probe v0.0.4 (manifest 0.0.4)`。版本不符／runtime invalidated 與 0.0.2 接手機制保留；老闆仍須 reload 擴充再 refresh 頁面。
+
+指定舊身份誘餌已換成 `@decoy_handle`（需無@時用 decoy_handle）與 `decoy@example.invalid`。全 repo 工作樹（不含 node_modules／.git 歷史）搜尋兩個指定舊字串 **0 命中**；包含 AGENTS／測試／verify／兩份開工卡／HANDOFF 的既有提及。AGENTS 硬規則只替換指定身份，其他硬規則文字不改；另更新測試說明。没有記錄老闆真日期、handle、真頁截圖、token 或對話全文。
+
+verify 原網路 API／資源 sink／HTML 注入／權限／固定導覽規則未放寬，API30／icon14／SVG9 自測不減；洩漏自測由 main 的 **32** 增到 **37**，新增週字樣日期身份3筆與安全 weekday fmt／samples／骨架匯出檢查。舊誘餌替换後的 fragment／故意洩漏 mock 斷言仍能抓到外洩。未新增權限、host、遠端資源／請求、背景工作或儲存；$0，不打包 zip。
+
+## 本機實跑與外部續跑
+
+- `npm test`：退出0，沙箱 reporter **8 檔通過／0 敗**；細項 `node --test --test-isolation=none test/`：**113 過／0 敗／0 跳過**（三個 real fixture 子測試）。
+- `npm run verify`：退出0，**9 probe 檔／4 Logo SVG；30 API bypass／14 icon／9 SVG／37 leak self-test**。
+- `node --check scripts/e2e.mjs`／`git diff --check`：通過。
+- `npm run e2e`：退出1，`fixture server failed: Error: listen EPERM: operation not permitted 127.0.0.1`。Chrome 斷言沒有開始，本輪 **0 張新圖、網路證據待外部**；不能沿用閘0.2的323斷言稱本輪通過。
+
+外部在最後工作樹執行 `npm test`、`npm run verify`、`npm run e2e`，需要明細再跑 `node --test --test-isolation=none test/`。沿用 Chrome for Testing 預設 CHROME_PATH 與 Xvfb。新增 Chrome 情境用30列假資料证明短視窗內部真的可捲，捲到底後固定按鈕仍可命中／物理複製，縮小重掛與展開，DM／Grok／紅點避讓，繁簡1列假日期 timeFail=0，未知時間的樣本不含身份／內文；舊語系／virtual／clipboard／接手全繼續跑。網路證據仍只有那一次可信使用者點擊頂層導覽例外，資源／背景請求要求0。
+
+新圖全部寫 `docs/gate0.3-*.png`，至少 `small-viewport-scroll`、`collapsed`、`avoid-native`、`unparsed-sample`、`real-skeleton-zh-Hant`、`real-skeleton-zh-Hans`；其餘舊情境也改 gate0.3 前綴，另 `docs/gate0.3-skeleton-sample.txt`。gate0／gate0.1／gate0.2 舊图與骨架保留不覆寫。截圖全部是 fixture 假資料；外部複本由使用者安排，本沙箱不寫 repo 外。
+
+.git 唯讀，本寫碼 session 無法提交；commit／push／外部 e2e 由使用者做。另一 session 尚未複審，不開 PR、不改 main。
+
+## 老闆實測（≤5步；合 main 後）
+
+1. `git pull main`。
+2. 自己的 Chrome 開 `chrome://extensions`，重新載入 `probe/`，確認 **0.0.4**。
+3. **重新整理 x.com**，確認浮層可內部捲、可按縮小再用 Dagaz 展開，沒蓋到 X 右下原生元件。
+4. 到 Scheduled，逐則對照浮層日期＋時分與 X 顯示的時間；數字只代表當時 DOM／自己捲過的列。
+5. 截圖浮層（解析失敗時包含時間樣本），按「複製診斷」貼回；clipboard 被拒時用固定「全選」手動複製。真機回報不提交 repo。
+
+## 已知限制／待確認
+
+繁中格式已由真機回報確認、假日期解析已通過；0.0.4 尚未在老闆 Chrome 逐則實測。簡中是對應變體而非真機驗收。另四語時間格式仍未承諾；時區跟瀏覽器，無年份按今天／列表順序推年，虛擬累加與同時間同本文去重限制沿用。
+
+右下取樣有有限區域／步距／候選上限；極小控制項、區域外的純 div、超深層 fixed、closed shadow、全頁遮擋或極小視窗可能不可辨識／無空間。已偵測無空間時縮成快捷鈕或暫藏，不為顯示操作區而覆蓋原生矩形；空間恢復會重試。陰影本身不計入矩形，實際堆疊／縮放／真 X 抽屜仍需真機與外部 Chrome 核對。縮小與重掛保留手動狀態，刷新會重設。
+
+## 閘0.3 外部 remount 失敗續修（2026-10-10）
+
+外部 `6e9cecf` 的 test113／verify37通過；Chrome e2e 在原681行隱藏host後 mounted 應為0處逾時，後續情境與最終網路證據未跑完。根因是避讓 `positionUI()` 在每次poll先寫 `display:block !important`，結尾可放置時又寫一次block，於是覆蓋外部 `display:none !important`。可見性函式仍測host的連接／矩形，沒有誤測快捷鈕。
+
+修正不再由避讓覆写host display；無空間暫藏改為 `visibility:hidden`，仍可量矩形並在空間恢復時重試。`hostMounted()` 保留原連接與兩维非零檢查，另拒絕 computed display:none／visibility:hidden或collapse，讓診斷反映實際host顯示狀態。外部隱藏經poll與完整重畫仍mounted=0，外部恢复block才回1；避讓暫藏與自動恢复不丟手動展開意圖，也不取消外部display隱藏。
+
+新增2項 content 回歸與reader可見性斷言；e2e原0→1等待不改，另要求computed display仍none、診斷mounted=0。檢查後續骨架複製／textarea、virtual、SPA、mutations、composer、lifecycle、首頁／非Scheduled及network，無明顯需改的舊幾何假設；固定操作區與既有gate0.3幾何測試保留。
+
+本輪 `npm test` 8檔通過，細項 **115/115、0敗、0跳過**；verify **30 API bypass／14 icon／9 SVG／37 leak** 全過；e2e語法與diff檢查通過。Chrome因既有沙箱listen限制仍待外部在最新工作樹跑 `npm test` → `npm run verify` → `npm run e2e`，本輪不宣稱e2e／0請求驗收通過。外部失敗途中產生的24張gate0.3圖保留未動，完整圖片／網路證據需重跑。版本0.0.4不變，沒有改讀法、verify守門或權限；尚未READY。
+
+---
+
+# 閘 0.3 Codex 複審
+
+2026-10-10，接續同一獨立 Codex 複審 session（與寫碼 session `01a1212e` 不同）。已讀 AGENTS／ROADMAP／開工卡／競品／HANDOFF 與本文件閘0.3節，第一輪審查 `git diff fdc8096...65052dd` 全部改動。以下第一輪結果保留為歷史；最新判定與交付以本節末「本輪續審（b6c8a1a＋工作樹修正）」為準。
+
+## 發現與修正
+
+| 嚴重度 | 檔案 | 發現與修正 |
+|---|---|---|
+| 高：讀法正確性 | `probe/reader.js` | 舊 cell／role／文字備援仍對整列 textContent 解析：時間標籤未知時，tweetText 內的日曆短句可被誤算為安排時間。已重現並修正為只讀 tweetText 外的文字節點；本文內的 role／aria-label 也不得成為 metadata。保留原選擇器、外部時間標籤及本文預覽／去重鍵；骨架已支持的 button 未解析列仍保留則數。timeFail 不再把本文年份當格式漂移。 |
+| 低：文件精確度 | 本文件避讓上限 | 垂直候選在64個有界位置之外另有預設／底緣位置；縮短迴圈外另試一次最小高度。文件已改為相應保守上限，程式仍有限，不改避讓算法。 |
+
+`test/calendar.test.mjs` 新增兩項回歸，覆蓋 cell／listitem／button role／文字備援、本文 role／aria-label、外部午夜標籤與另一個日期形狀的本文。`scripts/verify.mjs` 新增本文不能成為 metadata 的攻擊，自測37→38，原所有 API／注入／權限與洩漏斷言保留。`scripts/e2e.mjs` 新增真 content script 的同類 cell 情境：只保留第二則有正確外部時間的列，第一則本文日期不能變成時間或診斷。
+
+## 逐項核對
+
+- **時間**：繁簡週／周／星期及空白變體、48組上午／下午1–12點、午夜／中午、星期不符以日期為準、原五語與跨年全部通過。確認格式來自使用者真機回報；本 session 沒有登入 X 或重讀真頁。三份 real HTML 均與原骨架離線轉換結果逐字相同，隱私掃描通過；日期與本文為假，簡中明列對應變體，無年份／第二列明列合成情境。
+- **舊讀法比較**：10個舊 fixture×6路徑共60組，與 `fdc8096` 的則數、各列時間／preview／key、層級及其他計數無差異；只有刻意把 home fixture 放在 Scheduled 路徑的案例，移除本文年份的兩個假 timeFail，empty 因而0→1。沒有把這項安全修正宣稱為完整 JSON 零差異。
+- **浮層**：panel≤60vh，header／actions不縮小，body min-height:0＋overflow:auto；縮小與快捷鈕共用手動狀態，SPA／重掛保留。檢視已提交的短視窗捲動與未解析樣本假資料截圖，固定操作鈕可見；Chrome hit-test／物理點擊仍以外部實跑為證。沒有修改 X DOM、click 或自動捲動。
+- **避讓／mounted**：候選256、style768、點320、祖先12層及有限位置／縮短候選均有界；observer不監看shadow內部，host自身變動排除，重掛限速仍保留。無空間時暫藏自家 UI並重試；65052dd 的修正不覆寫外部 display:none，mounted 檢查 host連線、尺寸與display／visibility，相關真 content 回歸已過。避讓仍是有限區域幾何啟發式，不保證辨識所有真頁控制項或堆疊遮擋。
+- **隱私／硬規則**：遮罩樣本只取認證隔離時間節點，不取 item.time／本文備援；URL／email／handle／UUID先整段遮罩，未知格式拒絕任意本文數字。lang／doclang、骨架enum／class／iframe及診斷的舊攻擊保留。指定舊身份字串工作樹0命中（掃描含隱藏檔、排除node_modules／.git歷史）；常見token／私鑰格式掃描亦0命中。manifest僅升版，無新權限／host／資源公開；verify原靜態規則未放寬。$0、無新網路API／資源載入／儲存，未連真 X。
+
+## 實跑結果與外部交付
+
+- `npm test`退出0：8個測試檔全過；同程序細項 **117/117，0敗、0跳過**。
+- `npm run verify`退出0：**9 probe檔／4 Logo SVG；30 API bypass／14 icon／9 SVG／38 leak自測**。故意洩漏骨架／遮罩／語系／iframe的變體仍會失敗；CLI違規探針仍退出1。
+- `node --check scripts/e2e.mjs`、`git diff --check`通過。
+- **外部回報，非本 session 實跑**：`65052dd` 的 test115／verify37／e2e453斷言已通過；這是複審修正前的結果。最新 reader／新增Chrome情境尚未外部驗證，不能沿用453宣稱本次通過。本沙箱listen被擋、.git唯讀，本次沒有提交／push／merge／改main／生成新截圖。
+
+本次修改5檔：`probe/reader.js`、`test/calendar.test.mjs`、`scripts/verify.mjs`、`scripts/e2e.mjs`、`notes/GATE0.md`。外部請在最新工作樹重跑 `npm test`、`npm run verify`、`npm run e2e` 全過，再提交／合併；保留全部原情境與擴充0資源／背景請求斷言，仍僅接受一次可信使用者點擊的固定Scheduled頂層導覽。截图全部由本機假fixture生成，旧gate0／0.1／0.2不覆寫。
+
+## 結論與老闆實測
+
+**VERDICT: APPROVE（程式複審；合併前須外部最新三項測試全過）。** 阻擋問題已修且有回歸證據，未發現其他阻擋；不代表閘0真機驗收已完成。繁中格式已確認，0.0.4的逐則時間／布局仍待老闆自己的Chrome實测；簡中只確認對應假資料。
+
+老闆步驟保留 **≤5步**：pull main → reload確認0.0.4 → refresh X確認捲動／縮小／避讓 → Scheduled逐則對照日期＋時分 → 回傳浮層與失敗樣本截图及診斷。真機資料不提交公開repo。剩餘限制為有限幾何取樣、closed shadow／極小視窗、本地時區及無年份順序假設、DOM可見窗口累加與同時間同本文去重，不能把探針數字當即時權威總數。
+
+## 本輪續審（b6c8a1a＋工作樹修正）
+
+接續同一複審 session，已重審 PR #8 的 `git diff fdc8096...b6c8a1a` 全部改動及本輪修正。下方「紅燈分析」是寫碼 session 在 b6c8a1a 前的分析紀錄，其 production 未改／Chrome 待跑敘述保留為當時狀態。
+
+**紅燈分析成立，新增測試比第一輪嚴格。** 已親讀 reader／content／測試，並離線重現：只改 `.when`／tweetText，舊 aria-label 合法提供09:00，單次 snapshot 即有2則、l1=l2=2；因此不能只歸因於累加。兩份 metadata 都未知後，單次掃描僅第二列；virtual 同scope仍保留已見列、換scope清空是既有設計。timeFail來自本次掃描，timeOk／items來自UI累加集合；en時間標籤是div，不是認證span，故timeFail=1但samples=none正確，沒有放寬樣本入口。b6c8a1a 保留本文日期、count=1、fmt／samples空與解碼診斷無本文日期的斷言，另加單次 isolated snapshot與scope重置，沒有接受count=2或跳過情境。
+
+**本輪另發現高嚴重度讀法漏洞並修正**：舊fixture的aria-label本來是「時間＋本文」。若可見時間未知、aria同步變成「未知時間＋同一本文」，reader仍可從aria中的本文借到假日期11/3 23:19；離線重現為2則、l1=l2=2，fmt／samples雖空，但讀法錯誤。這不是上述舊aria保留09:00的紅燈根因。`probe/reader.js` 新增完全比對的本文尾段排除：解析accessible label及計timeFail前移除與tweetText完全相同的尾段，不猜新選擇器、不改日期文法，保留正確外部aria時間與本文preview／去重鍵。
+
+保護證據：`test/calendar.test.mjs` 新增cell／listitem／button role、自身與內層aria的回歸，並驗證正確外部時間仍可讀。既有content mutation回歸與e2e改成保留「未知時間＋本文」的accessible label形狀；isolated snapshot、scope重置、count=1、唯一第二列、fmt／samples空、解碼診斷無本文日期的斷言全保留。verify新增合併aria的攻擊，洩漏自測38→39；用b6c8a1a原reader跑最新攻擊，確實以 `accessible label borrowed tweet body date` 失敗。原API30／icon14／SVG9與所有網路／注入／manifest規則未改。
+
+上一輪其餘核對仍成立：繁簡週／周／星期、12點邊界、24h、跨年及五語回歸全過；panel≤60vh、body內捲／固定操作列、縮小狀態、有限避讓／重掛與mounted檢查不變；UI仍只寫自家shadow／host，固定Scheduled導覽仍限可信使用者點擊。三份real fixture與repo外骨架離線轉換結果逐字相同且隱私掃描通過；格式與假日期來源標示清楚。指定舊身份字串掃描含binary／hidden、排除node_modules／.git歷史，0命中；常見token／私鑰掃描亦0命中。manifest只升版，無新權限／API／網路資源。老闆5步實測含Scheduled逐則對照日期與時分，真機驗收及幾何／累加限制保留。
+
+實跑與交付：
+
+- `npm test`退出0，8檔全過；細項 **120/120、0敗、0跳過**。
+- `npm run verify`退出0：9 probe檔／4 Logo SVG，**30 API／14 icon／9 SVG／39 leak自測**。
+- 60組舊fixture／路徑完整snapshot與b6c8a1a逐字相同；新攻擊拒絕舊reader。`node --check scripts/e2e.mjs`、`git diff --check`通過。
+- **外部回報、非本session實跑**：b6c8a1a的test119／verify38／e2e476通過；這是本輪修正前證據。最新production reader與合併aria情境仍須外部重跑三項，不能沿用476宣稱最新通過。網路證據仍要求0擴充資源／背景請求，只保留既有一次可信使用者點擊的固定Scheduled頂層導覽。
+
+本輪修改6檔：`probe/reader.js`、`test/calendar.test.mjs`、`test/content.test.mjs`、`scripts/e2e.mjs`、`scripts/verify.mjs`、本文件。無commit／push／merge／main修改、未登入X／連真站／花費／生成新截圖。
+
+**VERDICT: APPROVE（本輪阻擋問題已修；合併前外部最新test／verify／e2e須全過）。** 老闆真機逐則時間與布局驗收仍待自己的Chrome實測；虛擬累加不追蹤編輯／刪除身份，不能當即時權威總數。
+
+# 閘 0.3 e2e 紅燈分析
+
+本節先分析再修測試。分析基準 HEAD `ef63bd3`，已含 `fa87c62` 複審修正；`git status --short` 為空。未改 production／測試碼前，用 linkedom 與真 content.js VM 做離線重現；沒有登入 X、listen 或執行 Chrome。
+
+## 結論與程式證據（修正前行號）
+
+**目前未重現新的 reader bug；紅燈是測試前置 DOM／實跑版本待核對，不能把日誌直接歸因於累加。** 現有 `scripts/e2e.mjs:535–544` 已同步改 `.when`／aria-label，並替換完整 dialog；照這份 HEAD 重現，單次讀取與真 content 都剩1則。外部回報的 l1=2／l2=2 與此不同，反而吻合只改可見標籤／本文、保留原 aria-label 的 DOM。離線不能斷言外部究竟用了哪份檔案或 DOM；Chrome 實跑仍須外部驗證。
+
+- `reader.js:493–497` 優先採用可解析 aria-label；只改 `.when`，原 aria-label 的09:00仍是合法外部 metadata。`reader.js:469–477`／`480–481` 已排除 tweetText 的文字及內層 role。內文的繁中短句不能救回未辨識 metadata。
+- `reader.js:558–570` 回傳 tab 最近 dialog 的物件；`content.js:419–427` 在 scope 物件改變時清空累加。相同scope、needsScroll或virtualized時才保留舊列；非可捲／非virtual則整份replace。`reader.js:746–748` 累加按time＋body鍵去重，不追蹤列編輯／刪除身份。這是探針保留已見虛擬窗口的既有設計與限制，不代表当前列表的權威即時總數。
+- 因此若只改可見標籤但保留aria，期待count=1不合理；若兩個metadata都改了、仍同scope且可捲，count也可因累加維持2，但此時單次掃描 **l1=l2=1**。改成新scope後期待count=1合理，不能把預期放寬為2。
+- `reader.js:688–709` 的timeFail是本次掃描中帶年份但無法解析的候選／未解析列；`content.js:298–310` 的items、timeOk、unparsed來自浮層累加集合，timeFail、fmt、samples沿用最新report。這些不是同一集合的互斥桶，timeOk＋timeFail不必等於items。甚至未累加時，aria成功、可見文字失敗也可同時timeOk=2／timeFail=1。
+- samples比timeFail更嚴格：`reader.js:170–171` 只認骨架證明的span；`297–302` 要獨立葉節點且不在tweetText／composer／timeline；`699–709` 才收集。en fixture的`.when`是div，故timeFail=1但samples=none正確；不能為了有sample猜新選擇器。fmt只取認證結構樣本（`730–732`），legacy的fmt=none也正確。本文日曆詞即使可遮罩也不得進診斷。
+
+## 實跑指令與輸出
+
+`node /tmp/xsched-gate03-red-analysis.mjs`：讀取 `fixtures/en.html` → 同DOM改第一cell可見標籤為假未知格式 `Will send on 2027-01-01 23:59 UTC`、本文為假繁中日期 → 再讀；接著同步改aria，另以全新DOM重現現有e2e的clone／替換dialog。
+
+| 步驟 | snapshot則數／時間 | l1／l2 | timeOk／timeFail | samples／fmt | scope |
+|---|---|---|---|---|---|
+| 初始en | 2：09:00、11/9 20:05 | 2／2 | 2／0 | []／空 | dialog |
+| 同DOM，只改.when＋本文 | 2：仍09:00、11/9 20:05 | 2／2 | 2／1 | []／空 | 同一物件 |
+| 再改aria-label | 1：11/9 20:05 | 1／1 | 1／1 | []／空 | 同一物件 |
+| 現有e2e：改兩metadata＋換dialog | 1：11/9 20:05 | 1／1 | 1／1 | []／空 | 不同物件 |
+
+獨立節點輸出：`{"tag":"DIV","isolated":false,"unknownParsed":null,"bodyParsed":"2026-11-03 23:19 (Tue)"}`。本文日期本身可以被通用字串parser解析，卻必須在DOM reader入口被排除，這是要保護的安全邊界。
+
+`node /tmp/xsched-gate03-content-analysis.mjs`：沿用content測試的VM／linkedom裝置，實際觸發外部childList mutation callback、不改route；一組原snapshot，一組測試裝置將layout flag設成virtualized=1／needsScroll=1以驗證累加分支。這不是production hook，亦非真Chrome幾何證據。
+
+```text
+非virtual，同scope改兩metadata：count=1 l1=1 l2=1 timeOk=1 timeFail=1 samples=none fmt=none
+強制virtual，同scope改兩metadata：count=2 l1=1 l2=1 timeOk=2 timeFail=1 samples=none fmt=none
+兩組換scope後：count=1 times=["2026-11-09 20:05 (Mon)"]
+```
+
+可靠測試須先等初始probe完成、驗證兩個metadata確實都改成未知格式／本文仍存在且scope已替換，再直接檢查擴充isolated world的單次snapshot，最後驗證浮層只剩第二則、l1=l2=1、timeFail=1、fmt／samples均none，整份解碼診斷及顯示時間都不含本文日期。另用真content單元回歸覆蓋非virtual replace、virtual同scope保留與換scope清空，避免拿UI累加則數代替reader安全證據。保留複審的reader／verify修正及所有舊虛擬累加測試，不放寬count=1。
+
+## 第二步：測試修正與驗證
+
+production reader／content、verify與權限保持原狀。`scripts/e2e.mjs:535–581` 增加初始讀取完成的等待、三項DOM前置斷言、isolated world本次snapshot的則數／l1／l2／timeOk／timeFail／時間／samples／fmt驗證；再等真浮層scope重置為1則，保留原timeFail／none斷言，並檢查兩份解碼後診斷均無本文日期／時鐘。沒有刪除日期形狀的本文，也没有接受count=2。
+
+`test/calendar.test.mjs:65` 新增同DOM兩次讀取回歸：舊aria仍可解析時保留09:00，aria與.when都未知後僅第二列；本文短句本身可解析，但DOM reader不借用。`test/content.test.mjs:118` 新增真content／observer callback回歸，驗證非virtual替換、virtual累加保持09:00、換scope清空；正文含假的handle／email／URL誘餌，解碼診斷無日期及身份。virtual flag僅由測試裝置設定，production未加hook。
+
+實跑 `npm test`退出0（8檔）；`node --test --test-isolation=none test/` **119過／0敗／0跳過**；`npm run verify`退出0：**30 API bypass／14 icon／9 SVG／38 leak**，9 probe檔／4 Logo SVG。`node --check scripts/e2e.mjs`、`git diff --check`通過。共修改5檔：e2e、calendar／content測試、GATE0與HANDOFF；未commit／push／生成截圖。
+
+本輪Chrome e2e因既有listen限制仍由外部執行，**外部原紅燈的實跑版本／DOM落差尚未確認，不能宣稱已在Chrome修好**。新的前置與snapshot斷言會在落差發生的步驟給出證據，避免只剩count等待逾時。外部請確認同一repo工作樹含本次修改，跑 `npm test` → `npm run verify` → `npm run e2e`；若仍紅，回傳第一個失敗斷言與scan結果，不放寬或跳過。全部通過後仍需獨立複審，不能沿用修正前453斷言作最新驗收。

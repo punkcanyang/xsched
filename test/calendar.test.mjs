@@ -12,6 +12,116 @@ const now = new Date(2026,11,31,12);
 const html = readFileSync(new URL('../fixtures/real/boss-skeleton.html',import.meta.url),'utf8');
 const getDoc = () => parseHTML(html).document;
 const snap = (doc) => R.readSnapshot(doc,{pathname:scheduled,now});
+test('confirmed Chinese grammar handles every AM/PM hour and preserves date over weekday', () => {
+  for (const [prefix,weekday,suffix] of [['將於','週二','發送'],['将于','周二','发送']]) {
+    for (const mer of ['上午','下午']) for (let hour=1; hour<=12; hour++) {
+      const label = `${prefix} 2026年11月3日 ${weekday} ${mer}${hour}:19 ${suffix}`;
+      const parsed = R.parseSchedule(label);
+      assert.ok(parsed?.at,label);
+      assert.equal(parsed.at.getHours(), hour % 12 + (mer==='下午' ? 12 : 0),label);
+      assert.equal(parsed.at.getMinutes(),19,label);
+      assert.equal(parsed.tier,'strict');
+      assert.equal(R.timeSample(label),label);
+    }
+  }
+  assert.equal(R.formatTime(R.parseSchedule('將於 2026年11月3日 週五 下午11:19 發送').at),'2026-11-03 23:19 (Tue)');
+});
+test('Chinese weekdays and whitespace variants work in strict, loose and yearless labels', () => {
+  for (const day of ['週二','周二','星期二','週 二']) for (const gap of ['',' ','\u00a0']) {
+    const label=`將於${gap}2026年${gap}11月${gap}3日${gap}${day}${gap}下午${gap}11:19${gap}發送`;
+    assert.equal(R.formatTime(R.parseSchedule(label)?.at),'2026-11-03 23:19 (Tue)',label);
+    assert.equal(R.formatTime(R.parseTimeLabel(label)?.at),'2026-11-03 23:19 (Tue)',label);
+    const bare=`2026年11月3日 ${day} 下午11:19`;
+    assert.equal(R.formatTime(R.parseSchedule(bare)?.at),'2026-11-03 23:19 (Tue)',bare);
+  }
+  assert.equal(R.formatTime(R.parseSchedule('將於 1月1日 星期五 上午12:07 發送',{now})?.at),'2027-01-01 00:07 (Fri)');
+  assert.equal(R.formatTime(R.parseSchedule('將於 2026年11月3日 星期二 下午 11 ： 19 發送')?.at),'2026-11-03 23:19 (Tue)');
+});
+test('weekday grammar never exports calendar-shaped identities or tweet text', () => {
+  const doc=getDoc();
+  const row=[...doc.querySelectorAll('button')].find(el=>el.querySelector('[data-testid=tweetText]'));
+  const label=[...row.querySelectorAll('span')].find(el=>!el.closest('[data-testid=tweetText]'));
+  for (const secret of ['https://fake.invalid/2026年11月3日週二下午11:19發送','@2026年11月3日週二下午11:19','2026年11月3日週二下午11:19@fake.invalid']) {
+    label.textContent=secret;
+    assert.equal(R.timeSample(secret),'');
+    const result=snap(doc);
+    assert.equal(result.items.length,1); assert.equal(result.timeFail,1);
+    assert.equal(result.fmt,''); assert.deepEqual(result.samples,[]);
+    assert.ok(!S.buildSkeleton(doc,{pathname:scheduled}).includes('calendar='));
+  }
+});
+test('legacy cell, role and text fallbacks cannot parse a weekday date from tweetText', () => {
+  for (const attr of ['data-testid="cellInnerDiv"', 'role="listitem"', 'role="button"', '']) {
+    for (const bodyAttrs of ['', 'role="listitem" aria-label="將於 2026年11月3日 週二 下午11:19 發送"']) {
+      const {document} = parseHTML(`<html><body><section role="dialog"><div ${attr}><span>未知格式</span><div data-testid="tweetText" ${bodyAttrs}>將於 2026年11月3日 週二 下午11:19 發送</div></div></section></body></html>`);
+      const report = snap(document);
+      assert.equal(report.items.length, 0, attr);
+      assert.equal(report.timeOk, 0, attr);
+      assert.equal(report.fmt, '', attr);
+      assert.deepEqual(report.samples, [], attr);
+    }
+  }
+});
+test('en snapshot distinguishes stale accessible time from body borrowing after both metadata sources change', () => {
+  const { document } = parseHTML(readFileSync(new URL('../fixtures/en.html', import.meta.url), 'utf8'));
+  const initial = snap(document);
+  assert.equal(initial.items.length, 2);
+  const cell = document.querySelector('[data-testid="cellInnerDiv"]');
+  const body = '將於 2026年11月3日 週二 下午11:19 發送';
+  assert.equal(R.formatTime(R.parseSchedule(body).at), '2026-11-03 23:19 (Tue)', 'decoy body must itself be parseable');
+  cell.querySelector('.when').textContent = 'Will send on 2027-01-01 23:59 UTC';
+  cell.querySelector('[data-testid="tweetText"]').textContent = body;
+  const accessible = snap(document);
+  assert.equal(accessible.items.length, 2, 'unchanged external aria-label still legitimately supplies 09:00');
+  assert.equal(R.formatTime(accessible.items[0].at), '2026-10-10 09:00 (Sat)');
+  assert.equal(accessible.l1, 2);
+  assert.equal(accessible.l2, 2);
+  assert.equal(accessible.timeOk, 2);
+  assert.equal(accessible.timeFail, 1, 'visible unknown metadata can fail while accessible metadata parses');
+  cell.querySelector('[role="button"]').setAttribute('aria-label', cell.querySelector('.when').textContent);
+  const current = snap(document);
+  assert.equal(current.scopeElement, initial.scopeElement);
+  assert.deepEqual(current.items.map(item => R.formatTime(item.at)), ['2026-11-09 20:05 (Mon)']);
+  assert.equal(current.l1, 1);
+  assert.equal(current.l2, 1);
+  assert.equal(current.timeOk, 1);
+  assert.equal(current.timeFail, 1);
+  assert.equal(R.isIsolatedTimeElement(cell.querySelector('.when')), false, 'legacy div is not an authenticated sample span');
+  assert.deepEqual(current.samples, []);
+  assert.equal(current.fmt, '');
+  const diag = decodeURIComponent(R.buildDiagnostic({ ...current, items: current.items.length }));
+  assert.match(diag, /\bsamples=none\nfmt=none$/);
+  for (const leak of ['將於', '11月3日', '23:19', '2026-11-03']) assert.ok(!diag.includes(leak), leak);
+});
+test('legacy separate time label still reads correctly when the post contains another schedule', () => {
+  for (const attr of ['data-testid="cellInnerDiv"', 'role="listitem"', 'role="button"', '']) {
+    const {document} = parseHTML(`<html><body><section role="dialog"><div ${attr}><span>將於 2026年11月3日 週二 上午12:19 發送</span><div data-testid="tweetText">將於 2026年12月1日 週二 下午11:19 發送</div></div></section></body></html>`);
+    const report = snap(document);
+    assert.equal(report.items.length, 1, attr);
+    assert.equal(R.formatTime(report.items[0].at), '2026-11-03 00:19 (Tue)', attr);
+    assert.ok(report.items[0].key.endsWith('\u0000將於 2026年12月1日 週二 下午11:19 發送'), attr);
+    assert.equal(report.timeFail, 0, attr);
+  }
+});
+test('legacy accessible labels cannot borrow the appended tweetText date after metadata fails', () => {
+  const body = '將於 2026年11月3日 週二 下午11:19 發送';
+  for (const attr of ['data-testid="cellInnerDiv"', 'role="listitem"', 'role="button"']) {
+    const {document} = parseHTML(`<html><body><section role="dialog"><div ${attr}><div role="button"><div>Will send on 2027-01-01 23:59 UTC</div><div data-testid="tweetText">${body}</div></div></div></section></body></html>`);
+    const row = document.querySelector('[role="dialog"]').firstElementChild;
+    for (const labelOwner of [row, row.firstElementChild]) {
+      labelOwner.setAttribute('aria-label', 'Will send on 2027-01-01 23:59 UTC ' + body);
+      const report = snap(document);
+      assert.equal(report.items.length, 0, attr);
+      assert.equal(report.timeOk, 0, attr);
+      assert.equal(report.timeFail, 1, attr);
+      assert.deepEqual(report.samples, [], attr);
+      assert.equal(report.fmt, '', attr);
+      labelOwner.removeAttribute('aria-label');
+    }
+    row.firstElementChild.setAttribute('aria-label', 'Will send on Nov 9, 2026 at 8:05 PM ' + body);
+    assert.deepEqual(snap(document).items.map(item => R.formatTime(item.at)), ['2026-11-09 20:05 (Mon)'], 'valid external aria time remains readable');
+  }
+});
 const labels = [
   ['en','Jan 1 at 12:05 AM', 0,5], ['en','Jan 1 at 12:05 PM',12,5], ['en','1 Jan at 23:59',23,59],
   ['zh-Hant','1月1日 上午12:05',0,5], ['zh-Hant','1月1日 下午12:05',12,5], ['zh-Hant','1月1日 23:59',23,59],
@@ -106,7 +216,7 @@ test('skeleton exports only isolated short time span; calendar-looking body and 
   body.textContent='Will send on Dec 31, 2026 at 9:00 AM @May 987654321';
   const free=doc.createElement('p');free.textContent='Will send on Jan 1, 2027 at 9:00 AM';doc.body.append(free);
   const out=decodeURIComponent(S.buildSkeleton(doc,{pathname:scheduled}));
-  assert.ok(out.includes('calendar=將於2026年10月10日 上午9:00傳送'));
+  assert.ok(out.includes('calendar=將於 2026年11月3日 週二 下午11:19 發送'));
   assert.ok(!out.includes('Dec') && !out.includes('Jan') && !out.includes('987654321') && !out.includes('@May'));
 });
 test('reconstructed owner fixture contains no address, account, real id or copied prose', () => {
@@ -157,7 +267,7 @@ test('legacy cell and text fallback never export calendar-looking tweetText as f
 
 test('fmt is directly readable on its own line, bounded and without content/control characters', () => {
   const report = snap(getDoc());
-  assert.match(R.buildDiagnostic(report), /\nfmt=將於2026年10月10日 上午9:00傳送$/);
+  assert.match(R.buildDiagnostic(report), /\nfmt=將於 2026年11月3日 週二 下午11:19 發送$/);
   const diag = R.buildDiagnostic({fmt: 'Oct 10, 2026 at 9:00 AM\nprivate @May2026 https://May.example/2026'});
   assert.equal(diag.split('\n').length, 3);
   const fmt = diag.split('\n')[2];
