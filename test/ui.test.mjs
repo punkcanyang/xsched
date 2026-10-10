@@ -6,6 +6,27 @@ await import('../probe/ui.js');
 await import('../probe/reader.js');
 const U = globalThis.XSCHED_UI;
 const R = globalThis.XSCHED_READER;
+test('author anchor uses DOM APIs with exactly the approved attributes and text', () => {
+  const { document } = parseHTML('<html><body></body></html>');
+  const create = document.createElement.bind(document);
+  const created = [];
+  document.createElement = tag => {
+    created.push(tag);
+    const node = create(tag);
+    for (const property of ['innerHTML', 'outerHTML']) Object.defineProperty(node, property, { set() { assert.fail('markup setter used'); } });
+    node.insertAdjacentHTML = () => assert.fail('markup insertion used');
+    return node;
+  };
+  const link = U.createAuthorLink(document);
+  assert.deepEqual(created, ['a']);
+  assert.equal(link.tagName, 'A');
+  assert.equal(link.getAttribute('href'), 'https://x.com/punkcan');
+  assert.equal(link.getAttribute('target'), '_blank');
+  assert.ok(link.getAttribute('rel').split(/\s+/).includes('noopener'));
+  assert.equal(link.textContent, '@punkcan');
+  assert.equal(link.childNodes.length, 1);
+  assert.equal(link.firstChild.nodeType, 3);
+});
 test('shortcut aria-label/title vocabulary includes exactly nine complete languages', () => {
   assert.deepEqual(Object.keys(U.STRINGS).sort(), ['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt'].sort());
   for (const [key, value] of Object.entries(U.STRINGS)) {

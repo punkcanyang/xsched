@@ -54,6 +54,8 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 - `npm run verify`追加**不click任何X鈕／不代替使用者送出**：禁止click方法與別名、requestSubmit／submit與別名、Mouse／Pointer／Keyboard／Submit事件及未審dispatchEvent；另擋click／submit解構與反射取方法、onclick／onsubmit別名。只對根目錄`probe/quick.js`的完全一致SHA-256來源，豁免dispatchEvent關鍵字一條；唯一`writeNativeControls`函式只對整組預檢後的原生select派送input／change，其他網路／storage／注入／激活禁令仍全掃。修改此模組須重審來源摘要；33個native writer攻擊自測（原20項全保留），另有真CLI違規退出測試；原30 API／14 icon／9 SVG／21 storage完整保留，39洩漏自測加option身份／日期路徑成41。位置storage仍僅position.js兩個固定數字key，不新增設定儲存。
 - `npm run e2e`保留閘0.5全部斷言與0擴充資源／背景請求證據；合成設定dialog有月日年時分AMPM選單、Confirm／Schedule／composer Post及form click／submit計數。按四個快速時段：值與本地計算及獨立跨年期望一致、input/change有觸發、送出click／submit始終0；無欄位／部分欄位／選項無法表示皆完全不改值。測試腳本在main及extension isolated world注入2027年Date時鐘，production無時間override，年份選單從2027開始。比對2cceb5e的manifest權限／host／資源／matches不變。生成`docs/v1.0-quick-{dialog-detected,slot-filled,not-detected,partial-fields,diag}.png`及舊情境的新前綴副本／骨架，既有gate0–0.5截圖不覆寫；需要原Chrome for Testing／Xvfb。
 
+作者連結測試：`npm test` 驗證 DOM API 建立的浮層 anchor、固定屬性與骨架／診斷排除；`npm run verify` 只為根目錄 `probe/ui.js` 的精確作者 anchor factory 放行 `https://x.com/punkcan` 的 href（22項攻擊自測，main的30 API／41 leak／21 storage／33 native writer全保留）；`npm run e2e` 另驗證 Scheduled 展開及短視窗捲到底後底部連結的屬性、可見矩形／命中與操作鈕不重疊，從不點作者連結，資源／背景請求仍須0，新增截圖用 `docs/author-link-*.png`。
+
 ## READY 的標準（PR 說明裡要有）
 
 1. 做了什麼（閘 0 要附 DOM 依據、讀取方式、改版風險）。

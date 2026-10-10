@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runNode } from "../scripts/test-cli.mjs";
-import { scanSource, checkManifest, checkProbeDir, attackSelfTest } from "../scripts/verify.mjs";
+import { scanSource, checkManifest, checkProbeDir, attackSelfTest, authorLinkSelfTest } from "../scripts/verify.mjs";
 import { allowedRequest, hasExtensionInitiator } from "../scripts/network-policy.mjs";
 await import("../probe/reader.js");
 const R = globalThis.XSCHED_READER;
@@ -15,6 +15,10 @@ const snap = (html, pathname = path) => R.readSnapshot(doc(html), { pathname });
 const phrase = "Will send on Oct 10, 2026 at 9:00 AM";
 const row = (body = "fake body") => `<div data-testid="cellInnerDiv"><div role="button" aria-label="${phrase} ${body}"><span>${phrase}</span><span data-testid="tweetText">${body}</span></div></div>`;
 const goodManifest = { manifest_version: 3, content_scripts: [{ matches: ["https://x.com/*"], js: ["ok.js"] }] };
+
+test('author-link guard rejects 22 URL, element, file and extra-sink attacks', () => {
+  assert.equal(authorLinkSelfTest(), 22);
+});
 
 test("privacy self-test actually fails when skeleton or time masking leaks", () => {
   assert.doesNotThrow(() => attackSelfTest());

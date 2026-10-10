@@ -27,6 +27,19 @@ const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d
 // All other activation, network, storage and markup rules still scan this file.
 const QUICK_SOURCE_SHA256 = "c24818395b41357f5ca2311bd5fd9aad0077409e07104c4ae3e2ce327443016e";
 
+// Owner-authorized exception: one exact DOM factory in root probe/ui.js only.
+// Its local const is created as an anchor; only its literal href statement is
+// omitted from resource-sink checks. All other code still faces every rule.
+const AUTHOR_LINK_SOURCE = `function createAuthorLink(doc) {
+  const link = doc.createElement('a');
+  link.setAttribute('href', 'https://x.com/punkcan');
+  link.setAttribute('target', '_blank');
+  link.setAttribute('rel', 'noopener');
+  link.textContent = '@punkcan';
+  return link;
+}`;
+const AUTHOR_HREF_STATEMENT = "  link.setAttribute('href', 'https://x.com/punkcan');";
+
 // Load the probe's two pure modules (classic scripts → globalThis) so the guard can prove,
 // on a hostile synthetic page, that no page content can reach the skeleton or the samples.
 let READER;
@@ -259,7 +272,11 @@ function listFiles(dir, base = dir) {
 
 export function scanSource(text, label, { positionModule = false, quickModule = false } = {}) {
   const errors = [];
+  const checked = label === 'probe/ui.js'
+    ? text.replace(AUTHOR_LINK_SOURCE, AUTHOR_LINK_SOURCE.replace(AUTHOR_HREF_STATEMENT, ''))
+    : text;
   const canonical = canonicalSource(text);
+  const checkedCanonical = canonicalSource(checked);
   const auditedPosition = positionModule && createHash('sha256').update(text).digest('hex') === POSITION_SOURCE_SHA256;
   const auditedQuick = quickModule && createHash('sha256').update(text).digest('hex') === QUICK_SOURCE_SHA256;
   if (quickModule && !auditedQuick) errors.push(`${label}: native writer differs from audited input/change-only boundary`);
@@ -267,7 +284,8 @@ export function scanSource(text, label, { positionModule = false, quickModule = 
   for (const rule of BANNED) {
     if (auditedQuick && rule.name === "native event dispatch outside audited writer") continue;
     if (auditedPosition && ['persistent storage','storage accessor/alias'].includes(rule.name)) continue;
-    if (rule.re.test(text) || rule.re.test(canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
+    const authorAttribute = rule.name === 'resource attribute';
+    if (rule.re.test(authorAttribute ? checked : text) || rule.re.test(authorAttribute ? checkedCanonical : canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
   }
   const navigation = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, "");
   if (/\blocation\s*(?:=|\.\s*(?:assign|replace)\s*\(|\.\s*(?:href|pathname|search|hash)\s*=)/.test(navigation)) errors.push(`${label}: only the fixed Scheduled navigation is allowed`);
@@ -583,6 +601,31 @@ export function nativeWriterSelfTest() {
   return attacks.length+edits.length+1;
 }
 
+export function authorLinkSelfTest() {
+  if (scanSource(AUTHOR_LINK_SOURCE, 'probe/ui.js').length) throw new Error('author-link self-test: fixed anchor rejected');
+  const attacks = [
+    ...['https://x.com/punkcan2', 'https://evil.example/', 'http://x.com/punkcan', 'https://x.com/punkcan/', 'https://x.com/punkcan?x=1', 'https://x.com/punkcan#x']
+      .map(url => [AUTHOR_LINK_SOURCE.replace('https://x.com/punkcan', url), 'probe/ui.js']),
+    [AUTHOR_LINK_SOURCE.replace("createElement('a')", "createElement('img')"), 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE.replace("'href'", "'src'"), 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE.replace("createElement('a')", "createElement('img')").replace("'href'", "'src'"), 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE.replace("const link = doc.createElement('a');", "const link = doc.createElement('a');\n  link = doc.createElement('img');"), 'probe/ui.js'],
+    ...['probe/content.js', 'probe/other.js', 'probe/nested/ui.js', 'ui.js'].map(label => [AUTHOR_LINK_SOURCE, label]),
+    [AUTHOR_HREF_STATEMENT, 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + '\n' + AUTHOR_LINK_SOURCE, 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nconst img = document.createElement('img'); img.src = 'https://x.com/punkcan';", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nfetch('https://x.com/punkcan');", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nnode.setAttribute('href', 'https://evil.example/');", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nnode.setAttributeNS(null, 'href', 'https://x.com/punkcan');", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nnode.innerHTML = '<a>';", 'probe/ui.js'],
+    [AUTHOR_LINK_SOURCE + "\nwindow.localStorage.setItem('x', 'y');", 'probe/ui.js'],
+  ];
+  for (const [source, label] of attacks) {
+    if (!scanSource(source, label).length) throw new Error('author-link self-test: unsafe href/source allowed');
+  }
+  return attacks.length;
+}
+
 function selfTest() {
   const violations = [
     'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
@@ -605,6 +648,7 @@ function selfTest() {
   }
   const storageCases = positionStorageSelfTest();
   const nativeCases = nativeWriterSelfTest();
+  const authorCases = authorLinkSelfTest();
   // Prove the scanner fails closed: a synthetic probe with a network call AND a bad
   // manifest must produce errors, while a clean synthetic probe must not.
   const dir = mkdtempSync(join(tmpdir(), "xsched-verify-selftest-"));
@@ -667,7 +711,7 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -695,7 +739,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call

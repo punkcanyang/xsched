@@ -69,6 +69,33 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
     mutate(records) { mutationCallback(records); flush(); },
     setManifest(value) { manifest = value; }, invalidate() { invalidated = true; } };
 }
+test('panel author link stays outside scrolling content and is excluded from skeleton/diagnostics', () => {
+  const f = fixture();
+  const check = () => {
+    const links = f.shadow().querySelectorAll('a');
+    assert.equal(links.length, 1);
+    const link = links[0];
+    assert.equal(link.getAttribute('href'), 'https://x.com/punkcan');
+    assert.equal(link.getAttribute('target'), '_blank');
+    assert.ok(link.getAttribute('rel').split(/\s+/).includes('noopener'));
+    assert.equal(link.textContent, '@punkcan');
+    assert.equal(link.parentElement.className, 'panel-author');
+    assert.equal(link.parentElement.parentElement.className, 'panel-actions');
+    assert.equal(f.shadow().querySelector('.panel-body').contains(link), false);
+    for (const output of [f.host().dataset.xschedDiag, globalThis.XSCHED_SKELETON.buildSkeleton(f.document)]) {
+      assert.ok(!output.includes('punkcan'));
+      assert.ok(!output.includes('https://x.com/punkcan'));
+    }
+  };
+  check(); f.poll(); check();
+  f.click('[data-xsched-minimize]');
+  assert.equal(f.shadow().querySelector('a'), null);
+  f.click('.shortcut'); check();
+  const skeleton = globalThis.XSCHED_SKELETON.buildSkeleton(f.document);
+  f.host().remove();
+  assert.equal(globalThis.XSCHED_SKELETON.buildSkeleton(f.document), skeleton, 'entire extension host is excluded');
+  f.poll(); check();
+});
 test('real content script mounts shadow Dagaz, toggles Scheduled and preserves choice across SPA/remount', () => {
   const f = fixture();
   assert.equal(f.host().dataset.xschedCount, '2');

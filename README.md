@@ -93,4 +93,6 @@ npm run e2e       # Chrome for Testing 载入真 probe/，本机测试页模拟 
 
 ## 授权
 
+作者：[@punkcan](https://x.com/punkcan)
+
 [MIT](LICENSE)。
