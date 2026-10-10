@@ -1,0 +1,75 @@
+// Synthetic reconstruction of the documented picker shape. Never reads owner data.
+import {writeFileSync} from 'node:fs';
+const variants=['dialog','year-missing','rollback','numeric','padded','zero','period-values','autocorrect'];
+function options(field,variant) {
+  const size={month:12,day:31,year:variant==='year-missing'?1:3,hour:12,minute:60,period:2}[field];
+  const values=Array.from({length:size},(_,i)=>field==='year'?2027+i:field==='minute'||field==='period'?i:i+1);
+  return (field==='period'?'':'<option disabled selected value=""></option>')+values.map((n,i)=>{
+    const text=field==='month'?`${n} 月`:field==='minute'?String(n).padStart(2,'0'):field==='period'?['上午','下午'][i]:String(n);
+    let value=String(n);
+    if(field==='month')value=variant==='zero'?String(i):variant==='padded'?String(n).padStart(2,'0'):['numeric','period-values','autocorrect'].includes(variant)?String(n):'fake-month-'+n;
+    if(field==='period')value=variant==='period-values'?['上午','下午'][i]:['numeric','padded','zero','autocorrect'].includes(variant)?['AM','PM'][i]:'fake-period-'+i;
+    if(variant==='padded'&&['day','hour','minute'].includes(field))value=value.padStart(2,'0');
+    return `<option value="${value}">${text}</option>`;
+  }).join('');
+}
+const controlled=`
+// Test-only controlled select model: instance .value writes are rejected on repaint.
+// The native prototype setter followed by input/change updates controlled state.
+const nativeValue=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value');
+const fields=['month','day','year','hour','minute','period'];
+const state={},directWrites=new WeakSet(),inputs=new WeakSet();
+let queued=false,rebuild=false,rejectOnce=true;
+window.fixtureRebuilds=0;window.fixtureRejects=0;
+function control(key){return document.getElementById('fake-select-'+key);}
+function attach(node) {
+ Object.defineProperty(node,'value',{configurable:true,get(){return nativeValue.get.call(this);},set(value){nativeValue.set.call(this,value);directWrites.add(this);queue();}});
+}
+for(const key of fields){const node=control(key);state[key]=nativeValue.get.call(node);attach(node);}
+function queue(){if(!queued){queued=true;requestAnimationFrame(render);}}
+function render(){
+ queued=false;
+ if(rebuild){
+  rebuild=false;window.fixtureRebuilds++;
+  const old=control('day'),replacement=old.cloneNode(false);
+  const blank=document.createElement('option');blank.value='';blank.disabled=true;replacement.append(blank);
+  const monthNode=control('month'),monthOption=[...monthNode.querySelectorAll('option')].find(option=>option.value===state.month);
+  const month=Number(monthOption?.textContent.trim().split(' ')[0]);
+  const size=month?new Date(Number(state.year)||2027,month,0).getDate():31;
+  const padded=old.querySelector('option[value="01"]')!==null;
+  for(let day=1;day<=size;day++){const option=document.createElement('option');option.value=padded?String(day).padStart(2,'0'):String(day);option.textContent=String(day);replacement.append(option);}
+  old.replaceWith(replacement);attach(replacement);
+ }
+ for(const key of fields){const node=control(key);nativeValue.set.call(node,state[key]);directWrites.delete(node);}
+}
+document.addEventListener('input',event=>{if(fields.some(key=>control(key)===event.target)&&!directWrites.has(event.target))inputs.add(event.target);});
+document.addEventListener('change',event=>{
+ const key=fields.find(key=>control(key)===event.target);if(!key)return;
+ if(!inputs.has(event.target)||directWrites.has(event.target)){queue();return;}
+ inputs.delete(event.target);
+ const value=nativeValue.get.call(event.target);
+ if(rejectOnce&&((document.body.dataset.fixtureMode==='rollback'&&key==='hour'&&value==='8')||(document.body.dataset.fixtureMode==='autocorrect'&&key==='period'&&value==='PM'))){
+  rejectOnce=false;window.fixtureRejects++;queue();return;
+ }
+ state[key]=value;if(key==='year'||key==='month')rebuild=true;queue();
+});`;
+for(const variant of variants) {
+ const field=key=>`<div><label id="fixture-label-${key}"><span>${({month:'月',day:'日',year:'年',hour:'時',minute:'分',period:'上午/下午'})[key]}</span></label><select id="fake-select-${key}" aria-labelledby="fixture-label-${key}" data-testid="">${options(key,variant)}</select></div>`;
+ const html=`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>Fake skeleton picker</title><style>
+/* Fixture only: suppress Chrome's built-in date icon and its CDP data: SVG request. */
+input[type=date]::-webkit-calendar-picker-indicator{display:none}
+body{background:#0f1419;color:#eee;font:16px system-ui;padding:20px}[role=dialog][aria-modal]{width:540px;border:1px solid #536471;border-radius:16px;padding:16px}select{padding:8px;margin:4px}label{display:block}[role=group]{display:flex;gap:12px;margin:12px 0}button{padding:8px;margin:6px}</style></head><body data-fixture-mode="${variant}">
+<p>Synthetic labels, IDs, values and dates. Structure and option text lengths follow the masked picker.</p>
+<form id="fixture-composer"><button type="submit" id="post">Post fixture</button></form>
+<div role="dialog"><div role="group"><div role="dialog" aria-modal="true"><header><h2>Fake picker</h2><button type="button" id="confirm">Confirm fixture</button></header>
+<div role="group">${['month','day','year'].map(field).join('')}<div><label><button type="button" id="calendar">Calendar fixture</button><input type="date" value="2027-01-01" min="2027-01-01" max="2029-12-31"></label></div></div>
+<div role="group"><div><span>Test</span>${['hour','minute','period'].map(field).join('')}</div></div><button type="button" id="schedule">Schedule fixture</button></div></div></div>
+<script>
+window.fixtureSend={confirm:0,schedule:0,post:0,submit:0,input:0,change:0,calendar:0};
+for(const id of ['confirm','schedule','post','calendar'])document.getElementById(id).addEventListener('click',()=>window.fixtureSend[id]++);
+for(const form of document.querySelectorAll('form'))form.addEventListener('submit',event=>{event.preventDefault();window.fixtureSend.submit++;});
+for(const type of ['input','change'])document.addEventListener(type,event=>{if(event.target.tagName==='SELECT')window.fixtureSend[type]++;});
+${controlled}
+</script></body></html>`;
+ writeFileSync(new URL('../fixtures/quick-real-'+variant+'.html',import.meta.url),html);
+}

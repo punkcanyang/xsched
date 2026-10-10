@@ -454,10 +454,10 @@ function render(report, items) {
     lang: typeof navigator !== "undefined" && navigator ? navigator.language : "",
     doclang: document.documentElement ? document.documentElement.lang : "",
     samples: report.samples || [],
-  }).replace("\n", "\n" + quick.diagnostic(detected.counts) + "\n");
+  }).replace("\n", "\n" + quick.diagnostic(detected.counts) + (quick.fillDiagnostic(document) ? "\n" + quick.fillDiagnostic(document) : "") + "\n");
 
   const strings = stringsFor(document.documentElement.lang, navigator.language);
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quickStatus, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
     positionUI();
@@ -516,15 +516,17 @@ function render(report, items) {
       const label = labels.slots[index];
       const button = makeButton(label);
       button.dataset.xschedSlot = id;
-      button.disabled = !detected.ready;
+      button.disabled = !detected.ready || quick.isFilling(document);
       button.title = detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
       button.setAttribute('aria-label',button.title);
       if (button.disabled) css(button,{opacity:'.55',cursor:'default'});
-      button.addEventListener('click',event => {
+      button.addEventListener('click',async event => {
         event.preventDefault();event.stopPropagation();
         if (!event.isTrusted) return;
         // Re-detect and preflight at the instant of the user's click, never reuse old controls.
-        quickStatus = quick.fillSlotResult(document,id);
+        const pending = quick.fillSlotResult(document,id);
+        schedule();
+        quickStatus = await pending;
         status.textContent = labels[quickStatus] || labels.missing;
         schedule();
       });
@@ -605,7 +607,7 @@ function tick() {
   const report = readSnapshot(document, { pathname });
   const detected = quick.detectControls(document);
   const detectedSignature = JSON.stringify([detected.counts,detected.ready,detected.reason]);
-  if (detectedSignature !== quickSignature) quickStatus = "";
+  if (detectedSignature !== quickSignature && !quick.isFilling(document) && !quick.fillDiagnostic(document)) quickStatus = "";
   quickSignature = detectedSignature;
   const next = `${pathname}${location.search || ""}|${report.onScheduled}`;
   if (next !== session || scopeElement !== report.scopeElement || (report.empty && report.items.length === 0)) {

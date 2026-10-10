@@ -26,14 +26,14 @@ const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d
 
 // Exact-source exception only for the sole native select input/change writer.
 // All other activation, network, storage and markup rules still scan this file.
-const QUICK_SOURCE_SHA256 = "70c3ccde2e47ce2f7bfe0da87cbbf8b2d98960fea516fe58297bf461ba5487cf";
+const QUICK_SOURCE_SHA256 = "4abbe5cb2526e1effc0a8890db6db2fa4333b48eea7db92e4f8ced7ce87a29fc";
 
 // Owner-authorized exception: one exact DOM factory in root probe/ui.js only.
 // Pin both definition and sole call site to full reviewed sources. This prevents
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
 const AUTHOR_UI_SHA256 = "f019ce6e986ae868e495c8c1ea9253b9b20f683ad65ae8dc4094282fd2acbe66";
-const AUTHOR_CONTENT_SHA256 = "95fe1b82f5874f900909ca9d29742833543fa39a72262dffd3d5701f1035c580";
+const AUTHOR_CONTENT_SHA256 = "37ca32f2f9211967667eae865dc34622314d927d661ed659005339fcb394f74d";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');
@@ -700,7 +700,8 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   const optionPage = new DOMParser().parseFromString('<html><body><div role="dialog"><select name="year"><option value="2028" aria-label="private @decoy_handle decoy@example.invalid">Will send on Jan 1, 2028 at 9:00 AM private https://example.invalid/private</option></select></div></body></html>','text/html');
   const optionOutput = mapper.buildSkeleton(optionPage,{pathname:'/compose/post'});
   if (!/select /.test(optionOutput) || !/option /.test(optionOutput)) throw new Error('self-test: picker export not exercised');
-  for (const secret of ['2028','Jan','9:00','private','decoy_handle','decoy@example.invalid','https://example.invalid']) if (optionOutput.includes(secret)) throw new Error('self-test: picker option export leaked '+secret);
+  for (const secret of ['Jan','9:00','private','decoy_handle','decoy@example.invalid','https://example.invalid']) if (optionOutput.includes(secret)) throw new Error('self-test: picker option export leaked '+secret);
+  if (!optionOutput.includes('option-values=2028')) throw new Error('self-test: safe numeric option sample missing');
   if (optionOutput.includes('calendar=')) throw new Error('self-test: option text became a calendar sample');
   const pickerSecrets=['@decoy_handle','decoy@example.invalid','https://example.invalid/private','123456789012345','550e8400-e29b-41d4-a716-446655440000','decoy_handle','select-decoy_handle'];
   let pickerCases=0;
@@ -714,7 +715,21 @@ export function attackSelfTest(reader = READER, mapper = SKELETON) {
   const safePicker=new DOMParser().parseFromString('<html><body><label data-testid="month-label"></label><select data-testid="select-month"></select><div data-testid="select-month"></div></body></html>','text/html');
   const safeExport=mapper.buildSkeleton(safePicker,{pathname:'/compose/post'});
   if (!/label .*data-testid=month-label/.test(safeExport) || !/select .*data-testid=select-month/.test(safeExport) || !/div .*data-testid=x/.test(safeExport)) throw new Error('self-test: picker testid scope is incorrect');
-  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6 + 2 + pickerCases, fragments: maskedCount };
+  // 0.1.2 shared option-value boundary (also used by fill diagnostics). Keep all
+  // prior option-prose attacks; only the newly authorized numeric value is visible.
+  const valueSecrets=[...pickerSecrets,'private prose','AM\nprivate','2028-01-01','20281234'];
+  let optionCases=0;
+  for(const secret of valueSecrets) {
+    if(mapper.safeOptionValue(secret)!=='x')throw new Error('self-test: unsafe fill value sample');
+    const doc=new DOMParser().parseFromString('<html><body><div role="dialog"><select></select></div></body></html>','text/html');
+    const select=doc.querySelector('select');
+    for(const value of ['01',secret,'02',secret]){const option=doc.createElement('option');option.value=value;option.textContent='Private';select.append(option);}
+    const exported=mapper.buildSkeleton(doc);
+    if(!exported.includes('option-values=01|x|02|x') || exported.includes(secret))throw new Error('self-test: option sample leaked');
+    optionCases++;
+  }
+  for(const value of ['0','01','2028','59','AM','PM','a','p','上午','下午','午前','午後','오전','오후'])if(mapper.safeOptionValue(value)!==value)throw new Error('self-test: calendar enum sample missing');
+  return { secrets: secrets.length + 3 + extraSecrets.length + 4 + embeddedDates.length + 6 + 2 + pickerCases + optionCases, fragments: maskedCount };
 }
 
 export function positionStorageSelfTest() {
@@ -774,16 +789,26 @@ export function nativeWriterSelfTest() {
   const edits=[source.replace("Event('input'","Event('click'"),source.replace("Event('change'","Event('submit'"),source.replace("if (!detected.ready || !at)","if (!at)"),source+'\nform.requestSubmit();',source+'\nbutton.click();',source+'\ncontrol.dispatchEvent(new Event("change"));'];
   for(const edit of edits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: edited writer allowed');
   const realEdits=[
-    source.replace("if (!matches(values))", "if (false)"),
+    source.replace("if(!await readSettled(doc,()=>matches(expected)))", "if(false)"),
     source.replace("if (!withinDateBounds(detected.fields.dateInput,at))", "if (false)"),
-    source.replace("text===expected && (!value || value===expected)", "true"),
+    source.replace("(text===expected || (!text && value===expected)) && (!value || value===expected)", "true"),
     source.replace("control.dispatchEvent(new doc.defaultView.Event('change'", "doc.body.dispatchEvent(new doc.defaultView.Event('change'"),
     source.replace("setter.call(control,value)", "control.value=value"),
     source+'\nconst activate=document.querySelector("button").click;activate();',
   ];
+  const asyncEdits=[
+    source.replace("if(!control.isConnected || control.ownerDocument!==doc)throw new Error('detached');", ""),
+    source.replace("const picker=currentPicker(doc,dialog);\n      const control=picker?.fields[key];", "const picker=detected;\n      const control=picker.fields[key];"),
+    source.replace("['year','month','day','period','hour','minute']", "['month','day','year','hour','minute','period']"),
+    source.replace("await settle(doc);", "await Promise.resolve();"),
+    source.replace("if(!await readSettled(doc,()=>currentPicker(doc,dialog)?.fields[key]?.value===value))", "if(false)"),
+    source.replace("if(!await readSettled(doc,()=>restoreField(doc,initial,key)?.value===restoredValues[key]))", "if(false)"),
+    source.replace("return candidates.length===1 ? candidates[0] : null;", "return candidates[0];"),
+  ];
+  for(const edit of asyncEdits)if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length)throw new Error('native writer self-test: async protection removed');
   for (const edit of realEdits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: altered real picker boundary accepted');
   if(!scanSource(source,'probe/renamed.js').length) throw new Error('native writer self-test: renamed writer allowed');
-  return attacks.length+edits.length+1+realEdits.length;
+  return attacks.length+edits.length+1+realEdits.length+asyncEdits.length;
 }
 
 export function authorLinkSelfTest() {

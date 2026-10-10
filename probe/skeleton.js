@@ -13,7 +13,7 @@
 (() => {
 "use strict";
 
-const SKELETON_VERSION = "0.1.1";
+const SKELETON_VERSION = "0.1.2";
 const MAX_NODES = 6000;
 const MAX_DEPTH = 60;
 
@@ -101,6 +101,19 @@ function pickerTestid(value) {
   return tokens.length && tokens.every(token=>vocabulary.has(token)) ? text : 'x';
 }
 
+// The only option-value export boundary: bounded numeric tokens or exact calendar
+// period enums. No whitespace, free text, identities, dates, URLs or opaque codes.
+const OPTION_ENUMS = new Set(['am','pm','a','p','a.m.','p.m.','a. m.','p. m.','上午','下午','午前','午後','오전','오후','matin','après-midi','vormittags','vormittag','nachmittags','nachmittag','manhã','tarde']);
+function safeOptionValue(value) {
+  if (typeof value !== 'string') return 'x';
+  if (value === '') return 'empty';
+  return /^\d{1,4}$/.test(value) || (value.length <= 12 && OPTION_ENUMS.has(value.toLowerCase())) ? value : 'x';
+}
+function optionSamples(select) {
+  const options = [...select.querySelectorAll('option')];
+  return options.slice(0,3).concat(options.length > 3 ? options.slice(-1) : []).map(option => safeOptionValue(option.value)).join('|');
+}
+
 function attrToken(el, name) {
   if (name === "class") {
     const rendered = classValue(el.getAttribute("class"));
@@ -181,6 +194,7 @@ function buildSkeleton(target, options = {}) {
     const tag = tagOf(node);
     // Record every attribute name; values still pass the conservative allowlist.
     const attrs = [...node.attributes].map((attr) => attrToken(node, attr.name)).sort();
+    if (tag === "select" && node.closest('[role="dialog"]') && !node.closest('article, [data-testid="tweetText"]')) attrs.push("option-values=" + optionSamples(node));
     const line = tag + " c=" + node.childNodes.length + (attrs.length ? " " + attrs.join(" ") : "");
     const children = [];
     if (tag === "iframe") {
@@ -216,7 +230,7 @@ function buildSkeleton(target, options = {}) {
   return header + lines.length + "\n" + lines.join("\n") + trailer;
 }
 
-globalThis.XSCHED_SKELETON = {
+globalThis.XSCHED_SKELETON = { safeOptionValue, optionSamples,
   SKELETON_VERSION,
   buildSkeleton,
   classToken,

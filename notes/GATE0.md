@@ -950,3 +950,77 @@ select／label 的 testid 出口只接受固定日曆 UI 詞彙，身份、URL�
 本輪實跑 `npm test` 通過 11 個測試檔；目前 Node 26 的預設報告以檔案彙總，另以 `node --test --test-isolation=none --test-reporter=tap test/*.test.mjs` 核對 **169 過／0 敗／0 跳過**。`npm run verify` 通過 **30 API／14 icon／9 SVG／55 leak／21 storage／39 native writer 自測**。沙箱未跑 e2e；外部在 `f3513d4` 的結果為 **686 斷言、78 筆本機請求、0 擴充資源／背景請求**，本輪沒有改動其執行程式或頁面。未 commit／push／merge，也未碰 author 或 overview 工作。
 
 結論 **APPROVE**，適用於這個保守填欄位測試版。option 真編碼、React 接受事件與日期 input 同步仍待老闆逐欄驗證，不能宣稱真頁填值已驗收；靜態文字掃描也不是任意 JavaScript 的完整安全證明。外部提交本輪文件／測試補強後，依 repo 流程在最新提交跑三項測試，e2e 仍須在沙箱外執行。
+
+# 1.0 快速時段 0.1.2：填值根因
+
+## 寫碼前核對
+
+本輪只修快速時段。原始骨架及截圖留在外部證據目錄，不複製進 repo；以下只記結構、長度與程式證據。以 Python 比較 0.1.0 與 0.1.1 骨架的 L86–173，輸出 `L86–173 equal: True`。
+
+| 項目 | 骨架證據 | 結論 |
+|---|---|---|
+| 月 | L91–96：13 個 option，第一個 disabled 且 value 空；其餘文字 9×3、3×4 字 | 符合月份文字形狀；無法區分 value 的 1、01 或 0 起 |
+| 日 | L104–109：空白＋31；文字 9×1、22×2 字 | 符合日數；value 是否補零未知 |
+| 年 | L117–120：空白＋3；每個文字 4 字 | 符合三個年份；真年份與 value 格式不匯出、不記入 repo |
+| 時 | L144–149：空白＋12；文字 9×1、3×2 字 | 符合 1–12 的 12 小時制；value 格式未知 |
+| 分 | L157–160：空白＋60；每個文字 2 字 | 不是每 5 分鐘一格；文字可能補零，但 value 是否補零仍未知 |
+| 上下午 | L168–170：兩個 option、無空白；每個文字 2 字 | 結構符合上下午；不能證明 value 是 AM/PM、a/p 或其他編碼 |
+| testid | 六個 select 都只印 `data-testid`；0.1.1 skeleton.js attrToken 在 raw 空字串時先回傳屬性名 | 真值為空，不可拿 testid 當欄位依據 |
+
+對照本輪起點的 0.1.1 quick.js：L119–133 以 option value 數字與日曆文字互相核對；零基月份要求完整 0..11 與月份文字一致。L111–117 上下午要求文字與順序一致，可辨識 value 也須一致。這些配對已能處理部分格式，但骨架沒有真 value，不能宣稱格式已驗證。
+
+L243、L249–250 已使用 `Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set` 與 bubbles input/change；因此「完全沒用原生 setter 或事件」不是根因。L223–227 的順序為月→日→年→時→分→上下午；L255–258 先批次設值、再送事件、隨即同步讀回，且沿用最初節點參照。**順序與重繪等待不足是可確認的流程缺陷**：年月事件若重建日選單，後續事件會拿到舊節點；受控欄位在下一次重繪修正時，同步讀回也無法可靠反映結果。老闆回報的「已還原」代表原 writer 捕捉失敗且原節點恢復，不能從這句判定是哪一欄。
+
+最可能是受控欄位的相依事件與同步讀回共同造成失敗，仍標為**推測**；骨架無法證明 React 的事件處理、節點回收或上下午自動修正。也不能排除其他 setter／事件拒絕。報錯類型也是線索：0.1.1 的缺年份／缺目標選項／日期越界會在預檢直接回報獨立錯誤，不進 writer；老闆看到「已還原」表示至少這次已通過預檢，之後才在設值或事件讀回失敗。因此不能直接把原因說成月份補零或分鐘刻度不足。0.1.2 需以安全逐欄診斷分辨，不猜 option 編碼。
+
+## 離線假頁重現與修法
+
+`node /tmp/xsched-fill-sync-repro.mjs` 載入 main `162a838` 的 0.1.1 quick.js 與本版 writer，用同一份合成 picker 模擬「每次 change 同步重繪整組受控值，不換節點」。輸出：
+
+```text
+0.1.1 result=failed periodAfterRepaint=AM change=12
+0.1.2 result=filled periodAfterRepaint=PM change=6
+fill=ok y=2028 m=1 d=1 h=8 min=0 period=PM
+```
+
+批次寫好六欄不代表六欄都已進入受控狀態：第一個事件重繪時，還沒送事件的欄位會被舊狀態蓋回去。這個機制能重現老闆見到的「失敗、已還原」，因此是目前最可能的原因；**真頁是否採用這種重繪時機仍是推測**。上述年月日時分皆為假資料，不是老闆真機值。
+
+另跑 `node /tmp/xsched-fill-repro.mjs`，用假頁的 rAF 上下午自動修正模型：0.1.1 同步回報 filled，但重繪後變成 AM；0.1.2 回報 failed 並還原，診斷為 `failed=period`、`field=period target=PM value=PM read=AM options=AM|PM`。這證明同步讀回可能漏掉延後修正，不能用它宣稱填值成功；也不能把此模型當作真 X 的行為證據。兩個暫存重現腳本不提交；正式回歸測試留在 `test/quick-fill.test.mjs`。
+
+0.1.2 的唯一 writer 改為年→月→日→上下午→時→分，每欄都重新辨識同一個原始 dialog 的唯一控制項。原生 setter 後立刻送 input/change，等 microtask、rAF，再以 25ms 間隔最多讀六次；需連續兩次一致才繼續，最後再讀回整組。rAF 有 80ms 後備，背景分頁不會無限等待；觀察期間不重試寫入目標值。尚在填值時停用快速時段鈕，避免兩個操作交錯。
+
+月份以完整 0..11 value 範圍辨識零起，任何可解析文字必須全域一致為零起或一開始；1／01 也依實際 option value 回填。上下午以順序及九語文字／value（含 a/p）交叉核對，歧義拒絕。原合成備援也使用同一套保守映射，不再只比較裸 value。
+
+失敗先記錄還原前的六欄讀回，再按同樣順序、原生 setter＋事件與等待，還原全部原值。年月改動造成日 select 替換時，只能在原 dialog、原 group、唯一有效 label 關聯下找到新節點；不靠位置、class 或任意新節點補寫。節點消失、選項不再存在或 X 拒絕還原，明示「還原不完整」，不宣稱成功。日期 input 仍只讀 min/max，不直接同步。
+
+## 診斷、骨架與隱私
+
+成功加一行 `fill=ok y=… m=… d=… h=… min=… period=AM/PM/24h`；12 小時制的 h 是原生小時值，搭配 period 看。失敗有填值結果／失敗欄位，再逐欄列出 target、value（目標 option 編碼）、read（還原前讀回）、options（前 3 個＋最後 1 個 value）。尚未辨識到完整欄位時不採樣其他 DOM，read/options 印 x；target 此時是本地時間的邏輯值。資訊由內部記憶體提供，不讀頁面可竄改的診斷 dataset，不存 localStorage。
+
+兩個出口共用 skeleton.js 的安全函式：只保留 **1–4 位數字**、空值標記 empty，以及固定短上下午詞彙；長數字 ID、日期字串、URL、email、handle、UUID、任意本文與 opaque 編碼一律 x。不是任何字母都能當列舉。骨架只在 dialog 內、且非 article／tweetText 的 select 行加 `option-values=` 樣本；option 文字、逐個 option 的其他屬性與 id 仍照舊遮罩。這是本輪授權新增的日曆欄位診斷，並非放開本文或任意屬性。
+
+verify 的靜態禁令與舊自測保留：新增 11 個 option value 洩漏攻擊，55→66；新增 7 個非同步 writer 邊界改寫攻擊，39→46。更新 quick.js 與 content.js 的精確來源摘要；ui.js 的作者 factory 未動，既有摘要仍一致。作者連結、網路、storage、CSS／資源／URL／解構守門均保留。manifest 權限、host、資源、matches 與 `162a838` 一致；reader 只升版本，不改讀法。
+
+## Fixture、外部 e2e 與已知限制
+
+`scripts/build-quick-fixtures.mjs` 不讀原骨架，只依上述結構表重建八份 `quick-real-*` 假頁。基礎頁的 option 數量及文字長度符合骨架，變體用來測缺年份、讀回拒絕、1／01／0 起與中文上下午 value。所有新日期為 2027–2029。受控模型只認原生 setter＋input/change，直接寫 instance value 會被重繪蓋回；年／月會重建日 select。單元測試另覆蓋同步重繪、閏月日數、最後一欄事件改回先前欄位，以及全組還原。
+
+日期圖示沿用 main 的 fixture-only CSS，隱藏 Chrome 內建指示器；`scripts/network-policy.mjs` 與最後的 0 擴充請求斷言未改，沒有 data: 豁免。e2e 保留舊情境及全部零 click／submit 斷言，新增四種編碼各四個時段、控制項替換、fill=ok、上下午延後修正後整組還原、六欄診斷與實體複製。等待條件要求整個非同步操作結束，不以第六次 change 就當成功。原小時拒絕情境的事件數改成 11（五欄嘗試＋六欄還原），上下午拒絕是 10（四欄嘗試＋六欄還原）；每欄與全組還原斷言仍在。
+
+截圖由外部 `npm run e2e` 產生，前綴全部改為 `docs/v1.0-quickfill-`，不覆寫舊截圖。新增重點圖為 real-detected、real-filled、numeric、padded、zero、period-values、autocorrect、diag-failure、year-missing、rollback；舊列表情境沿用合成日期，四個時段及新的 picker 情境均 2027+。這個沙箱仍不能 listen，本輪完整 e2e／截圖交外部，不能宣稱 Chrome 已通過。
+
+仍待老闆確認真 option 編碼、React 事件與相依欄位重繪、日期 input 是否由 X 同步，以及 X 的實際最小提前量。六次有界讀回不是任意延遲的永久保證；若 X 更晚才修正，仍須逐欄核對。欄位或 group 回收後無法安全辨識會拒絕，還原可能不完整。自訂時段、星期設定、佔用避讓與總覽均不在本輪。
+
+## 老闆實測（≤5 步）
+
+1. PR 合併後，在 main 執行 `git pull --ff-only origin main`。
+2. 在 `chrome://extensions` 重新載入 `probe/`，確認 0.1.2；重新整理 x.com。
+3. 在發文框自己打開 X 原生排程對話框，按 Dagaz 浮層的一個快速時段。
+4. 逐欄核對月／日／年／時／分／上下午，**不要按排程**；若必須送出測試，先手動選 2027 年以後，測完到 Scheduled 刪掉。
+5. 按「複製診斷」貼回，成功也貼一次（應含 fill=ok）；失敗看逐欄 read/options，必要時再貼新版「複製頁面結構」。真機資料不提交公開 repo。
+
+## 0.1.2 本輪測試結果
+
+`npm test` 12 檔通過；細項 TAP（含子測試）196 過／0 敗／0 跳過。verify OK：30 API／14 icon／9 SVG／66 leak／21 storage／46 native writer／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測。語法、diff 空白、八份 fixture 結構／去識別掃描通過；manifest 除版本外不變，網路政策與 e2e 最後守衛逐字保留。完整 Chrome e2e 與截圖本輪未跑，需外部執行。
+
+還原先保留原 raw 值；若重繪改變 option 編碼，只有原日曆數值能在當前唯一選項中對應，才使用新編碼還原。原值為空則只能恢復空白。欄位及 date bounds 每次填前再查；本文／article 內的控制項排除，input 後若節點斷線不派送 change。相關回歸已包含在上述結果中。
