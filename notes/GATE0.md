@@ -1,5 +1,7 @@
 # 閘 0：可行性（Scheduled 列表讀取）
 
+最新階段見本檔末尾「閘 0.3」；之前各節保留歷史驗收與複審紀錄。
+
 更新：2026-10-09（UTC+8），產品開發（CodeWhale）；Codex 獨立 session 複審並修正。
 分支：`gate0/scheduled-read`。**本階段只做可行性探針，不做任何 1.0 功能。**
 
@@ -397,3 +399,83 @@ content.js 改 IIFE，避免與 0.0.2 的頂層 const 衝突；新 session 提�
 **VERDICT: APPROVE（程式複審；合併前仍須外部最新 e2e 全過）。** 已修正的阻擋問題有回歸證據，沒有發現其他程式阻擋；這不代表真頁時間驗收或 STATUS READY。產品結論維持：**則數依骨架可讀、時間格式待老闆診斷確認**。
 
 老闆實測沿用上節 **5 步**：取得 main → reload 擴充 → refresh X → Scheduled 逐則對照日期＋時分／則數 → 先複製診斷貼草稿，再在 Scheduled 頁按一下「複製頁面結構」，把結果與新診斷一起貼回（附語系）。fmt 現在可直接讀；samples 仍 encoded，可連同整份診斷貼回，不需老闆手工解碼。兩欄皆 none 時另提供一則不含本文／帳號／網址的安排時間短句。
+
+---
+
+# 閘 0.3：真格式星期修正、浮層捲動／縮小／右下避讓（probe 0.0.4）
+
+2026-10-10，同一 Codex 寫碼 session，分支 `gate0.3/overlay-scroll-avoid`，基準 main `fdc8096`（PR #5、probe 0.0.3），開工提交 `568ff16`。本機實作與單元／守門完成，待外部 Chrome e2e、假資料截圖、另一 session 複審與老闆真機逐則對照，尚未 READY。
+
+## 0.0.3 失敗根因與證據
+
+老闆確認繁中介面與安排時間的結構：L117–118 的單一 span 文字，日曆圖示在旁、含年份、日期後有未加括號的星期、上午／下午在時分之前，後綴發送。**節點選擇已確認正確，不需要猜新列表選擇器。** 這裡只記格式，所有範例日期／本文換成假值，不存老闆真日期時間或真畫面。
+
+用假日期重現：`將於 2026年11月3日 週二 下午11:19 發送`。在 0.0.3 上 `parseSchedule=null`、`timeSample=""`，真骨架重建仍讀 1 則、timeFail=1、fmt 空；直接 `maskSample` 能保留整個日曆短句。去掉 `週二 ` 就能解析成 `2026-11-03 23:19 (Tue)`。
+
+因此根因是 **日期後的未加括號星期不在文法裡**：legacy strict／loose、中文 labelPatterns 只允許括號星期或直接接上午下午／時分；unknown numeric timeSample 的日期→時鐘提取也沒有週／周／星期分支。不是將於／發送片語、不是真時間節點隔離失敗、不屬於上午下午位置或普通空白問題，也不是遮罩順序造成。先遮罩身份再提取的複審隱私修正仍保持。
+
+原浮層已經有 overflow:auto，但操作鈕在一般內容流底部，避讓又可以把整個面板縮到很短，沒有為操作區保留空間。使用者看不到操作鈕，且缺少明顯縮小入口。舊幾何偵測從 button／a／role 等互動候選往上找 fixed 祖先，可能漏掉純 div 的紅點圓形元件；查詢後遍歷亦無上限，clear=false 的最後預設位置仍可能遮到原生元件。這些是程式的風險分析，沒有把真頁圓形元件猜成某個新 testid。
+
+## 修法與 fixture
+
+- `READ_CONFIG.time` 內既有中英文／日韓規則保留；繁簡中文 strict／loose／labelPatterns 與 unknown sample 提取增添有界、非 capturing 的 `週|周|星期`＋一至六／日／天，位置在日期後、上午下午之前，不改既有 parts 索引。普通空白、NBSP、全形冒號與時鐘兩側空白也接受。
+- 有年份以明確日期為準。星期與日期不同不崩潰、不令時間失敗；浮層星期從 Date 計算，忽略文案星期，沒有增加包含原文字的診斷。例：假日期 11/3 加週五，仍顯示 Tue。
+- 單元覆盖繁簡兩套片語的 1–12 點 × 上午下午（48 組例子）；上午12:19→00:19、下午12:19→12:19。週／周／星期、有無空白、全年份／無年份與跨年例子一起跑。0.0.3 原五語、跨年、隱私與備援回歸都保留。
+- `fixtures/real/boss-skeleton.html/.json` 改成「格式由老闆真機樣本確認、日期／本文為假」：`將於 2026年11月3日 週二 下午11:19 發送`，預期 **1 則、2026-11-03 23:19 (Tue)、timeFail=0**。雙 dialog／未知 tab／獨立時間 span／背景 article 結構不變。
+- 新增 `boss-skeleton-zh-Hans.html/.json`：`将于 2026年11月3日 周二 下午11:19 发送`，同一假日期与預期。簡中是需求指定的對應變體；不宣稱老闆使用簡中真機測過。
+- 轉換腳本仍只取原遮罩骨架安全結構與 enum，文字全部明寫替代；新增 `--zh-Hans`。`cross-year` 的缺年份／第二列仍是合成測試例子，不能把它當真機格式／真頁兩列。
+- 原 340KB 骨架留在 repo 外。已重跑轉換／scanFixture，拒絕網址／email／handle／UUID 與非允許屬性；三個 real fixtures 自動配 JSON 驗收。沒有把這次老闆真時間字串存進 repo。
+
+## 浮層、固定操作鈕與安全樣本
+
+整個 panel（含標頭／按鈕）max-height ≤視窗 **60%**，並取 viewport 剩餘空間的較小值；box-sizing:border-box。用 flex column 分成不縮小的 header、min-height:0／overflow:auto 的 `.panel-body`、不縮小的 `.panel-actions`。只有內容列／診斷／textarea 在內部捲動，複製診斷與骨架始終在操作列；非 Scheduled 的前往 Scheduled 也在同列。操作區被避讓後的面板最小高度計算保留，沒有再縮成看不到按鈕的 80px 面板。
+
+標頭有九語「縮小」按鈕，與快捷鈕共用 `collapsed`；縮成只剩 Dagaz，按快捷鈕再展開。手動選擇跨 SPA／host 重掛保留。前往 Scheduled 仍只接受可信使用者點擊、固定 location.assign 目標，沒有 href sink／合成點擊導覽。
+
+每個未解析時間列在「時間未解析」下方顯示 `.sample`：只用 reader 認證的獨立時間樣本，重用 `maskSample`、≤60 code points；不用 item.time、preview／本文當備援。沒有安全樣本則顯示「無可安全匯出的樣本」。網址／email／handle／UUID 先整段遮罩，未知格式拒絕任意本文數字；時間節點後的內文、日期形狀的身份，以及 tweetText 裡的日曆短句都不能匯出。fmt 保持第三行可讀，samples 保持 encoded／最多3筆；所有複審修正保留。
+
+## 右下避讓策略與上限
+
+只用讀取 DOM 與 getComputedStyle／getBoundingClientRect；不 click、不捲 X、不修改 X DOM，不新增任何 X 選擇器或權限。
+
+1. 有限互動查詢取最多 **96** 個候選，補左側 Post／既有 FAB 等。右下 **448×640px** 區域以 32px 步距 elementsFromPoint 取樣（最多 **320** 點，每點最多8個元素），可找到非 button 的圓形 div、徽章父層、DM／Grok 等。所有來源合計最多 **256** 個候選，排除自家 host／停放容器。
+2. 每候選最多向上 **12** 層，style cache 全部最多 **768** 節點。只計 fixed／sticky、非 display:none／hidden／collapse／opacity:0、矩形有尺寸且與 viewport 相交者；矩形去重。完整頁面 fixed backdrop 不當成整個右下抽屜，但其互動子元素仍可當障礙。
+3. 用快捷鈕＋上方 panel 的保守聯合矩形，保留 **8px** 間距，先向上再向左；候選加入障礙邊緣與有限步距，每軸至多64個位置。面板上方／左右保留16px空間。預設仍 right16／bottom112／44px Dagaz。
+4. 展開面板放不下時，最多12次缩短可捲內容，仍預留固定操作區。仍無空間只露出可避讓的快捷鈕；連快捷鈕都無安全位置就暫時隱藏自家 UI，避免覆蓋已偵測控制項。手動意圖保留，400ms poll／resize／頁面 mutation／scroll 會重試。
+
+這是有界幾何啟發式，不是對所有 X 布局的保證。新增 mock 是假的 DOM／CSS：收合 DM drawer、純 div＋紅點1的圓形、Grok，以及原桌面 Post／窄版 FAB。e2e 在 **1280×600、1100×820、390／600×820** 驗證 panel／shortcut 矩形不重疊、原生鈕 elementFromPoint 嚴格命中與物理點擊；圓形 div 允許命中其徽章子節點。沒有登入 X。
+
+## 版本、公開 repo 衛生與守門
+
+manifest／package／lockfile／reader／skeleton 都 **0.0.4**，診斷與浮層正常首行 `xsched probe v0.0.4 (manifest 0.0.4)`。版本不符／runtime invalidated 與 0.0.2 接手機制保留；老闆仍須 reload 擴充再 refresh 頁面。
+
+指定舊身份誘餌已換成 `@decoy_handle`（需無@時用 decoy_handle）與 `decoy@example.invalid`。全 repo 工作樹（不含 node_modules／.git 歷史）搜尋兩個指定舊字串 **0 命中**；包含 AGENTS／測試／verify／兩份開工卡／HANDOFF 的既有提及。AGENTS 硬規則只替換指定身份，其他硬規則文字不改；另更新測試說明。没有記錄老闆真日期、handle、真頁截圖、token 或對話全文。
+
+verify 原網路 API／資源 sink／HTML 注入／權限／固定導覽規則未放寬，API30／icon14／SVG9 自測不減；洩漏自測由 main 的 **32** 增到 **37**，新增週字樣日期身份3筆與安全 weekday fmt／samples／骨架匯出檢查。舊誘餌替换後的 fragment／故意洩漏 mock 斷言仍能抓到外洩。未新增權限、host、遠端資源／請求、背景工作或儲存；$0，不打包 zip。
+
+## 本機實跑與外部續跑
+
+- `npm test`：退出0，沙箱 reporter **8 檔通過／0 敗**；細項 `node --test --test-isolation=none test/`：**113 過／0 敗／0 跳過**（三個 real fixture 子測試）。
+- `npm run verify`：退出0，**9 probe 檔／4 Logo SVG；30 API bypass／14 icon／9 SVG／37 leak self-test**。
+- `node --check scripts/e2e.mjs`／`git diff --check`：通過。
+- `npm run e2e`：退出1，`fixture server failed: Error: listen EPERM: operation not permitted 127.0.0.1`。Chrome 斷言沒有開始，本輪 **0 張新圖、網路證據待外部**；不能沿用閘0.2的323斷言稱本輪通過。
+
+外部在最後工作樹執行 `npm test`、`npm run verify`、`npm run e2e`，需要明細再跑 `node --test --test-isolation=none test/`。沿用 Chrome for Testing 預設 CHROME_PATH 與 Xvfb。新增 Chrome 情境用30列假資料证明短視窗內部真的可捲，捲到底後固定按鈕仍可命中／物理複製，縮小重掛與展開，DM／Grok／紅點避讓，繁簡1列假日期 timeFail=0，未知時間的樣本不含身份／內文；舊語系／virtual／clipboard／接手全繼續跑。網路證據仍只有那一次可信使用者點擊頂層導覽例外，資源／背景請求要求0。
+
+新圖全部寫 `docs/gate0.3-*.png`，至少 `small-viewport-scroll`、`collapsed`、`avoid-native`、`unparsed-sample`、`real-skeleton-zh-Hant`、`real-skeleton-zh-Hans`；其餘舊情境也改 gate0.3 前綴，另 `docs/gate0.3-skeleton-sample.txt`。gate0／gate0.1／gate0.2 舊图與骨架保留不覆寫。截圖全部是 fixture 假資料；外部複本由使用者安排，本沙箱不寫 repo 外。
+
+.git 唯讀，本寫碼 session 無法提交；commit／push／外部 e2e 由使用者做。另一 session 尚未複審，不開 PR、不改 main。
+
+## 老闆實測（≤5步；合 main 後）
+
+1. `git pull main`。
+2. 自己的 Chrome 開 `chrome://extensions`，重新載入 `probe/`，確認 **0.0.4**。
+3. **重新整理 x.com**，確認浮層可內部捲、可按縮小再用 Dagaz 展開，沒蓋到 X 右下原生元件。
+4. 到 Scheduled，逐則對照浮層日期＋時分與 X 顯示的時間；數字只代表當時 DOM／自己捲過的列。
+5. 截圖浮層（解析失敗時包含時間樣本），按「複製診斷」貼回；clipboard 被拒時用固定「全選」手動複製。真機回報不提交 repo。
+
+## 已知限制／待確認
+
+繁中格式已由真機回報確認、假日期解析已通過；0.0.4 尚未在老闆 Chrome 逐則實測。簡中是對應變體而非真機驗收。另四語時間格式仍未承諾；時區跟瀏覽器，無年份按今天／列表順序推年，虛擬累加與同時間同本文去重限制沿用。
+
+右下取樣有有限區域／步距／候選上限；極小控制項、區域外的純 div、超深層 fixed、closed shadow、全頁遮擋或極小視窗可能不可辨識／無空間。已偵測無空間時縮成快捷鈕或暫藏，不為顯示操作區而覆蓋原生矩形；空間恢復會重試。陰影本身不計入矩形，實際堆疊／縮放／真 X 抽屜仍需真機與外部 Chrome 核對。縮小與重掛保留手動狀態，刷新會重設。

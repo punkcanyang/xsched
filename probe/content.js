@@ -257,7 +257,7 @@ function positionUI() {
   const cap = Math.max(0, Math.min(Math.floor(innerHeight * .6), innerHeight - 88));
   css(host, { display:"block" });
   css(panel, { display:wantsOpen ? "flex" : "none", "max-height":`${cap}px` });
-  const obstacles = collectObstacles(document, getComputedStyle, innerWidth, innerHeight);
+  const obstacles = collectObstacles(document, element => getComputedStyle(element), innerWidth, innerHeight);
   const chromeHeight = (panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
     + (panel.querySelector('.panel-actions')?.getBoundingClientRect().height || 0) + 40;
   const minimum = chromeHeight + 32;

@@ -12,7 +12,7 @@
 //     web_accessible_resources, which the hard rules forbid. Verified empirically.)
 //
 // Legacy assumptions come from public clues. Gate 0.2 adds structural evidence from
-// the owner's masked skeleton (notes/GATE0.md); its actual time text is still unknown. See notes/GATE0.md for the source
+// the owner's masked skeleton (notes/GATE0.md). Gate 0.3 confirms the Chinese weekday format; all example dates remain fake. See notes/GATE0.md for the source
 // table. When the real page drifts, the diagnostic counters (l1/l2/l3, cell, button,
 // phrase, timeFail) are meant to say *which* assumption broke.
 //
@@ -138,7 +138,7 @@ const YEAR_RE = /\b20\d{2}\b|\d{4}\s*年|\d{4}\s*년/;
 
 // Gate 0.3: unparenthesized 週／周／星期 after 日 is owner-confirmed Chinese grammar.
 // Calendar vocabulary is an exact token allowlist, never arbitrary prose. Locale
-// examples below are synthetic until the owner sends fmt/samples. Shared by skeleton.
+// Chinese weekday wording is confirmed; other locale examples remain synthetic. Shared by skeleton.
 const CALENDAR_WORDS = new Set((
   "will send on at am pm a.m. p.m. " +
   "jan january feb february mar march apr april may jun june jul july aug august sep sept september oct october nov november dec december " +
@@ -193,7 +193,7 @@ const READ_CONFIG = Object.freeze({
   }),
   // en/ja public clues; zh-Hant/zh-Hans/ko guessed, unchanged from gate 0.
   labels: SCHEDULED_LABELS,
-  // English tolerance, Japanese public phrase, Chinese/Korean inferred formats.
+  // Chinese weekday wording is owner-confirmed; legacy tolerances and Korean examples remain synthetic.
   time: Object.freeze({ strict: STRICT, loose: LOOSE, sendVerb: SEND_VERB_RE, year: YEAR_RE, months: MONTH_INDEX, monthPattern: MONTH, weekdayPrefix: WEEKDAY_PREFIX, labelPatterns: LABEL_PATTERNS }),
 });
 
