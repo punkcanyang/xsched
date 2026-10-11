@@ -79,7 +79,7 @@ function serveFixture(req, res) {
   }
   const name = url.searchParams.get("fixture")
     || (url.pathname === "/home" ? "home" : "en");
-  if (!/^[a-zA-Z-]+$/.test(name)) {
+  if (!/^[a-zA-Z-]+$/.test(name) && name !== 'quick013-scheduled') {
     res.writeHead(400).end("bad fixture");
     return;
   }
@@ -136,13 +136,13 @@ async function probeState(page) {
 }
 
 const CASES = [
-  { fixture: "en", file: "v1.0-quickfill-en.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
-  { fixture: "ja", file: "v1.0-quickfill-ja.png", count: 2, times: ["2026-07-20 16:24 (Mon)", "2026-08-03 09:05 (Mon)"] },
-  { fixture: "zh-Hans", file: "v1.0-quickfill-zh-Hans.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
-  { fixture: "zh-Hant", file: "v1.0-quickfill-zh-Hant.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
-  { fixture: "ko", file: "v1.0-quickfill-ko.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
-  { fixture: "roles", file: "v1.0-quickfill-roles-fallback.png", count: 2, layer: "a11y", times: ["2026-10-16 07:30 (Fri)", "2026-10-17 18:00 (Sat)"] },
-  { fixture: "empty", file: "v1.0-quickfill-empty.png", count: 0 },
+  { fixture: "en", file: "v1.0-quick013-en.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "ja", file: "v1.0-quick013-ja.png", count: 2, times: ["2026-07-20 16:24 (Mon)", "2026-08-03 09:05 (Mon)"] },
+  { fixture: "zh-Hans", file: "v1.0-quick013-zh-Hans.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "zh-Hant", file: "v1.0-quick013-zh-Hant.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "ko", file: "v1.0-quick013-ko.png", count: 2, times: ["2026-10-10 09:00 (Sat)", "2026-11-09 20:05 (Mon)"] },
+  { fixture: "roles", file: "v1.0-quick013-roles-fallback.png", count: 2, layer: "a11y", times: ["2026-10-16 07:30 (Fri)", "2026-10-17 18:00 (Sat)"] },
+  { fixture: "empty", file: "v1.0-quick013-empty.png", count: 0 },
 ];
 
 async function main() {
@@ -328,15 +328,15 @@ async function main() {
       return s.count === 2 && s.expanded === 'true' ? s : null;
     }, 'shortcut Scheduled defaults open');
     assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
-    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.1.2 (manifest 0.1.2)', 'diagnostic first line includes both versions');
+    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.1.3 (manifest 0.1.3)', 'diagnostic first line includes both versions');
     await checkAuthorLink('Scheduled author');
-    await page.screenshot({ path: join(DOCS, 'author-link-scheduled.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-author-link-scheduled.png') });
     await checkNative('desktop scheduled open');
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-scheduled-open.png') });
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-diag-version.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-scheduled-open.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-diag-version.png') });
     await toggle(false);
     await checkNative('desktop scheduled closed');
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-scheduled-closed.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-scheduled-closed.png') });
     await page.evaluate(() => history.replaceState({}, '', '/home'));
     await until(async () => (await probeState(page)).mode === 'other', 'closed state survives SPA home');
     assert((await probeState(page)).expanded === 'false', 'explicit closed survives route change');
@@ -350,7 +350,7 @@ async function main() {
     }, 'shortcut remount');
     assert(shortcutRemount.expanded === 'false' && shortcutRemount.mounted === '1', 'remount preserves closed choice and mounted state');
     await toggle(true);
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-remount.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-remount.png') });
 
     await open('home', '/home');
     const home = await until(async () => {
@@ -359,7 +359,7 @@ async function main() {
     }, 'shortcut home defaults closed');
     assert(home.shortcut && !home.panelVisible && home.count === 0, 'home shows only shortcut, no shortcut');
     await checkNative('desktop home closed');
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-home-closed.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-home-closed.png') });
     const homeOpen = await toggle(true);
     const target = 'https://x.com/compose/post/unsent/scheduled';
     assert(homeOpen.target === target, 'goto button fixed target is exact (location.assign, no href sink)');
@@ -368,14 +368,14 @@ async function main() {
     await sleep(300);
     assert(page.url() === homeBeforeSynthetic, 'synthetic page click cannot trigger Scheduled navigation');
     await checkNative('desktop home open');
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-home-open-goto-link.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-home-open-goto-link.png') });
     for (const width of [390, 600]) {
       await page.setViewport({ width, height: 820 });
       await sleep(600);
       await checkNative(`narrow ${width} open`);
       await toggle(false);
       await checkNative(`narrow ${width} closed`);
-      if (width === 390) await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-narrow-fab.png') });
+      if (width === 390) await page.screenshot({ path: join(DOCS, 'v1.0-quick013-narrow-fab.png') });
       await toggle(true);
     }
     await page.setViewport({ width: 1100, height: 820 });
@@ -404,14 +404,14 @@ async function main() {
       chrome.runtime.getManifest = () => ({version: '0.0.2'});
     ` });
     await until(async () => (await probeState(page)).version.includes('⚠ 版本不符'), 'manifest mismatch warning');
-    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.1.2 / manifest 0.0.2'), 'diagnostic mismatch warning');
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-version-mismatch.png') });
+    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.1.3 / manifest 0.0.2'), 'diagnostic mismatch warning');
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-version-mismatch.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: `chrome.runtime.getManifest = () => { throw new Error('Extension context invalidated. private account'); };` });
     await until(async () => (await probeState(page)).version.includes('擴充已重新載入'), 'context invalidated warning');
     assert(!(await probeState(page)).diag.includes('private account'), 'runtime exception is never copied into diagnostic');
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-runtime-invalidated.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-runtime-invalidated.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: 'chrome.runtime.getManifest = globalThis.__originalManifest;' });
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.2 (manifest 0.1.2)'), 'runtime warning clears');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.3 (manifest 0.1.3)'), 'runtime warning clears');
 
     // Reproduce an actual 0.0.2 reader/content session in another isolated world.
     // Historical sources are read from the task's base commit, never downloaded.
@@ -426,7 +426,7 @@ async function main() {
     await until(async () => (await probeState(page)).diag.startsWith('xsched-gate0 v0.0.2'), 'actual old host visible');
     const takeover = await network.send('Runtime.evaluate', { contextId: versionContext, expression: readFileSync(join(PROBE, 'content.js'), 'utf8') });
     assert(!takeover.exceptionDetails, 'new script reinjection avoids top-level const collisions');
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.2'), 'new script takes over old UI');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.3'), 'new script takes over old UI');
     await sleep(1200); // legacy poll has run repeatedly
     assert(await page.evaluate(() => document.querySelectorAll('#xsched-probe-root').length === 1 && [...document.querySelectorAll('[data-xsched-retired]')].every((el) => el.getBoundingClientRect().height === 0)), 'one active UI; legacy stays connected and hidden');
     await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
@@ -502,15 +502,15 @@ async function main() {
       const panel=shadow.querySelector('section'),body=shadow.querySelector('.panel-body');
       return {height:panel.getBoundingClientRect().height,max:parseFloat(getComputedStyle(panel).maxHeight),overflow:getComputedStyle(body).overflowY,scroll:body.scrollHeight,client:body.clientHeight};
     });
-    assert(scrollInfo.height<=360.5 && scrollInfo.max<=360 && scrollInfo.overflow==='auto' && scrollInfo.scroll>scrollInfo.client, '1280x600: panel <=60vh with independently scrollable content');
+    assert(scrollInfo.height<=400.5 && scrollInfo.max<=400 && scrollInfo.overflow==='auto' && scrollInfo.scroll>scrollInfo.client, '1280x600: panel <=2/3 viewport by default with independently scrollable content');
     await checkActions('short viewport before scroll');
     await checkNative('1280x600 native avoidance');
     await page.evaluate(() => {const body=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');body.scrollTop=body.scrollHeight;});
     assert(await page.evaluate(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body').scrollTop>0), 'panel content actually scrolls');
     await checkAuthorLink('Scrolled short viewport author');
     await checkActions('short viewport after scroll');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-small-viewport-scroll.png')});
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-avoid-native.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-small-viewport-scroll.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-avoid-native.png')});
     const actionContext=await findExtensionContext();
     assert(actionContext,'short viewport clipboard context exists');
     await network.send('Runtime.evaluate',{contextId:actionContext,expression:`
@@ -523,7 +523,7 @@ async function main() {
     await clickShadow('[data-xsched-minimize]');
     await until(async () => (await probeState(page)).expanded==='false', 'explicit minimize');
     assert(!(await probeState(page)).panelVisible,'minimize leaves only shortcut');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-collapsed.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-collapsed.png')});
     await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
     await until(async () => (await probeState(page)).remounts>0, 'minimized host remount');
     assert((await probeState(page)).expanded==='false','minimized choice survives remount');
@@ -546,7 +546,7 @@ async function main() {
     assert(boss.times[0] === '2026-11-03 23:19 (Tue)', 'confirmed Chinese format with fake date parses exact date/clock');
     assert(/timeOk=1 .*timeFail=0/.test(boss.diag), 'owner fixture: every synthetic time parsed, zero failures');
     assert(boss.diag.endsWith('\nfmt=將於 2026年11月3日 週二 下午11:19 發送'), 'success exports directly readable isolated masked format on its own line');
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-real-skeleton-zh-Hant.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-real-skeleton-zh-Hant.png') });
     await page.evaluate(() => document.querySelector('div[aria-hidden="true"]').removeAttribute('aria-hidden'));
     await sleep(300);
     assert((await probeState(page)).count === 1, 'background visibility transition cannot add timeline posts');
@@ -563,7 +563,7 @@ async function main() {
     const masked = await page.evaluate(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('.sample').textContent);
     assert(masked.includes('Will send on 2027-01-01 23:59'), 'unparsed row shows masked time sample beside failure');
     for (const leak of ['UTC','甲乙','private','decoy_handle','example.invalid','@','http']) assert(!masked.includes(leak), 'unparsed sample excludes body/identity: '+leak);
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-unparsed-sample.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-unparsed-sample.png') });
     await open('boss-skeleton-zh-Hans');
     const hans = await until(async () => {
       const state=await probeState(page);
@@ -571,7 +571,7 @@ async function main() {
     }, 'Simplified Chinese weekday label');
     assert(hans.count===1 && /timeOk=1 .*timeFail=0/.test(hans.diag), 'Simplified Chinese single row parses correctly');
     assert(hans.diag.endsWith('fmt=将于 2026年11月3日 周二 下午11:19 发送'), 'Simplified Chinese masked fmt preserves only calendar label');
-    await page.screenshot({ path: join(DOCS,'v1.0-quickfill-real-skeleton-zh-Hans.png') });
+    await page.screenshot({ path: join(DOCS,'v1.0-quick013-real-skeleton-zh-Hans.png') });
 
     // A legacy cell's post body cannot rescue its unrecognized time metadata.
     // Prepare a fresh scope before inserting it: virtual accumulation must not
@@ -647,7 +647,7 @@ async function main() {
       return state.times[0] === '2026-12-31 23:59 (Thu)' && state.times[1] === '2027-01-01 00:05 (Fri)' ? state : null;
     }, 'missing year Dec31 to next Jan1, in chronological order');
     assert(year.count === 2 && /timeOk=2 .*timeFail=0/.test(year.diag), 'cross-year both dates/clock parsed, no failures');
-    await page.screenshot({ path: join(DOCS, 'v1.0-quickfill-cross-year.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-cross-year.png') });
     console.log('  ✓ owner skeleton: 1 modal row, background excluded, normalized synthetic time/fmt; unknown label stays counted; cross-year 2 ordered rows');
 
     // Instrument only the fixture's extension isolated world to observe clipboard
@@ -705,7 +705,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched probe v0\.1\.2 \(manifest 0\.1\.2\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.1\.3 \(manifest 0\.1\.3\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
@@ -731,7 +731,7 @@ async function main() {
     for (const leak of ["Arrives", "UTC", "placeholder body"]) {
       assert(!broken.diag.includes(leak), `selectors-broken: diag leaked "${leak}": ${broken.diag}`);
     }
-    await page.screenshot({ path: join(DOCS, "v1.0-quickfill-selectors-broken.png") });
+    await page.screenshot({ path: join(DOCS, "v1.0-quick013-selectors-broken.png") });
     console.log("  ✓ selectors-broken: mounted, 0 rows, masked samples only");
 
     // ── 0.1: X's SPA redraw removes the host → the probe must re-mount it ──────
@@ -801,13 +801,13 @@ async function main() {
     const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
     const skeleton = skeletonCopies.result.value[0];
-    assert(/^xsched-skeleton v0\.1\.2 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(/^xsched-skeleton v0\.1\.3 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
     for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture", "punkcan", "https://x.com/punkcan"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
     }
-    writeFileSync(join(DOCS, "v1.0-quickfill-skeleton-sample.txt"), skeleton + "\n");
-    await page.screenshot({ path: join(DOCS, "v1.0-quickfill-skeleton-copied.png") });
+    writeFileSync(join(DOCS, "v1.0-quick013-skeleton-sample.txt"), skeleton + "\n");
+    await page.screenshot({ path: join(DOCS, "v1.0-quick013-skeleton-copied.png") });
     // The clipboard may be denied; then the overlay must offer the readonly textarea.
     await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: `
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() { return Promise.reject(new Error('denied')); } } });
@@ -819,7 +819,7 @@ async function main() {
       const s = await probeState(page);
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
-    assert(/^xsched-skeleton v0\.1\.2 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    assert(/^xsched-skeleton v0\.1\.3 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
     const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
     await select.asElement().click();
     await select.dispose();
@@ -828,7 +828,7 @@ async function main() {
       return area.selectionStart === 0 && area.selectionEnd === area.value.length;
     });
     assert(selected, 'fallback: user can select the entire skeleton');
-    await page.screenshot({ path: join(DOCS, "v1.0-quickfill-skeleton-fallback.png") });
+    await page.screenshot({ path: join(DOCS, "v1.0-quick013-skeleton-fallback.png") });
     console.log("  ✓ skeleton: content-free map copied; textarea fallback when clipboard is denied");
 
     // ── virtualized list: the TEST scrolls, the probe only accumulates ──────────
@@ -840,7 +840,7 @@ async function main() {
     assert(before.scrolled === "0", "virtual: probe must not have scrolled on its own");
     assert(before.diag.includes("virtualized=1"), `virtual: expected virtualized=1: ${before.diag}`);
     assert(before.hint.includes("請自己往下捲"), `virtual: expected the do-not-auto-scroll hint: ${before.hint}`);
-    await page.screenshot({ path: join(DOCS, "v1.0-quickfill-virtual-before.png") });
+    await page.screenshot({ path: join(DOCS, "v1.0-quick013-virtual-before.png") });
 
     await page.evaluate(() => {
       const list = document.getElementById("sched-list");
@@ -861,7 +861,7 @@ async function main() {
     ]) {
       assert(after.times.includes(want), `virtual: missing accumulated time "${want}"`);
     }
-    await page.screenshot({ path: join(DOCS, "v1.0-quickfill-virtual-after.png") });
+    await page.screenshot({ path: join(DOCS, "v1.0-quick013-virtual-after.png") });
     console.log("  ✓ virtual: 3 → 6 rows after a test-driven scroll");
 
     await page.evaluate(() => {
@@ -951,7 +951,7 @@ async function main() {
     const homeState = await probeState(page);
     assert(homeState.present && homeState.mode === "other" && homeState.count === 0, `home: overlay should be a 0-row shortcut, got ${JSON.stringify(homeState)}`);
     assert(homeState.countText === "xsched 探針：非 Scheduled 頁", `home: shortcut text was "${homeState.countText}"`);
-    await page.screenshot({ path: join(DOCS, "v1.0-quickfill-not-scheduled.png") });
+    await page.screenshot({ path: join(DOCS, "v1.0-quick013-not-scheduled.png") });
     console.log("  ✓ home: 0 rows (shortcut stays mounted off the Scheduled page)");
 
     for (const subpath of ["/home", "/compose/post/unsent/drafts", "/compose/post/schedule"]) {
@@ -963,9 +963,9 @@ async function main() {
     console.log("  ✓ non-Scheduled: home, Drafts, picker with adversarial selected tabs");
 
     // ── 0.4: immutable anchor, foreign widgets, dragging and numeric persistence ──
-    const baselineManifest=JSON.parse(execFileSync('git',['show','162a838:probe/manifest.json'],{encoding:'utf8'}));
+    const baselineManifest=JSON.parse(execFileSync('git',['show','4c16518:probe/manifest.json'],{encoding:'utf8'}));
     const currentManifest=JSON.parse(readFileSync(join(PROBE,'manifest.json'),'utf8'));
-    for(const field of ['permissions','host_permissions','web_accessible_resources']) assert(JSON.stringify(currentManifest[field])===JSON.stringify(baselineManifest[field]),'162a838 baseline manifest unchanged: '+field);
+    for(const field of ['permissions','host_permissions','web_accessible_resources']) assert(JSON.stringify(currentManifest[field])===JSON.stringify(baselineManifest[field]),'4c16518 baseline manifest unchanged: '+field);
     assert(JSON.stringify(currentManifest.content_scripts[0].matches)===JSON.stringify(baselineManifest.content_scripts[0].matches),'no new content-script hosts');
     await page.setViewport({width:1100,height:820});
     await open('extensions');
@@ -998,10 +998,10 @@ async function main() {
       const shadow=document.getElementById('xsched-probe-root').shadowRoot;
       return !shadow.querySelector('[role="tooltip"], .tooltip') && shadow.querySelector('.shortcut').title===shadow.querySelector('.shortcut').getAttribute('aria-label');
     }),'uses native title only, with localized aria-label; no custom tooltip');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-avoid-extensions.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-avoid-extensions.png')});
     await page.mouse.move(automatic.x+automatic.width/2,automatic.y+automatic.height/2);
     await sleep(800);
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-tooltip.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-tooltip.png')});
     assert(await page.evaluate(()=>window.localStorage.getItem('xsched.probe.pos')===null),'automatic placement never persists page data');
     // Resize interrupts a real captured pointer, releasing it before mouseup.
     const expandedBeforeCancel=(await probeState(page)).expanded;
@@ -1023,13 +1023,13 @@ async function main() {
     },'pointer drag moves button to user anchor');
     assert((await probeState(page)).expanded===expandedBeforeDrag,'drag compatibility click cannot toggle panel');
     assert(JSON.stringify(await panelRect())===JSON.stringify(panelBeforeButtonDrag),'open panel exact rectangle never follows button drag');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-button-dragged.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-button-dragged.png')});
     const saved=await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.pos')));
     assert(Object.keys(saved).sort().join(',')==='x,y' && Object.values(saved).every(value=>typeof value==='number'&&Number.isFinite(value)) && saved.x===220 && saved.y===120,'fixed xsched key stores exactly numeric x/y');
     await page.reload({waitUntil:'domcontentloaded'});
     await until(async()=> (await probeState(page)).expanded==='true','dragged reload mounted');
     assert(JSON.stringify(await buttonRect())===JSON.stringify(dragged),'reload preserves exact dragged button rectangle');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-dragged-reload.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-dragged-reload.png')});
     // X may redraw away the host just before the viewport changes.
     await page.evaluate(()=>document.getElementById('xsched-probe-root').remove());
     await page.setViewport({width:180,height:150});await sleep(600);
@@ -1041,10 +1041,10 @@ async function main() {
     await clickShadow('[data-xsched-reset-position]');
     assert(await page.evaluate(()=>window.localStorage.getItem('xsched.probe.pos')===null),'reset removes only the position key');
     assert(JSON.stringify(await buttonRect())===JSON.stringify(automatic),'reset returns to automatically avoided default');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-reset.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-reset.png')});
     await toggle(false);const noModalClosed=await buttonRect();
     await toggle(true);assert(JSON.stringify(await buttonRect())===JSON.stringify(noModalClosed),'no modal: toggle keeps exact button rectangle');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-no-modal-open.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-no-modal-open.png')});
     await page.evaluate(()=>{
       const backdrop=document.createElement('div');backdrop.className='fixture-draft-backdrop';
       Object.assign(backdrop.style,{position:'fixed',inset:'0',background:'#0008',zIndex:'10000'});
@@ -1056,14 +1056,14 @@ async function main() {
     await sleep(600);
     assert(JSON.stringify(await buttonRect())===JSON.stringify(noModalClosed),'opening X draft modal cannot auto-move anchor');
     await toggle(false);const modalClosed=await buttonRect();
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-modal-closed.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-modal-closed.png')});
     await toggle(true);
     assert(JSON.stringify(await buttonRect())===JSON.stringify(modalClosed),'with full-screen backdrop and dialog control: toggle keeps exact rectangle');
     assert(await page.evaluate(()=>{
       const host=document.getElementById('xsched-probe-root');
       return ['BODY','HTML'].includes(host.parentElement.tagName)&&!host.closest('[role="dialog"]')&&getComputedStyle(host).position==='fixed';
     }),'host stays fixed at body/html level, never inside X dialog');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-modal-open.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-modal-open.png')});
     await page.evaluate(()=>{document.querySelector('.fixture-draft-modal').remove();document.querySelector('.fixture-draft-backdrop').remove();});
     await sleep(600);
     assert(JSON.stringify(await buttonRect())===JSON.stringify(modalClosed),'closing modal cannot move anchor');
@@ -1086,7 +1086,7 @@ async function main() {
     assert(JSON.stringify(await buttonRect())===JSON.stringify(defaultButton),'panel drag never changes exact button rectangle');
     assert((await probeState(page)).expanded==='true','header drag cannot collapse or activate any action');
     assert(JSON.stringify(await page.evaluate(()=>[...document.getElementById('xsched-probe-root').shadowRoot.querySelectorAll('button')].map(el=>el.textContent)))===JSON.stringify(buttonsBefore),'header drag cannot trigger clipboard/reset/minimize actions');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-panel-dragged.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-panel-dragged.png')});
     // Button drag with panel already manually positioned must preserve full panel rect.
     const beforeSecondButton=await buttonRect();
     await page.mouse.move(beforeSecondButton.x+22,beforeSecondButton.y+22);await page.mouse.down();
@@ -1094,7 +1094,7 @@ async function main() {
     const buttonDragged=await buttonRect();
     assert(buttonDragged.x===500&&buttonDragged.y===100,'button is independently dragged after panel');
     assert(JSON.stringify(await panelRect())===JSON.stringify(panelDragged),'manually positioned panel exact rect stays unchanged during button drag');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-button-dragged.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-button-dragged.png')});
     const keys=await page.evaluate(()=>['xsched.probe.pos','xsched.probe.panelPos'].map(key=>({key,value:JSON.parse(window.localStorage.getItem(key))})));
     for(const entry of keys) assert(entry.key.startsWith('xsched.')&&Object.keys(entry.value).sort().join(',')==='x,y'&&Object.values(entry.value).every(value=>typeof value==='number'&&Number.isFinite(value)),'each fixed xsched key stores exactly finite numeric x/y');
     assert(JSON.stringify(keys.map(entry=>entry.value))===JSON.stringify([{x:500,y:100},{x:100,y:80}]),'button and panel use two distinct keys/coordinates');
@@ -1107,7 +1107,7 @@ async function main() {
     await page.evaluate(()=>document.querySelector('.fixture-panel-modal').remove());
     await page.reload({waitUntil:'domcontentloaded'});await until(async()=> (await probeState(page)).expanded==='true','two independent positions reloaded');
     assert(JSON.stringify(await buttonRect())===JSON.stringify(buttonDragged)&&JSON.stringify(await panelRect())===JSON.stringify(panelDragged),'reload restores exact button and panel rectangles');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-reload-both.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-reload-both.png')});
     // Starting on the header's minimize button must never take panel capture.
     const minimize=await page.evaluate(()=>{
       const shadow=document.getElementById('xsched-probe-root').shadowRoot;
@@ -1139,7 +1139,7 @@ async function main() {
     });
     assert(clampStyle.x>=0&&clampStyle.x+clampStyle.width<=390&&clampStyle.y>=0&&clampStyle.y+44<=600&&clampStyle.visible&&clampStyle.hit,'offscreen saved panel clamps header within viewport');
     assert(await page.evaluate(()=>['xsched.probe.pos','xsched.probe.panelPos'].every(key=>window.localStorage.getItem(key)===JSON.stringify({x:5000,y:5000}))),'clamp never overwrites either original preference');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-clamped.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-clamped.png')});
     await page.setViewport({width:1100,height:820});await sleep(650);
     // Restore visible user positions so the reset action itself can be hit physically.
     await page.evaluate(()=>{
@@ -1150,23 +1150,12 @@ async function main() {
     await clickShadow('[data-xsched-reset-position]');await sleep(650);
     assert(await page.evaluate(()=>['xsched.probe.pos','xsched.probe.panelPos'].every(key=>window.localStorage.getItem(key)===null)),'reset and later polling delete both fixed keys');
     assert(JSON.stringify(await buttonRect())===JSON.stringify(defaultButton)&&JSON.stringify(await panelRect())===JSON.stringify(defaultPanel),'reset restores both automatic default rectangles');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-reset-both.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-reset-both.png')});
     console.log('  ✓ gate0.5: independent header/button drags, button exclusion, exact toggles/reload, clamping and two-key reset');
 
     // ── quick slots: synthetic picker, 2027+ clock, never native activation ─────
     await page.setViewport({width:1280,height:820});
-    async function quickFixture(name) {
-      await page.evaluate(()=>{window.localStorage.removeItem('xsched.probe.pos');window.localStorage.removeItem('xsched.probe.panelPos');});
-      await open(name,'/compose/post');
-      const contextId=await until(findExtensionContext,'quick picker isolated context');
-      // Module presence / document_idle does not imply the first throttled tick ran.
-      // A shortcut click before lastReport exists is intentionally ignored.
-      const initial=await until(async()=>{
-        const state=await probeState(page);
-        return state.present && state.mounted==='1' && state.mode==='other'
-          && state.diag.startsWith('xsched probe v0.1.2 (manifest 0.1.2)\n') ? state : null;
-      },'quick picker first diagnostic rendered: '+name);
-      assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
+    async function installQuickClock(contextId) {
       // Test-only Date replacement in BOTH worlds. Production has no clock override.
       const expression=`globalThis.__QuickRealDate=Date;
         globalThis.Date=class extends globalThis.__QuickRealDate {
@@ -1179,6 +1168,20 @@ async function main() {
       assert(await page.evaluate(()=>new Date().getFullYear()>=2027),'fixture clock is 2027+');
       const extClock=await network.send('Runtime.evaluate',{contextId,expression:'new Date().getFullYear()',returnByValue:true});
       assert(extClock.result.value>=2027,'extension clock is also 2027+');
+    }
+    async function quickFixture(name) {
+      await page.evaluate(()=>{window.localStorage.removeItem('xsched.probe.pos');window.localStorage.removeItem('xsched.probe.panelPos');});
+      await open(name,'/compose/post');
+      const contextId=await until(findExtensionContext,'quick picker isolated context');
+      // Module presence / document_idle does not imply the first throttled tick ran.
+      // A shortcut click before lastReport exists is intentionally ignored.
+      const initial=await until(async()=>{
+        const state=await probeState(page);
+        return state.present && state.mounted==='1' && state.mode==='other'
+          && state.diag.startsWith('xsched probe v0.1.3 (manifest 0.1.3)\n') ? state : null;
+      },'quick picker first diagnostic rendered: '+name);
+      assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
+      await installQuickClock(contextId);
       await toggle(true);
       return contextId;
     }
@@ -1187,7 +1190,7 @@ async function main() {
     }
     const quickContext=await quickFixture('quick-dialog');
     assert(/schedDialog=1 dateCtl=3 timeCtl=3 selects=6/.test((await probeState(page)).diag),'complete picker counts contain no native values');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-dialog-detected.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-dialog-detected.png')});
     const untouched=await nativePickerState();
     await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-slot="morning"]').click());
     assert(JSON.stringify((await nativePickerState()).values)===JSON.stringify(untouched.values),'untrusted quick activation cannot fill native values');
@@ -1209,9 +1212,9 @@ async function main() {
       assert(filled.counts.input===(index+1)*6,'all native input events bubble: '+id);
       assert(['confirm','schedule','post','submit'].every(key=>filled.counts[key]===0),'no Confirm, Schedule, Post clicks or form submit: '+id);
       assert(filled.status==='Fields filled; not scheduled yet','fill is not reported as scheduled');
-      if(id==='lunch')await page.screenshot({path:join(DOCS,'v1.0-quickfill-slot-filled.png')});
+      if(id==='lunch')await page.screenshot({path:join(DOCS,'v1.0-quick013-slot-filled.png')});
     }
-    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.1.2'),'new diagnostic available');
+    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.1.3'),'new diagnostic available');
     await network.send('Runtime.evaluate',{contextId:quickContext,expression:`globalThis.__quickCopies=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText(text){globalThis.__quickCopies.push(text);return Promise.resolve();}}});`});
     await clickShadow('[data-xsched-copy]');await clickShadow('[data-xsched-skeleton]');
     const exported=await network.send('Runtime.evaluate',{contextId:quickContext,expression:'globalThis.__quickCopies',returnByValue:true});
@@ -1222,7 +1225,7 @@ async function main() {
     assert(!/Confirm|synthetic|Schedule \(synthetic\)|2027-01-01/.test(exported.result.value[1]),'native option prose/full dates are not exported');
     assert(/option-values=2027\|2028\|2029/.test(exported.result.value[1]),'only safe numeric option samples are exported');
     await page.evaluate(()=>{const body=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');body.scrollTop=body.scrollHeight;});
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-diag.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-diag.png')});
     // A picker can become incomplete after an enabled quick button was rendered.
     const beforePartial=await nativePickerState();
     await page.evaluate(()=>document.querySelector('select[name=minute]').remove());
@@ -1234,14 +1237,14 @@ async function main() {
       await quickFixture(name);
       const before=await nativePickerState();
       const ids=await page.evaluate(()=>[...document.getElementById('xsched-probe-root').shadowRoot.querySelectorAll('[data-xsched-slot]')].map(el=>({id:el.dataset.xschedSlot,disabled:el.disabled})));
-      assert(ids.length===4&&ids.every(el=>el.disabled),'missing/incomplete picker: all four disabled');
+      assert(ids.length===5&&ids.every(el=>el.disabled),'missing/incomplete picker: all five disabled');
       assert(before.status==='Schedule fields not detected','missing/incomplete picker explains no fields');
       // Mouse clicks on disabled quick slots must not write even a single native field.
       for(const {id} of ids)await clickShadow(`[data-xsched-slot="${id}"]`);
       const after=await nativePickerState();
       assert(JSON.stringify(after.values)===JSON.stringify(before.values),'missing/incomplete picker never half fills');
       assert(Object.values(after.counts).every(value=>value===0),'missing/incomplete picker emits no input/change/click/submit');
-      await page.screenshot({path:join(DOCS,name==='quick-partial'?'v1.0-quickfill-partial-fields.png':'v1.0-quickfill-not-detected.png')});
+      await page.screenshot({path:join(DOCS,name==='quick-partial'?'v1.0-quick013-partial-fields.png':'v1.0-quick013-not-detected.png')});
     }
     // Granularity/year mismatch: controls exist, but transaction preflight fails.
     await quickFixture('quick-dialog');
@@ -1254,7 +1257,7 @@ async function main() {
     assert(Object.values(noMinuteAfter.counts).every(value=>value===0),'unrepresentable minute emits no events or native activation');
     console.log('  ✓ quick slots: four local future choices, 2027+ two-world clocks, native changes, zero send/submit, missing/partial/unsupported atomic failure');
 
-    // ── 0.1.2: masked picker structure, fake values, 2027+ clocks ──────────────
+    // ── 0.1.3: masked picker structure, fake values, 2027+ clocks ──────────────
     // These fixtures hide the date picker indicator: Chrome otherwise emits a
     // built-in data:image/svg+xml icon request in CDP. The date input stays intact;
     // production behavior and the strict zero-extension-request guard are unchanged.
@@ -1265,7 +1268,7 @@ async function main() {
     assert(/schedDialog=1 dateCtl=3 timeCtl=3 selects=6/.test((await probeState(page)).diag),'real structure: inner dialog with two groups counted once');
     const realDetected=await page.evaluate(()=>[...document.querySelectorAll('select')].every(control=>control.hasAttribute('aria-labelledby') && control.getAttribute('data-testid')===''));
     assert(realDetected,'real structure has linked labels and empty testids, no legacy testid/name reliance');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-real-detected.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-real-detected.png')});
     const calendarBefore=(await realPickerState()).date;
     for (const [index,id] of ['morning','lunch','evening','workday'].entries()) {
       const target=await network.send('Runtime.evaluate',{contextId:realContext,returnByValue:true,expression:`(()=>{const at=XSCHED_QUICK.nextSlot('${id}');return {month:'fake-month-'+(at.getMonth()+1),day:String(at.getDate()),year:String(at.getFullYear()),hour:String(at.getHours()%12||12),minute:String(at.getMinutes()),period:at.getHours()<12?'fake-period-0':'fake-period-1'};})()`});
@@ -1281,7 +1284,7 @@ async function main() {
       assert(actual.date===calendarBefore,'calendar input remains untouched: '+id);
       assert(actual.status==='已填入欄位；尚未排程','real picker does not claim scheduled');
       if(id==='lunch')assert(actual.values.hour==='12'&&actual.values.period==='fake-period-1'&&actual.values.minute==='30','12:30 is twelve PM');
-      if(id==='evening') {assert(actual.values.hour==='8'&&actual.values.period==='fake-period-1','20:00 is eight PM');await page.screenshot({path:join(DOCS,'v1.0-quickfill-real-filled.png')});}
+      if(id==='evening') {assert(actual.values.hour==='8'&&actual.values.period==='fake-period-1','20:00 is eight PM');await page.screenshot({path:join(DOCS,'v1.0-quick013-real-filled.png')});}
     }
     // Empty testids cannot be recovered by exporting them. Test a synthetic safe
     // nonempty value plus identity attacks, never substitute a guessed real testid.
@@ -1297,18 +1300,18 @@ async function main() {
     const missingAfter=await until(async()=>{const state=await realPickerState();return state.status==='目標年份不在 X 的選項中'?state:null;},'explicit unavailable target year');
     assert(JSON.stringify(missingAfter.values)===JSON.stringify(missingBefore.values)&&missingAfter.date===missingBefore.date,'unavailable year changes no fields or date input');
     assert(Object.values(missingAfter.counts).every(value=>value===0),'unavailable year emits zero events/clicks/submit');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-year-missing.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-year-missing.png')});
     await quickFixture('quick-real-rollback');
     const rollbackBefore=await realPickerState();await clickShadow('[data-xsched-slot="evening"]');
     const rollbackAfter=await until(async()=>{const state=await realPickerState();return state.status==='填值失敗，已還原；請逐欄檢查'?state:null;},'readback refusal restores all fields');
     assert(JSON.stringify(rollbackAfter.values)===JSON.stringify(rollbackBefore.values),'rollback restores EVERY original select value');
-    assert(rollbackAfter.counts.input===11&&rollbackAfter.counts.change===11,'five attempted fields plus ALL six restored fields use native input/change');
+    assert(rollbackAfter.counts.input===12&&rollbackAfter.counts.change===12,'ALL six attempted fields plus ALL six restored fields use native input/change');
     assert(['confirm','schedule','post','submit','calendar'].every(key=>rollbackAfter.counts[key]===0),'rollback never sends, submits or activates calendar');
     assert(rollbackAfter.date===rollbackBefore.date,'rollback does not write date input');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-rollback.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-rollback.png')});
     console.log('  ✓ quickfix real structure: nested modal/two groups, all four future slots, 12-hour periods, safe skeleton export, missing-year atomic failure, full readback rollback, zero native activation');
 
-    // ── 0.1.2: controlled re-renders and option encoding variants ──────────────
+    // ── 0.1.3: controlled re-renders and option encoding variants ──────────────
     for(const variant of ['numeric','padded','zero','period-values']) {
       await quickFixture('quick-real-'+variant);
       // The synthetic controlled model rejects instance .value writes, even with
@@ -1337,7 +1340,7 @@ async function main() {
         assert(['confirm','schedule','post','calendar','submit'].every(key=>state.counts[key]===0),'controlled model never sends/activates: '+variant+'/'+id);
       }
       assert(await page.evaluate(()=>window.fixtureRebuilds===8),'year/month each rebuild day once per slot: '+variant);
-      await page.screenshot({path:join(DOCS,'v1.0-quickfill-'+variant+'.png')});
+      await page.screenshot({path:join(DOCS,'v1.0-quick013-'+variant+'.png')});
     }
     const correctionContext=await quickFixture('quick-real-autocorrect');
     const correctionBefore=await realPickerState();
@@ -1347,17 +1350,94 @@ async function main() {
     assert(/fill=failed failed=period\n/.test(correction.diag),'failed field is period, not a guessed React error');
     assert(/field=period target=PM value=PM read=AM options=AM\|PM/.test(correction.diag),'diagnostic captures period readback BEFORE restoration');
     assert(correction.diag.split('\n').filter(line=>line.startsWith('field=')).length===6,'six safe field diagnostic lines');
-    assert(correction.counts.input===10&&correction.counts.change===10,'four attempted fields and ALL six restoration events');
+    assert(correction.counts.input===12&&correction.counts.change===12,'ALL six attempted fields and ALL six restoration events');
     assert(['confirm','schedule','post','calendar','submit'].every(key=>correction.counts[key]===0),'automatic correction never sends or activates');
     await network.send('Runtime.evaluate',{contextId:correctionContext,expression:`globalThis.__fillCopies=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText(text){globalThis.__fillCopies.push(text);return Promise.resolve();}}});`});
     await clickShadow('[data-xsched-copy]');await clickShadow('[data-xsched-skeleton]');
     const copies=await network.send('Runtime.evaluate',{contextId:correctionContext,returnByValue:true,expression:'globalThis.__fillCopies'});
     assert(copies.result.value[0]===correction.diag,'copied diagnosis includes exact safe readback rows');
     assert(/option-values=empty\|1\|2\|12/.test(copies.result.value[1])&&/option-values=AM\|PM/.test(copies.result.value[1]),'picker skeleton includes bounded numeric/period option samples');
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-autocorrect.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-autocorrect.png')});
     await page.evaluate(()=>{const body=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');body.scrollTop=body.scrollHeight;});
-    await page.screenshot({path:join(DOCS,'v1.0-quickfill-diag-failure.png')});
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-diag-failure.png')});
     console.log('  ✓ quickfill: controlled native setters, ordered dependent re-query, numeric/padded/zero/Chinese values, bounded settled readback, full restoration and safe copied field diagnostics');
+
+    // ── 0.1.3: new cache slot, actual dates, numeric settings and height ────────
+    for(const variant of ['transient','interim']) {
+      await quickFixture('quick-real-'+variant);
+      await clickShadow('[data-xsched-slot="evening"]');
+      const state=await until(async()=>{const v=await realPickerState();return !v.busy && v.status==='已填入欄位；尚未排程'?v:null;},'013 bounded rebuild/final-only check: '+variant);
+      assert(state.values.year==='2028' && state.values.month==='1' && state.values.day==='1' && state.values.hour==='8' && state.values.period==='PM' && state.values.minute==='0','013 rebuilt/final values: '+variant);
+      assert(state.counts.input===6 && state.counts.change===6,'six ordered native writes despite transient rebuild/correction: '+variant);
+      assert(['confirm','schedule','post','calendar','submit'].every(key=>state.counts[key]===0),'zero activation through transient/interim fill: '+variant);
+      await page.screenshot({path:join(DOCS,'v1.0-quick013-'+variant+'.png')});
+    }
+    await page.evaluate(()=>{for(const key of ['xsched.probe.lastScheduled','xsched.probe.quickRange','xsched.probe.panelHeight'])window.localStorage.removeItem(key);});
+    await quickFixture('quick-real-numeric');
+    assert(await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-slot="random"]').disabled),'random unavailable without last-list cache');
+    assert(await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-cache').textContent.includes('Scheduled')),'missing cache explains visit Scheduled first');
+    const fixedLabels=await page.evaluate(()=>[...document.getElementById('xsched-probe-root').shadowRoot.querySelectorAll('[data-xsched-slot]')].filter(b=>b.dataset.xschedSlot!=='random').map(b=>b.textContent));
+    assert(fixedLabels.slice(0,3).every(label=>label.includes('明天')&&label.includes('2028')),'expired today labels explicitly show tomorrow, including cross-year date');
+    assert(fixedLabels[3].includes('2028') && fixedLabels[3].includes('09:00'),'workday button has its actual future date');
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-no-cache-dates.png')});
+    // Exercise the real reader/cache route, rather than manufacturing a cache in extension code.
+    await open('quick013-scheduled');
+    await until(async()=> (await probeState(page)).count===2,'013 two synthetic 2028 rows read');
+    const cacheContext=await until(findExtensionContext,'013 cache isolated context');
+    await installQuickClock(cacheContext);
+    // Re-read the synthetic list after installing the two-world 2027 clock. A
+    // changed fake timestamp proves cache refresh, then returns to the target row.
+    await page.evaluate(()=>document.querySelectorAll('[role="button"] span')[1].textContent='Will send on Sun, Jan 2, 2028 at 8:01 PM');
+    await until(()=>page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled')).time===new Date(2028,0,2,20,1).getTime()),'013 cache refreshed at frozen clock');
+    await page.evaluate(()=>document.querySelectorAll('[role="button"] span')[1].textContent='Will send on Sun, Jan 2, 2028 at 8:00 PM');
+    await until(()=>page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled')).time===new Date(2028,0,2,20).getTime()),'013 final cache refreshed');
+
+    const cache=await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled')));
+    const lastEpoch=await page.evaluate(()=>new Date(2028,0,2,20).getTime());
+    assert(cache.time===lastEpoch && Object.keys(cache).sort().join('|')==='readAt|time' && Object.values(cache).every(Number.isFinite),'cache is last epoch plus read time only');
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-cached-list.png')});
+    await quickFixture('quick-real-numeric');
+    assert(await page.evaluate(()=>!document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-slot="random"]').disabled),'persisted cache enables random in composer');
+    assert(await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-cache').textContent.includes('列表讀取時刻')),'actual cache read timestamp visible');
+    async function editRange(a,b) {
+      await page.evaluate((a,b)=>{const root=document.getElementById('xsched-probe-root').shadowRoot;root.querySelector('[data-xsched-range="a"]').value=String(a);root.querySelector('[data-xsched-range="b"]').value=String(b);},a,b);
+      await clickShadow('[data-xsched-range-save]');
+    }
+    await editRange(30,10);
+    await until(()=>page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-status').textContent.includes('正整數')),'invalid range explained');
+    assert(await page.evaluate(()=>window.localStorage.getItem('xsched.probe.quickRange')===null),'invalid interval cannot overwrite settings');
+    await editRange(20,20);
+    await until(()=>page.evaluate(()=>window.localStorage.getItem('xsched.probe.quickRange')===JSON.stringify({a:20,b:20})),'valid numeric interval persisted');
+    await clickShadow('[data-xsched-slot="random"]');
+    const randomFilled=await until(async()=>{const v=await realPickerState();return !v.busy && v.status==='已填入欄位；尚未排程'?v:null;},'cached last + interval fill');
+    assert(randomFilled.values.year==='2028' && randomFilled.values.month==='1' && randomFilled.values.day==='2' && randomFilled.values.hour==='8' && randomFilled.values.period==='PM' && randomFilled.values.minute==='20','last observed Jan 2 20:00 + 20 minutes exact native values');
+    assert(randomFilled.counts.input===6&&randomFilled.counts.change===6&&['confirm','schedule','post','calendar','submit'].every(key=>randomFilled.counts[key]===0),'random field fill never sends/submits');
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-random-filled.png')});
+    await page.evaluate(()=>window.localStorage.setItem('xsched.probe.lastScheduled',JSON.stringify({time:new Date(2027,0,1).getTime(),readAt:new Date(2027,0,1).getTime()})));
+    await quickFixture('quick-real-numeric');
+    await clickShadow('[data-xsched-slot="random"]');
+    const fallback=await until(async()=>{const v=await realPickerState();return !v.busy && v.status==='已填入欄位；尚未排程'?v:null;},'expired cache uses now + interval');
+    assert(fallback.values.year==='2027'&&fallback.values.month==='12'&&fallback.values.day==='31'&&fallback.values.hour==='9'&&fallback.values.period==='PM'&&fallback.values.minute==='20','expired cached result uses frozen now 21:00 + 20 minutes');
+    assert(['confirm','schedule','post','calendar','submit'].every(key=>fallback.counts[key]===0),'expired fallback never activates');
+    const buttonBeforeHeight=await buttonRect(),panelBeforeHeight=await panelRect();
+    assert(Math.abs(panelBeforeHeight.height-Math.floor(820*2/3))<=1,'default height is approximately 2/3 viewport');
+    const handle=await page.evaluate(()=>{const r=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-resizer').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};});
+    await page.mouse.move(handle.x,handle.y);await page.mouse.down();await page.mouse.move(handle.x,handle.y-80,{steps:8});await page.mouse.up();await sleep(150);
+    const resized=await panelRect();assert(Math.abs(resized.height-panelBeforeHeight.height+80)<=1,'physical bottom handle changes height');
+    assert(JSON.stringify(await buttonRect())===JSON.stringify(buttonBeforeHeight),'height change never moves Dagaz button');
+    assert(resized.left===panelBeforeHeight.left&&resized.top===panelBeforeHeight.top,'height change keeps independent panel anchor');
+    const storedHeight=await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.panelHeight')));
+    assert(Object.keys(storedHeight).join('|')==='height'&&Number.isFinite(storedHeight.height),'height payload is one numeric value');
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-height-dragged.png')});
+    await quickFixture('quick-real-numeric');
+    assert(Math.abs((await panelRect()).height-storedHeight.height)<=1,'height preference survives reload');
+    assert(await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-range="a"]').value==='20'),'interval survives reload');
+    await page.setViewport({width:390,height:600});await sleep(650);
+    const clampedHeight=await panelRect();assert(clampedHeight.top>=0&&clampedHeight.bottom<=600&&clampedHeight.left>=0&&clampedHeight.right<=390,'saved height fits a smaller viewport');
+    assert(await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.panelHeight')).height)===storedHeight.height,'resize preserves original stored height');
+    await checkActions('013 height-clamped',true);
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-height-clamped.png')});
+    console.log('  ✓ 013: final-only readback, bounded rebuild retries, random cache/fallback, numeric interval, actual dates, independent persisted height and clamp');
 
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);

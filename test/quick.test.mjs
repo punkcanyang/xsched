@@ -109,8 +109,8 @@ test('setter failure restores all values and emits restoration events; missing n
 });
 test('nine localized slot/status labels, aria/title sources and language fallback',async()=>{
   const U=globalThis.XSCHED_UI;assert.deepEqual(Object.keys(U.QUICK_STRINGS).sort(),Object.keys(U.STRINGS).sort());
-  for(const [lang,strings] of Object.entries(U.QUICK_STRINGS)){assert.equal(strings.slots.length,4);for(const value of [...strings.slots,strings.heading,strings.missing,strings.ready,strings.filled])assert.ok(value.length>0);assert.equal(U.quickStringsFor(lang,'en'),strings);}
-  assert.equal(U.quickStringsFor('unknown','zh-TW'),U.QUICK_STRINGS['zh-Hant']);assert.equal(U.quickStringsFor('unknown','unknown'),U.QUICK_STRINGS.en);
+  for(const [lang,strings] of Object.entries(U.QUICK_STRINGS)){assert.equal(strings.slots.length,4);for(const value of [...strings.slots,strings.heading,strings.missing,strings.ready,strings.filled])assert.ok(value.length>0);assert.equal(U.quickStringsFor(lang,'en').slots,strings.slots);assert.ok(U.quickStringsFor(lang,'en').random);}
+  assert.equal(U.quickStringsFor('unknown','zh-TW').slots,U.QUICK_STRINGS['zh-Hant'].slots);assert.equal(U.quickStringsFor('unknown','unknown').slots,U.QUICK_STRINGS.en.slots);
 });
 test('skeleton visits native dialog; option labels/values never become calendar samples',async()=>{
   const f=fixture();const option=f.document.querySelector('option');option.textContent='Jan 1 2028 9:00 AM private @decoy_handle decoy@example.invalid https://example.invalid/private';
@@ -120,7 +120,7 @@ test('skeleton visits native dialog; option labels/values never become calendar 
   assert.ok(!result.includes('calendar='));
 });
 test('native event writer guard accepts only exact audited file and catches activation attacks',async()=>{
-  assert.equal(nativeWriterSelfTest(),49);
+  assert.equal(nativeWriterSelfTest(),52);
   const source=readFileSync(new URL('../probe/quick.js',import.meta.url),'utf8');
   assert.deepEqual(scanSource(source,'probe/quick.js',{quickModule:true}),[]);
   assert.ok(scanSource(source,'probe/other.js').length);

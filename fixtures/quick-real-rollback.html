@@ -38,8 +38,12 @@ function render(){
   const padded=old.querySelector('option[value="01"]')!==null;
   for(let day=1;day<=size;day++){const option=document.createElement('option');option.value=padded?String(day).padStart(2,'0'):String(day);option.textContent=String(day);replacement.append(option);}
   old.replaceWith(replacement);attach(replacement);
+  if(document.body.dataset.fixtureMode==='transient') {
+   const parent=replacement.parentElement;replacement.remove();
+   setTimeout(()=>{parent.append(replacement);nativeValue.set.call(replacement,state.day);},40);
+  }
  }
- for(const key of fields){const node=control(key);nativeValue.set.call(node,state[key]);directWrites.delete(node);}
+ for(const key of fields){const node=control(key);if(node){nativeValue.set.call(node,state[key]);directWrites.delete(node);}}
 }
 document.addEventListener('input',event=>{if(fields.some(key=>control(key)===event.target)&&!directWrites.has(event.target))inputs.add(event.target);});
 document.addEventListener('change',event=>{
@@ -50,6 +54,11 @@ document.addEventListener('change',event=>{
  if(rejectOnce&&((document.body.dataset.fixtureMode==='rollback'&&key==='hour'&&value==='8')||(document.body.dataset.fixtureMode==='autocorrect'&&key==='period'&&value==='PM'))){
   rejectOnce=false;window.fixtureRejects++;queue();return;
  }
- state[key]=value;if(key==='year'||key==='month')rebuild=true;queue();
+ state[key]=value;
+ if(document.body.dataset.fixtureMode==='interim') {
+  if(key==='period'&&value==='PM')state.period='AM';
+  if(key==='hour'&&value==='8')state.period='PM';
+ }
+ if(key==='year'||key==='month')rebuild=true;queue();
 });
 </script></body></html>

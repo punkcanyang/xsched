@@ -19,7 +19,7 @@ function fixture(variant='numeric', synchronous=false, paddedDays=false) {
  const {document}=parseHTML(readFileSync(new URL(`../fixtures/quick-real-${variant}.html`,import.meta.url),'utf8'));
  const window=document.defaultView;window.location={hostname:'x.com'};
  window.requestAnimationFrame=callback=>setTimeout(callback,0);window.cancelAnimationFrame=clearTimeout;
- const context=vm.createContext({document,window,HTMLSelectElement:window.HTMLSelectElement,Date,requestAnimationFrame:window.requestAnimationFrame});
+ const context=vm.createContext({document,window,HTMLSelectElement:window.HTMLSelectElement,Date,setTimeout,requestAnimationFrame:window.requestAnimationFrame});
  const rawScript=document.querySelector('script').textContent;
  const script=paddedDays ? rawScript.replace("const padded=old.querySelector('option[value=\"01\"]')!==null;",'const padded=true;') : rawScript;
  vm.runInContext(synchronous ? script.replace('function queue(){if(!queued){queued=true;requestAnimationFrame(render);}}','function queue(){render();}') : script,context);
@@ -59,7 +59,7 @@ test('asynchronous automatic period correction is observed, diagnosed before rol
  const diag=Q.fillDiagnostic(f.document);assert.match(diag,/^fill=failed failed=period\n/);
  assert.match(diag,/field=period target=PM value=PM read=AM options=AM\|PM/);
  assert.equal(diag.split('\n').length,7);
- assert.equal(f.window.fixtureSend.input,10);assert.equal(f.window.fixtureSend.change,10);
+ assert.equal(f.window.fixtureSend.input,12);assert.equal(f.window.fixtureSend.change,12);
  for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
 });
 test('late correction of an earlier field is caught by final whole-group readback',async()=>{
@@ -136,14 +136,15 @@ test('synchronous controlled repaint resets uncommitted values and replaces day;
  assert.equal(f.window.fixtureRebuilds,2);assert.equal(f.window.fixtureSend.change,6);
 });
 
-test('input-time replacement never receives a detached change; verified replacement is restored',async()=>{
+test('input-time replacement never receives a detached change; verified replacement retries and completes',async()=>{
  const f=fixture(),before=f.values();let replaced=false,oldYear;
  f.document.addEventListener('input',event=>{
   if(!replaced&&event.target===f.field('year')){replaced=true;oldYear=event.target;oldYear.replaceWith(oldYear.cloneNode(true));}
  });
- assert.equal(await Q.fillSlotResult(f.document,'evening',now),'failed');assert.deepEqual(f.values(),before);
+ assert.equal(await Q.fillSlotResult(f.document,'evening',now),'filled');
+ assert.deepEqual(f.values(),{year:'2028',month:'1',day:'1',period:'PM',hour:'8',minute:'0'});
  assert.equal(oldYear.isConnected,false);assert.equal(f.window.fixtureSend.input,7);assert.equal(f.window.fixtureSend.change,6,'no change event dispatched to detached old control');
- assert.match(Q.fillDiagnostic(f.document),/failed=year/);
+ assert.match(Q.fillDiagnostic(f.document),/^fill=ok/);
 });
 
 test('re-rendered option encodings are mapped afresh, including logical restoration of an original day',async()=>{
@@ -214,6 +215,61 @@ test('input handler moving a control outside the original dialog cannot receive 
  });
  assert.equal(await Q.fillSlotResult(f.document,'morning',now),'rollbackFailed');
  assert.equal(yearChanges,0,'change is forbidden after the original control leaves its dialog');
+ assert.match(Q.fillDiagnostic(f.document),/failed=year/);
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
+});
+
+test('temporary period correction while filling does not fail early; completed hour restores period and final group matches',async()=>{
+ const f=fixture();let corrected=false,recovered=false;
+ f.document.addEventListener('change',event=>{
+  if(event.target===f.field('period') && !corrected){
+   corrected=true;native.call(f.field('period'),'AM');
+   for(const type of ['input','change'])f.field('period').dispatchEvent(new f.window.Event(type,{bubbles:true}));
+  } else if(event.target===f.field('hour') && f.field('hour').value==='8' && !recovered){
+   recovered=true;native.call(f.field('period'),'PM');
+   for(const type of ['input','change'])f.field('period').dispatchEvent(new f.window.Event(type,{bubbles:true}));
+  }
+ });
+ assert.equal(await Q.fillSlotResult(f.document,'evening',now),'filled');
+ assert.ok(corrected&&recovered);assert.equal(f.values().period,'PM');assert.equal(f.values().hour,'8');assert.match(Q.fillDiagnostic(f.document),/^fill=ok/);
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
+});
+
+test('transient missing day select is retried in the same dialog',async()=>{
+ const f=fixture();let removed=false;
+ f.document.addEventListener('change',event=>{
+  if(!removed && event.target===f.field('month')) {
+   removed=true;
+   f.window.requestAnimationFrame(()=>{const day=f.field('day'),parent=day.parentElement;day.remove();setTimeout(()=>parent.append(day),40);});
+  }
+ });
+ assert.equal(await Q.fillSlotResult(f.document,'evening',now),'filled');assert.equal(f.values().day,'1');
+ assert.match(Q.fillDiagnostic(f.document),/^fill=ok/);
+});
+
+for(const mode of ['transient','interim'])test(`013 generated ${mode} controlled fixture completes all six fields and never activates`,async()=>{
+ const f=fixture(mode);
+ assert.equal(await Q.fillSlotResult(f.document,'evening',now),'filled');
+ assert.deepEqual(f.values(),{year:'2028',month:'1',day:'1',period:'PM',hour:'8',minute:'0'});
+ assert.equal(f.window.fixtureSend.input,6);assert.equal(f.window.fixtureSend.change,6);
+ assert.match(Q.fillDiagnostic(f.document),/^fill=ok/);
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
+});
+test('013 repeated input recycling stops at three writes and restores the whole original group',async()=>{
+ const f=fixture(),before=f.values();let recycled=0;
+ const detached=[];
+ f.document.addEventListener('input',event=>{
+  if(event.target===f.field('year') && recycled<3){
+   recycled++;detached.push(event.target);
+   event.target.replaceWith(event.target.cloneNode(true));
+  }
+ });
+ assert.equal(await Q.fillSlotResult(f.document,'evening',now),'failed');
+ assert.equal(recycled,3);
+ assert.deepEqual(f.values(),before);
+ assert.equal(f.window.fixtureSend.input,9,'three attempted input events plus six restoration input events');
+ assert.equal(f.window.fixtureSend.change,6,'no detached node receives change; restoration covers six fields');
+ assert.ok(detached.every(node=>!node.isConnected));
  assert.match(Q.fillDiagnostic(f.document),/failed=year/);
  for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
 });
