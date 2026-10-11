@@ -56,6 +56,7 @@ let suppressPanelClick = false;
 let deferPanelSave = false; // reset previews must leave both keys deleted
 let panelHeight = 0;
 let panelNeedsLayout = true;
+let panelMinimum = 0; // stable within a viewport; status/render may never shrink it
 
 function releaseDragCapture(active) {
   try { active.target.releasePointerCapture(active.id); } catch { /* already released or disconnected */ }
@@ -298,7 +299,8 @@ function ensureHost() {
     const delta=event.clientY-heightDrag.startY;
     if(!Number.isFinite(delta) || (!heightDrag.moved && Math.abs(delta)<6))return;
     heightDrag.moved=true;event.preventDefault();
-    savedPanelHeight=Math.max(180,Math.min(innerHeight-16-panelAnchor.y,heightDrag.height+delta));
+    const minimum=panelSize(innerWidth,innerHeight,1,panelMinimum).height;
+    savedPanelHeight=Math.max(minimum,Math.min(innerHeight-16-panelAnchor.y,heightDrag.height+delta));
     panelHeight=Math.min(savedPanelHeight,Math.max(0,innerHeight-16-panelAnchor.y));
     positionUI();
   });
@@ -432,12 +434,17 @@ function positionUI() {
   const panel = host.shadowRoot.querySelector("section");
   const shortcut = host.shadowRoot.querySelector(".shortcut");
   const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
-  const size=panelSize(innerWidth,innerHeight,savedPanelHeight);
+  let size=panelSize(innerWidth,innerHeight,savedPanelHeight,panelMinimum);
   css(panel,{position:'fixed',right:'auto',bottom:'auto',width:`${size.width}px`,display:wantsOpen?'flex':'none'});
   if (!wantsOpen) { shortcut.setAttribute('aria-expanded','false');return; }
   const chromeHeight=(panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
     +(panel.querySelector('.panel-actions')?.getBoundingClientRect().height || 0)+40;
-  const minimum=chromeHeight+32;
+  const quickControls=panel.querySelector('.quick-controls');
+  const measured=chromeHeight+32+(quickControls?.getBoundingClientRect().height || 0)+12;
+  const nextMinimum=Math.max(panelMinimum,measured);
+  if(nextMinimum>panelMinimum) {panelMinimum=nextMinimum;panelNeedsLayout=true;}
+  size=panelSize(innerWidth,innerHeight,savedPanelHeight,panelMinimum);
+  const minimum=size.height;
   if (!panelAnchor) {
     const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
     // Initial height is 2/3 viewport, or the independent saved numeric height.
@@ -450,21 +457,13 @@ function positionUI() {
     if (!deferPanelSave) persistPanel();
   }
   if (panelNeedsLayout) {
-    panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight);
+    panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight,panelMinimum);
     panelHeight=size.height;
-    // On resize/reload only, shorten at fixed x/y to avoid newly intersecting widgets.
-    // Never reposition the panel in response to button drag, polling or mutations.
-    const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
-    for (const rect of savedPanelHeight===null ? obstacles : []) {
-      if (panelAnchor.x<rect.right+8 && panelAnchor.x+size.width>rect.left-8 && rect.bottom>panelAnchor.y) {
-        panelHeight=Math.min(panelHeight,Math.max(0,rect.top-8-panelAnchor.y));
-      }
-    }
-    // Saved/manual coordinates win over collision avoidance. Keep the handle and
-    // fixed actions visible even when shortening cannot clear a widget at this point.
-    panelHeight=Math.max(Math.min(size.height,minimum),panelHeight);
+    // Never collapse the quick area to clear a widget. Automatic placement above
+    // chooses a full-size clear rectangle; saved/user coordinates take precedence.
     panelNeedsLayout=false;
   }
+  panelHeight=Math.max(minimum,panelHeight);
   panelHeight=Math.min(panelHeight,Math.max(0,innerHeight-16-panelAnchor.y));
   css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${size.height}px`});
   const visible=panelHeight>=minimum;
@@ -496,7 +495,7 @@ function render(report, items) {
     lang: typeof navigator !== "undefined" && navigator ? navigator.language : "",
     doclang: document.documentElement ? document.documentElement.lang : "",
     samples: report.samples || [],
-  }).replace("\n", "\n" + quick.diagnostic(detected.counts) + (quick.fillDiagnostic(document) ? "\n" + quick.fillDiagnostic(document) : "") + "\n");
+  }).replace("\n", "\n" + quick.diagnostic(detected.counts) + "\n" + quick.schedulingDiagnostic(document) + (quick.fillDiagnostic(document) ? "\n" + quick.fillDiagnostic(document) : "") + "\n");
 
   const strings = stringsFor(document.documentElement.lang, navigator.language);
   const now=new Date();
@@ -551,15 +550,17 @@ function render(report, items) {
 
   if (!effectiveCollapsed) {
     const labels = globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language);
+    const quickControls=css(document.createElement('div'),{'font-size':'12px','line-height':'1.4'});
+    quickControls.className='quick-controls';body.append(quickControls);
     const slots = css(document.createElement('div'),{display:'flex',gap:'6px','flex-wrap':'wrap',margin:'0 0 8px'});
     slots.className = 'quick-slots';
-    const status = textNode('p',labels[quickStatus || detected.reason] || (!detected.ready ? labels.missing : labels.ready),{color:'#ffd400',margin:'0 0 8px'});
+    const status = textNode('p',labels[quickStatus || detected.reason] || (!detected.ready ? labels.missing : labels.ready),{color:'#ffd400',margin:'0 0 8px','min-height':'2.8em'});
     status.className = 'quick-status';
     status.setAttribute('role','status');
-    body.append(textNode('strong',labels.heading),status,slots);
-    const cacheLine=textNode('p',lastCache ? `${labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
+    quickControls.append(textNode('strong',labels.heading),status,slots);
+    const cacheLine=textNode('p',lastCache ? `${labels.lastTime}: ${formatTime(new Date(lastCache.time))} — ${lastCache.source===2 ? labels.fromSchedule : labels.fromList}. ${labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
     cacheLine.className='quick-cache';
-    body.append(cacheLine);
+    quickControls.append(cacheLine);
     const settings=css(document.createElement('div'),{display:'flex',gap:'6px','align-items':'center','flex-wrap':'wrap',margin:'0 0 8px'});
     settings.className='quick-settings';settings.append(textNode('strong',labels.settings));
     const inputA=document.createElement('input'),inputB=document.createElement('input');
@@ -578,11 +579,12 @@ function render(report, items) {
       else {quickRange=value;quickStatus='';}
       schedule();
     });
-    settings.append(saveRange);body.append(settings);
+    settings.append(saveRange);quickControls.append(settings);
     [...quick.SLOT_IDS,'random'].forEach((id,index) => {
       const label = id==='random' ? `${labels.random} ${quickRange.a}–${quickRange.b}` : slotLabels[index];
       if(!label)return;
       const button = makeButton(label);
+      css(button,{'font-size':'12px','line-height':'1.4',padding:'5px 7px'});
       button.dataset.xschedSlot = id;
       button.disabled = !detected.ready || quick.isFilling(document) || (id==='random' && !lastCache);
       button.title = id==='random' && !lastCache ? labels.noCache : detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
@@ -673,7 +675,21 @@ function render(report, items) {
   positionUI();
 }
 
+function refreshObservedCache() {
+  const completed=quick.observeScheduling(document,Date.now());
+  if(!completed)return false;
+  const previous=positionStore.loadCache() || lastCache;
+  if(previous && previous.time>=completed.time) {lastCache=previous;return false;}
+  const value={time:completed.time,readAt:Date.now(),source:2};
+  if(!positionStore.saveCache(value))return false;
+  lastCache=value;
+  // A subsequent actual Scheduled read is authoritative, including an older max.
+  cacheSignature='';
+  return true;
+}
+
 function tick() {
+  refreshObservedCache();
   const pathname = location.pathname || "";
   const report = readSnapshot(document, { pathname });
   const detected = quick.detectControls(document);
@@ -696,7 +712,7 @@ function tick() {
     if(signature!==cacheSignature) {
       cacheSignature=signature;
       if(times.length && report.timeFail===0) {
-        const value={time:Math.max(...times),readAt:Date.now()};
+        const value={time:Math.max(...times),readAt:Date.now(),source:1};
         if(positionStore.saveCache(value))lastCache=value;
       } else if(report.empty && !times.length) {if(positionStore.clearCache())lastCache=null;}
     }
@@ -724,6 +740,7 @@ function onScroll(event) {
 }
 
 function pollLocation() {
+  if(refreshObservedCache())schedule();
   const detected = quick.detectControls(document);
   if (JSON.stringify([detected.counts,detected.ready,detected.reason]) !== quickSignature) schedule();
   const state = JSON.stringify(runtimeState());
@@ -742,6 +759,7 @@ function pollLocation() {
 
 function onResize() {
   cancelDrag(); cancelPanelDrag(); cancelHeightDrag();
+  panelMinimum=0;
   if (panelAnchor) panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight);
   panelNeedsLayout=true;
   applyAnchor(true); positionUI(); schedule();
@@ -785,6 +803,7 @@ function start() {
 }
 
 function stop() {
+  quick.stopSchedulingWatch(document);
   if(heightDrag)cancelHeightDrag();
   if (drag) { cancelDrag(); applyAnchor(false); }
   if (panelDrag) { cancelPanelDrag(); positionUI(); }

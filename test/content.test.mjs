@@ -17,7 +17,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.1.3';
+  let manifest = '0.1.4';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -330,10 +330,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.3 (manifest 0.1.3)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.4 (manifest 0.1.4)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.3 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.4 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -342,7 +342,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.3/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.4/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -540,7 +540,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.3/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.4/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -581,8 +581,8 @@ test('0.1.3 cache stores only last observed epoch/read time, survives navigation
  const stored=new Map();const f=fixture(undefined,'en','../fixtures/quick013-scheduled.html',clock,undefined,undefined,stored);
  assert.equal(f.host().dataset.xschedCount,'2');
  const cache=JSON.parse(stored.get('xsched.probe.lastScheduled'));
- assert.deepEqual(cache,{time:new Date(2028,0,2,20).getTime(),readAt:clock().getTime()});
- assert.deepEqual(Object.keys(cache).sort(),['readAt','time']);
+ assert.deepEqual(cache,{time:new Date(2028,0,2,20).getTime(),readAt:clock().getTime(),source:1});
+ assert.deepEqual(Object.keys(cache).sort(),['readAt','source','time']);
  assert.match(f.shadow().querySelector('.quick-cache').textContent,/2027-12-31 21:00/);
  f.location.pathname='/home';f.poll();f.click('.shortcut');
  assert.deepEqual(JSON.parse(stored.get('xsched.probe.lastScheduled')),cache);
@@ -619,13 +619,13 @@ test('0.1.3 identical replacement list refreshes the actual cache read timestamp
  const old=f.document.querySelector('[role="dialog"]'),replacement=old.cloneNode(true);
  old.replaceWith(replacement);
  f.mutate([{target:f.document.body,type:'childList',addedNodes:[replacement],removedNodes:[old]}]);
- assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.lastScheduled')),{time:before.time,readAt:now.getTime()});
+ assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.lastScheduled')),{time:before.time,readAt:now.getTime(),source:1});
 });
 test('0.1.3 shortcut collapse cancels height capture and never persists unfinished resizing',()=>{
  const f=fixture(),panel=f.shadow().querySelector('section'),height=panel.style.height;
  const captured=new Set();panel.setPointerCapture=id=>captured.add(id);panel.releasePointerCapture=id=>captured.delete(id);
  f.pointer('pointerdown',50,100,{selector:'.panel-resizer'});
- f.pointer('pointermove',50,60,{selector:'section'});
+ f.pointer('pointermove',50,140,{selector:'section'});
  assert.notEqual(panel.style.height,height);
  f.click('.shortcut');
  assert.equal(captured.size,0);
@@ -634,7 +634,7 @@ test('0.1.3 shortcut collapse cancels height capture and never persists unfinish
  f.click('.shortcut');assert.equal(panel.style.height,height);
 });
 test('0.1.3 height completion keeps the visible anchor when the stored position was clamped',()=>{
- const stored=new Map([['xsched.probe.panelPos','{"x":5000,"y":5000}']]);
+ const stored=new Map([['xsched.probe.panelPos','{"x":5000,"y":5000}'],['xsched.probe.panelHeight','{"height":700}']]);
  const f=fixture(undefined,undefined,undefined,null,undefined,undefined,stored);
  const before=coordinates(f,'section');
  f.pointer('pointerdown',50,100,{selector:'.panel-resizer'});
@@ -648,16 +648,16 @@ test('0.1.3 height completion keeps the visible anchor when the stored position 
 test('0.1.3 height handle persists only height, clamps on resize, reloads, and cleans cancelled capture without moving anchors',()=>{
  const f=fixture();const panel=f.shadow().querySelector('section');const start=coordinates(f,'section'),button=coordinates(f,'.shortcut');
  assert.equal(parseFloat(panel.style.height),546);
- f.pointer('pointerdown',50,50,{selector:'.panel-resizer'});f.pointer('pointermove',50,10,{selector:'section'});f.pointer('pointerup',50,10,{selector:'section'});
- assert.equal(parseFloat(panel.style.height),506);assert.deepEqual(coordinates(f,'.shortcut'),button);
+ f.pointer('pointerdown',50,50,{selector:'.panel-resizer'});f.pointer('pointermove',50,90,{selector:'section'});f.pointer('pointerup',50,90,{selector:'section'});
+ assert.equal(parseFloat(panel.style.height),586);assert.deepEqual(coordinates(f,'.shortcut'),button);
  assert.equal(parseFloat(panel.style.left),start.x);assert.equal(parseFloat(panel.style.top),start.y);
- assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.panelHeight')),{height:506});
+ assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.panelHeight')),{height:586});
  const reload=fixture(undefined,undefined,undefined,null,undefined,undefined,f.stored);
- assert.equal(parseFloat(reload.shadow().querySelector('section').style.height),506);
+ assert.equal(parseFloat(reload.shadow().querySelector('section').style.height),586);
  reload.resize(390,300);const position=coordinates(reload,'section');assert.ok(position.y+parseFloat(position.height)<=284);
- assert.equal(JSON.parse(f.stored.get('xsched.probe.panelHeight')).height,506,'resize does not overwrite saved preference');
+ assert.equal(JSON.parse(f.stored.get('xsched.probe.panelHeight')).height,586,'resize does not overwrite saved preference');
  const before=coordinates(reload,'section');let captures=new Set();
  const node=reload.shadow().querySelector('section');node.setPointerCapture=id=>captures.add(id);node.releasePointerCapture=id=>captures.delete(id);
  reload.pointer('pointerdown',20,100,{selector:'.panel-resizer'});reload.pointer('pointermove',20,60,{selector:'section'});reload.pointer('pointercancel',20,60,{selector:'section'});
- assert.equal(captures.size,0);assert.deepEqual(coordinates(reload,'section'),before);assert.equal(JSON.parse(f.stored.get('xsched.probe.panelHeight')).height,506);
+ assert.equal(captures.size,0);assert.deepEqual(coordinates(reload,'section'),before);assert.equal(JSON.parse(f.stored.get('xsched.probe.panelHeight')).height,586);
 });

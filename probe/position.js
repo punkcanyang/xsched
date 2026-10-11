@@ -1,4 +1,4 @@
-// The sole audited persistence boundary: x.com button/panel coordinates, never page data.
+// Sole audited persistence boundary: fixed keys, numeric positions/settings/times.
 (() => {
 "use strict";
 const POSITION_KEY = "xsched.probe.pos";
@@ -53,7 +53,9 @@ function recordValid(key, value) {
   const keys=Object.keys(value);
   if (key===RANGE_KEY) return keys.length===2 && keys.includes('a') && keys.includes('b')
     && Number.isSafeInteger(value.a) && Number.isSafeInteger(value.b) && value.a>0 && value.a<=value.b;
-  if (key===CACHE_KEY) return keys.length===2 && keys.includes('time') && keys.includes('readAt')
+  // Old two-number cache migrates as list-derived. 1=list, 2=observed completion;
+  // source is a finite numeric enum, never a DOM label or arbitrary string.
+  if (key===CACHE_KEY) return (keys.length===2 || (keys.length===3 && keys.includes('source') && (value.source===1 || value.source===2))) && keys.includes('time') && keys.includes('readAt')
     && Number.isSafeInteger(value.time) && Number.isSafeInteger(value.readAt)
     && value.time>0 && value.readAt>0 && value.time<=8640000000000000 && value.readAt<=8640000000000000;
   return key===HEIGHT_KEY && keys.length===1 && keys[0]==='height'
@@ -72,6 +74,7 @@ function writeRecord(key,value) {
   try {
     if(window.location.hostname!=="x.com" || !recordValid(key,value))return false;
     const snapshot=key===RANGE_KEY ? {a:value.a,b:value.b} : key===CACHE_KEY ? {time:value.time,readAt:value.readAt} : {height:value.height};
+    if(key===CACHE_KEY && Object.hasOwn(value,'source'))snapshot.source=value.source;
     if(!recordValid(key,snapshot))return false;
     window.localStorage.setItem(key,JSON.stringify(snapshot));
     return true;

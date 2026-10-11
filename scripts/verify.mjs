@@ -22,18 +22,18 @@ const PROBE = join(ROOT, "probe");
 const DOCS = join(ROOT, "docs");
 // Fail closed: only this exact audited numeric-only position module may persist.
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
-const POSITION_SOURCE_SHA256 = "93c1958e1b6c9705b9554ad100c2494adf7b22f14e9512cd8e2e54bd1a177955";
+const POSITION_SOURCE_SHA256 = "4aacb059d7c4995156b5b808fbcc74aff48b2874fdc934466116cc9a346a74c7";
 
 // Exact-source exception only for the sole native select input/change writer.
 // All other activation, network, storage and markup rules still scan this file.
-const QUICK_SOURCE_SHA256 = "f0d0496df9bb4d756ba25d54df3bc97591b4447c803bf5bac942c450be64c937";
+const QUICK_SOURCE_SHA256 = "90a3ad43e397e1c0c1a9b5bca9fa0b390e1bd7014960e6e86e63562f70bff46a";
 
 // Owner-authorized exception: one exact DOM factory in root probe/ui.js only.
 // Pin both definition and sole call site to full reviewed sources. This prevents
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
-const AUTHOR_UI_SHA256 = "9111409a494f8510cb91320d30a1fb9a369d5def0aa9769a671c6875882be9cc";
-const AUTHOR_CONTENT_SHA256 = "01d962e67dc32c0f33271c6866b3444f9b2d23bb4e9c8e76f4210ad3a7dad8b4";
+const AUTHOR_UI_SHA256 = "a2978b5d1d2d9b137584a636f08aea9ac9621b6c1469d130a0471d4a728aefa2";
+const AUTHOR_CONTENT_SHA256 = "aec5b3d323126d9170848c0ba2d10ec145039d658a1d216d1646e8cf5c20f637";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');

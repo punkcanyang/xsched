@@ -27,6 +27,76 @@ function fixture(variant='numeric', synchronous=false, paddedDays=false) {
  const values=()=>Object.fromEntries(['year','month','day','period','hour','minute'].map(key=>[key,field(key).value]));
  return {document,window,field,values};
 }
+function userEvent(f,node,type='click',extra={}) {
+ const event=new f.window.Event(type,{bubbles:true});
+ Object.defineProperty(event,'isTrusted',{value:true});Object.assign(event,extra);
+ node.dispatchEvent(event);
+}
+function completionButton(f,text='Schedule') {
+ const button=f.document.getElementById('schedule');button.textContent=text;return button;
+}
+function observeTwice(f) {
+ assert.equal(Q.observeScheduling(f.document,now.getTime()),null,'first observation is provisional');
+ return Q.observeScheduling(f.document,now.getTime());
+}
+test('0.1.4 completion: trusted final Schedule plus unchanged closure, one-shot observation, no extension activation',async()=>{
+ const f=fixture();assert.equal(await Q.fillSlotResult(f.document,'lunch',now),'filled');
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
+ const button=completionButton(f),dialog=Q.detectControls(f.document).dialog;
+ userEvent(f,button);dialog.remove();
+ assert.deepEqual(observeTwice(f),{time:new Date(2028,0,1,12,30).getTime()});
+ assert.equal(f.window.fixtureSend.schedule,1,'only the simulated USER clicked Schedule');
+ assert.equal(Q.observeScheduling(f.document,now.getTime()),null,'completion consumed once');
+ assert.equal(Q.schedulingDiagnostic(f.document),'schedWatch=0 schedIntent=0');
+});
+test('0.1.4 closed without fill / plain close / cancel / untrusted activation never completes',async()=>{
+ const blank=fixture();blank.document.querySelector('[aria-modal=true]').remove();assert.equal(observeTwice(blank),null);
+ for(const mode of ['plain','cancel','escape','untrusted']) {
+  const f=fixture();await Q.fillSlotResult(f.document,'evening',now);
+  const dialog=Q.detectControls(f.document).dialog,button=completionButton(f,mode==='cancel'?'Cancel':'Schedule');
+  if(mode==='cancel')userEvent(f,button);
+  if(mode==='escape')userEvent(f,button,'keydown',{key:'Escape'});
+  if(mode==='untrusted')button.dispatchEvent(new f.window.Event('click',{bubbles:true}));
+  dialog.remove();assert.equal(observeTwice(f),null,mode);
+ }
+});
+test('0.1.4 changed fields invalidate permanently, including changes during closing without events',async()=>{
+ for(const mode of ['edit','closing-edit']) {
+  const f=fixture();await Q.fillSlotResult(f.document,'lunch',now);
+  const dialog=Q.detectControls(f.document).dialog,button=completionButton(f);
+  if(mode==='closing-edit')userEvent(f,button);
+  native.call(f.field('minute'),'31');
+  if(mode==='edit'){userEvent(f,f.field('minute'),'input');native.call(f.field('minute'),'30');userEvent(f,button);}
+  dialog.remove();assert.equal(observeTwice(f),null,mode);
+ }
+});
+test('0.1.4 known fresh success requires final user action; errors/unknown notices veto and expiry disarms',async()=>{
+ for(const mode of ['success','no-intent','error','unknown','expired']) {
+  const f=fixture();await Q.fillSlotResult(f.document,'lunch',now);
+  if(mode!=='no-intent')userEvent(f,completionButton(f));
+  const notice=f.document.createElement('div');notice.setAttribute('role','alert');
+  notice.textContent=mode==='unknown'?'Unrelated notice':'Your post was scheduled.';f.document.body.append(notice);
+  if(mode==='error'){const error=f.document.createElement('div');error.setAttribute('role','alert');error.textContent='Error';f.document.body.append(error);}
+  if(mode==='expired')assert.equal(Q.observeScheduling(f.document,now.getTime()+11*60000),null);
+  const result=observeTwice(f);
+  if(mode==='success')assert.equal(result.time,new Date(2028,0,1,12,30).getTime());else assert.equal(result,null,mode);
+ }
+});
+test('0.1.4 picker Confirm is provisional; only original composer final Schedule can complete',async()=>{
+ const f=fixture();await Q.fillSlotResult(f.document,'evening',now);
+ const dialog=Q.detectControls(f.document).dialog,composer=dialog.parentElement.closest('[role=dialog]');
+ const confirm=f.document.getElementById('confirm');confirm.textContent='Confirm';userEvent(f,confirm);dialog.remove();
+ assert.equal(observeTwice(f),null,'Confirm closure is NOT scheduling');
+ const button=f.document.createElement('button');button.textContent='Schedule';composer.append(button);
+ userEvent(f,button);composer.remove();
+ assert.equal(observeTwice(f).time,new Date(2028,0,1,20).getTime());
+});
+test('0.1.4 failed writer and disposed session cannot arm completion',async()=>{
+ const failed=fixture('autocorrect');assert.equal(await Q.fillSlotResult(failed.document,'evening',now),'failed');
+ userEvent(failed,completionButton(failed));failed.document.querySelector('[aria-modal=true]').remove();assert.equal(observeTwice(failed),null);
+ const f=fixture();await Q.fillSlotResult(f.document,'morning',now);Q.stopSchedulingWatch(f.document);
+ userEvent(f,completionButton(f));f.document.querySelector('[aria-modal=true]').remove();assert.equal(observeTwice(f),null);
+});
 for(const variant of ['dialog','numeric','padded','zero','period-values'])test(`controlled ${variant}: four slots, dependent day replacement, exact option encodings and no sends`,async()=>{
  const f=fixture(variant);const oldDay=f.field('day');
  for(const id of Q.SLOT_IDS) {
