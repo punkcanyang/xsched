@@ -707,3 +707,64 @@ test('0.1.4 observed completion updates max only, persists numeric source, and n
   }
  } finally {Object.defineProperty(prototype,'value',descriptor);}
 });
+
+test('P0 no avoidance space still opens, toggles follow actual DOM and counters remain numeric',()=>{
+ const ui={...globalThis.XSCHED_UI,panelPlacement(){return {clear:false};}};
+ const f=fixture('/home','en','../fixtures/quick013-scheduled.html',()=>new Date(2027,11,31,21),ui);
+ f.click('.shortcut');f.poll();
+ assert.equal(f.shadow().querySelector('section').style.display,'flex');
+ assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true');
+ assert.match(f.host().dataset.xschedDiag,/toggles=1 recoveries=1 samples=/);
+ const panel=f.shadow().querySelector('section');panel.style.display='none';
+ f.click('.shortcut');f.poll();
+ assert.equal(f.shadow().querySelector('section').style.display,'flex','hidden DOM means open request, not another logical close');
+ f.click('.shortcut');f.poll();
+ assert.equal(f.shadow().querySelector('section').style.display,'none');
+ assert.match(f.host().dataset.xschedDiag,/toggles=3 recoveries=\d+ samples=/);
+});
+
+test('P0 poll rebuilds missing/replaced/hidden/offscreen shadow panel and rebinds controls',()=>{
+ for(const damage of ['remove','replace','shortcut','hidden','visibility','opacity','display','offscreen']) {
+  const f=fixture(undefined,'en','../fixtures/quick013-scheduled.html',()=>new Date(2027,11,31,21));
+  const old=f.host(),panel=f.shadow().querySelector('section');
+  if(damage==='remove')panel.remove();
+  else if(damage==='replace')panel.replaceWith(panel.cloneNode(true));
+  else if(damage==='shortcut'){const button=f.shadow().querySelector('.shortcut');button.replaceWith(button.cloneNode(true));}
+  else if(damage==='hidden')panel.hidden=true;
+  else if(damage==='visibility')panel.style.visibility='hidden';
+  else if(damage==='opacity')panel.style.opacity='0';
+  else if(damage==='display')panel.style.display='none';
+  else panel.getBoundingClientRect=()=>({left:5000,top:5000,right:5344,bottom:5400,width:344,height:400});
+  assert.doesNotThrow(()=>f.poll(),damage);
+  assert.notEqual(f.host(),old,damage+' rebuilds host with original event bindings');
+  assert.equal(f.shadow().querySelector('section').style.display,'flex',damage);
+  assert.match(f.host().dataset.xschedDiag,/toggles=0 recoveries=1 samples=/,damage);
+  f.click('[data-xsched-minimize]');assert.equal(f.shadow().querySelector('section').style.display,'none',damage);
+  f.click('.shortcut');assert.equal(f.shadow().querySelector('section').style.display,'flex',damage);
+ }
+ const f=fixture();f.click('.shortcut');f.shadow().querySelector('section').remove();f.poll();
+ assert.equal(f.shadow().querySelector('section').style.display,'none','recovery respects intentional collapse');
+ f.click('.shortcut');assert.equal(f.shadow().querySelector('section').style.display,'flex');
+ f.host().style.display='none';f.poll();assert.equal(f.host().dataset.xschedMounted,'0','keep truthful external-host diagnostic');
+ f.click('.shortcut');f.poll();assert.equal(f.host().dataset.xschedMounted,'1','explicit open recovers a hidden host too');
+});
+
+test('P0 twenty open/close cycles survive SPA, viewport resize and remount without position escape',()=>{
+ let now=new Date(2027,11,31,21).getTime();
+ const f=fixture(undefined,'en','../fixtures/quick013-scheduled.html',()=>new Date(now));
+ f.click('.shortcut');
+ for(let n=0;n<20;n++) {
+  now+=1000;
+  f.location.pathname=n%2 ? '/home' : '/compose/post/unsent/scheduled';f.poll();
+  const width=n%3 ? 1100:390,height=n%3 ? 820:600;f.resize(width,height);
+  if(n===5){f.host().remove();f.poll();}
+  f.click('.shortcut');f.poll();
+  const panel=f.shadow().querySelector('section');
+  const x=parseFloat(panel.style.left),y=parseFloat(panel.style.top),w=parseFloat(panel.style.width),h=parseFloat(panel.style.height);
+  assert.equal(panel.style.display,'flex','open cycle '+n);
+  assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true');
+  assert.ok(x>=0 && y>=0 && x+w<=width && y+h<=height,'viewport cycle '+n);
+  f.click('.shortcut');f.poll();assert.equal(panel.style.display,'none','close cycle '+n);
+ }
+ assert.match(f.host().dataset.xschedDiag,/toggles=41 recoveries=\d+ samples=/);
+});

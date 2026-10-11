@@ -22,6 +22,8 @@ const REMOUNT_WINDOW_MS = 3000;
 const REMOUNT_LIMIT = 3;
 
 let host = null;
+let panelElement = null;
+let shortcutElement = null;
 let timer = 0;
 let scrolled = 0;
 let accumulated = [];
@@ -36,6 +38,8 @@ let observer = null;
 let lastRender = "";
 let mounted = 0;
 let remounts = 0;
+let toggles = 0;
+let recoveries = 0;
 let hostCreations = 0;
 let remountWindowStart = 0;
 let remountWindowCount = 0;
@@ -136,10 +140,36 @@ const previous = globalThis.XSCHED_PROBE_SESSION;
 if (previous && typeof previous.dispose === "function") previous.dispose();
 for (const old of document.querySelectorAll('#xsched-probe-root')) retireLegacy(old);
 
-function ensureHost() {
+function panelHidden(panel) {
+  const style = getComputedStyle(panel);
+  return panel.hidden || panel.inert || panel.getAttribute('aria-hidden') === 'true'
+    || [style.visibility, panel.style.visibility].some(value => value === 'hidden' || value === 'collapse')
+    || style.opacity === '0' || panel.style.opacity === '0';
+}
+
+function panelVisible() {
+  if (!hostMounted(host) || !panelElement?.isConnected || panelHidden(panelElement)) return false;
+  if (getComputedStyle(panelElement).display === 'none' || panelElement.style.display === 'none') return false;
+  const rect = panelElement.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 && rect.left >= 0 && rect.top >= 0
+    && rect.right <= innerWidth + 1 && rect.bottom <= innerHeight + 1;
+}
+
+function ensureHost(explicitOpen = false) {
   if (retired) return null;
   for (const old of document.querySelectorAll("#xsched-probe-root")) if (old !== host) retireLegacy(old);
-  if (host && host.isConnected) return host;
+  if (host?.isConnected) {
+    const complete = panelElement?.parentNode === host.shadowRoot && shortcutElement?.parentNode === host.shadowRoot;
+    const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
+    // Normal user collapse is not damage. Preserve externally hidden host diagnostics
+    // until an explicit open; a missing/hidden/offscreen PANEL is recovered on poll.
+    const damaged = !complete || (explicitOpen && !hostMounted(host))
+      || (wantsOpen && hostMounted(host) && (panelHidden(panelElement)
+        || (!panelNeedsLayout && (!explicitOpen || panelElement.style.display !== 'none') && !panelVisible())));
+    if (!damaged) return host;
+    if (explicitOpen && !hostMounted(host)) anchor = { ...clampPosition(anchor,innerWidth,innerHeight), clear:true };
+    host.remove();
+  }
   cancelDrag(); cancelPanelDrag(); cancelHeightDrag();
   const now = Date.now();
   if (now - remountWindowStart >= REMOUNT_WINDOW_MS) {
@@ -148,11 +178,14 @@ function ensureHost() {
   }
   // Count actual creations, not mutation notifications. Retry on the location poll
   // after the window expires, so a transient redraw never disables us permanently.
-  if (remountWindowCount >= REMOUNT_LIMIT) return null;
+  if (remountWindowCount >= REMOUNT_LIMIT) {
+    if (!explicitOpen) return null;
+    remountWindowStart = now; remountWindowCount = 0; // deliberate user retry
+  }
   remountWindowCount += 1;
   const existed = hostCreations > 0;
   hostCreations += 1;
-  if (existed) remounts += 1;
+  if (existed) { remounts += 1; recoveries += 1; }
   host = document.createElement("div");
   host.id = HOST_ID;
   host.setAttribute("data-xsched-host", "1");
@@ -172,6 +205,7 @@ function ensureHost() {
   });
   const shadow = host.attachShadow({ mode: "open" });
   const panel = document.createElement("section");
+  panelElement = panel;
   panel.className = "panel";
   css(panel, {
     position: "absolute",
@@ -195,6 +229,7 @@ function ensureHost() {
   });
   panel.id = "xsched-panel";
   const shortcut = makeButton("", "xschedToggle");
+  shortcutElement = shortcut;
   shortcut.className = "shortcut";
   css(shortcut, { position: "relative", width: "44px", height: "44px", "box-sizing":"border-box", padding: "8px", display: "grid", "place-items": "center", "pointer-events": "auto", "box-shadow": "0 4px 16px #0008", "touch-action":"none", "user-select":"none", cursor:"grab" });
   shortcut.setAttribute("aria-controls", panel.id);
@@ -218,8 +253,9 @@ function ensureHost() {
     event.stopPropagation();
     if (suppressClick && event.detail !== 0) { suppressClick = false; return; }
     if (!lastReport) return;
-    collapsed = !(collapsed === null ? !lastReport.onScheduled : collapsed);
-    render(lastReport, lastItems);
+    collapsed = panelVisible();
+    toggles += 1;
+    render(lastReport, lastItems, !collapsed);
     if (!collapsed && deferPanelSave) persistPanel();
   });
   shortcut.addEventListener('pointerdown', event => {
@@ -329,6 +365,7 @@ function ensureHost() {
   applyAnchor(false);
   // A fresh host has no panel content: force the next render to build it.
   lastRender = "";
+  panelNeedsLayout = true;
   return host;
 }
 
@@ -433,7 +470,9 @@ function positionUI() {
   if (!host?.isConnected) return;
   const panel = host.shadowRoot.querySelector("section");
   const shortcut = host.shadowRoot.querySelector(".shortcut");
+  if (!panel || !shortcut || (hostMounted(host) && panelHidden(panel))) { scheduleRemount(); return; }
   const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
+  if (wantsOpen && panelAnchor && !panelNeedsLayout && hostMounted(host) && !panelVisible()) { scheduleRemount(); return; }
   let size=panelSize(innerWidth,innerHeight,savedPanelHeight,panelMinimum);
   css(panel,{position:'fixed',right:'auto',bottom:'auto',width:`${size.width}px`,display:wantsOpen?'flex':'none'});
   if (!wantsOpen) { shortcut.setAttribute('aria-expanded','false');return; }
@@ -449,10 +488,11 @@ function positionUI() {
     const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
     // Initial height is 2/3 viewport, or the independent saved numeric height.
     const chosen=panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,size.height);
-    if (!chosen.clear || size.height<minimum) {
-      css(panel,{display:'none'});shortcut.setAttribute('aria-expanded','false');return;
-    }
-    panelAnchor={x:chosen.left,y:chosen.top};
+    // Availability must not trap open intent behind display:none. If avoidance
+    // has no answer, show a viewport-clamped panel the user can drag elsewhere.
+    panelAnchor=chosen.clear ? {x:chosen.left,y:chosen.top}
+      : clampPanelPosition({x:anchor.x+44-size.width,y:anchor.y-12-size.height},innerWidth,innerHeight,savedPanelHeight,panelMinimum);
+    if (!chosen.clear) recoveries += 1;
     panelNeedsLayout=true;
     if (!deferPanelSave) persistPanel();
   }
@@ -464,15 +504,17 @@ function positionUI() {
     panelNeedsLayout=false;
   }
   panelHeight=Math.max(minimum,panelHeight);
-  panelHeight=Math.min(panelHeight,Math.max(0,innerHeight-16-panelAnchor.y));
+  if (panelAnchor.x < 0 || panelAnchor.y < 0 || panelAnchor.x+size.width > innerWidth || panelAnchor.y+panelHeight > innerHeight-16) {
+    panelAnchor=clampPanelPosition(panelAnchor,innerWidth,innerHeight,savedPanelHeight,panelMinimum);
+    panelHeight=size.height;
+    recoveries += 1;
+  }
   css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${size.height}px`});
-  const visible=panelHeight>=minimum;
-  shortcut.setAttribute('aria-expanded',String(visible));
-  if (!visible) css(panel,{display:'none'});
+  shortcut.setAttribute('aria-expanded','true');
 }
 
-function render(report, items) {
-  const node = ensureHost();
+function render(report, items, explicitOpen = false) {
+  const node = ensureHost(explicitOpen);
   if (!node) { mounted = 0; return; }
   const mountedNow = hostMounted(node) ? 1 : 0;
   const count = items.length;
@@ -495,7 +537,8 @@ function render(report, items) {
     lang: typeof navigator !== "undefined" && navigator ? navigator.language : "",
     doclang: document.documentElement ? document.documentElement.lang : "",
     samples: report.samples || [],
-  }).replace("\n", "\n" + quick.diagnostic(detected.counts) + "\n" + quick.schedulingDiagnostic(document) + (quick.fillDiagnostic(document) ? "\n" + quick.fillDiagnostic(document) : "") + "\n");
+  }).replace(' samples=', ` toggles=${toggles} recoveries=${recoveries} samples=`)
+    .replace("\n", "\n" + quick.diagnostic(detected.counts) + "\n" + quick.schedulingDiagnostic(document) + (quick.fillDiagnostic(document) ? "\n" + quick.fillDiagnostic(document) : "") + "\n");
 
   const strings = stringsFor(document.documentElement.lang, navigator.language);
   const now=new Date();
@@ -536,6 +579,7 @@ function render(report, items) {
     cancelPanelDrag();
     cancelHeightDrag();
     collapsed = true;
+    toggles += 1;
     render(lastReport, lastItems);
   });
   heading.append(kicker, minimize);

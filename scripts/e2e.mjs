@@ -1567,6 +1567,53 @@ async function main() {
     await page.screenshot({path:join(DOCS,'v1.0-quick014-list-authoritative.png')});
     console.log('  ✓ 014: immediate full quick area / height floor, passive trusted completion, cancellation/error vetoes, max-only advance and authoritative list');
 
+    // ── P0: one scenario, twenty complete open/close cycles ───────────────────
+    await page.setViewport({width:1280,height:820});
+    await open('quick013-scheduled'); // synthetic 2028 rows; no native fill/send
+    await until(async()=> (await probeState(page)).expanded==='true','P0 initial open');
+    await toggle(false);
+    const toggleCount=state=>Number(/\btoggles=(\d+)/.exec(state.diag)?.[1]);
+    const recoveryCount=state=>Number(/\brecoveries=(\d+)/.exec(state.diag)?.[1]);
+    const startCounts=await probeState(page);
+    const assertInViewport=async label=>{
+      const rect=await page.evaluate(()=>{
+        const host=document.getElementById('xsched-probe-root'),panel=host?.shadowRoot.querySelector('section');
+        if(!panel)return null;
+        const r=panel.getBoundingClientRect(),style=getComputedStyle(panel);
+        return {visible:style.display!=='none' && style.visibility==='visible' && !panel.hidden,
+          x:r.left,y:r.top,right:r.right,bottom:r.bottom,w:r.width,h:r.height,vw:innerWidth,vh:innerHeight};
+      });
+      assert(rect && rect.visible && rect.w>0 && rect.h>0 && rect.x>=0 && rect.y>=0
+        && rect.right<=rect.vw+1 && rect.bottom<=rect.vh+1,label+': panel visible and entirely in viewport');
+    };
+    for(let cycle=0;cycle<20;cycle++) {
+      if(cycle%4===0) {
+        const home=cycle%8===0;
+        await page.evaluate(home=>history.pushState({},'',(home?'/home':'/compose/post/unsent/scheduled')+'?fixture=quick013-scheduled'),home);
+        await until(async()=> (await probeState(page)).mode===(home?'other':'scheduled'),'P0 SPA route '+cycle);
+      }
+      if(cycle%3===0)await page.setViewport(cycle%2 ? {width:1280,height:820}:{width:390,height:600});
+      await toggle(true);await assertInViewport('P0 open '+cycle);
+      // Fault injection stays in this same cycle scenario and only touches our UI.
+      if([5,9,13,17].includes(cycle)) {
+        const before=recoveryCount(await probeState(page));
+        await page.evaluate(cycle=>{
+          const host=document.getElementById('xsched-probe-root'),panel=host.shadowRoot.querySelector('section');
+          if(cycle===5)panel.remove();
+          else if(cycle===9)panel.hidden=true;
+          else if(cycle===13)panel.style.setProperty('transform','translate(5000px, 5000px)','important');
+          else host.remove();
+        },cycle);
+        await until(async()=>{const s=await probeState(page);return s.expanded==='true' && s.panelVisible && recoveryCount(s)>before;},'P0 recovery '+cycle);
+        await assertInViewport('P0 recovered '+cycle);
+      }
+      await toggle(false);
+    }
+    const endCounts=await probeState(page);
+    assert(toggleCount(endCounts)===toggleCount(startCounts)+40,'P0 twenty open/close cycles count exactly forty Dagaz toggles');
+    assert(recoveryCount(endCounts)>=recoveryCount(startCounts)+4,'P0 missing/hidden/offscreen/SPA-host recovery counted');
+    console.log('  ✓ P0: twenty open/close cycles with SPA/resize, shadow recovery and in-viewport panels');
+
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);
     for (const event of requests) {
