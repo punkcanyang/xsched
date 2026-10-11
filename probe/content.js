@@ -59,6 +59,7 @@ let panelDrag = null;
 let suppressPanelClick = false;
 let deferPanelSave = false; // reset previews must leave both keys deleted
 let panelHeight = 0;
+let panelHeightLimit = Infinity; // available space; never rewrite the saved height preference
 let panelNeedsLayout = true;
 let panelMinimum = 0; // stable within a viewport; status/render may never shrink it
 
@@ -499,17 +500,33 @@ function positionUI() {
   if (panelNeedsLayout) {
     panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight,panelMinimum);
     panelHeight=size.height;
-    // Never collapse the quick area to clear a widget. Automatic placement above
-    // chooses a full-size clear rectangle; saved/user coordinates take precedence.
+    const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
+    panelHeightLimit=innerHeight-16-panelAnchor.y;
+    for (const rect of obstacles) {
+      if (panelAnchor.x < rect.right+8 && panelAnchor.x+size.width > rect.left-8 && rect.bottom+8 > panelAnchor.y) {
+        panelHeightLimit=Math.min(panelHeightLimit,rect.top-8-panelAnchor.y);
+      }
+    }
+    // Full quick-area height is preferred. Native controls take precedence when
+    // it cannot fit: keep fixed actions plus a scrollable slice of the body.
+    const scrollMinimum=Math.min(size.height,chromeHeight+80);
+    if (panelHeightLimit < scrollMinimum) {
+      const full=panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,size.height);
+      const chosen=full.clear ? full : panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,scrollMinimum);
+      if (chosen.clear) {
+        panelAnchor={x:chosen.left,y:chosen.top};
+        panelHeightLimit=chosen.maxHeight;
+      } else panelHeightLimit=size.height; // preserve the existing visible fallback if no rectangle fits
+    }
     panelNeedsLayout=false;
   }
-  panelHeight=Math.max(minimum,panelHeight);
+  panelHeight=Math.min(panelHeightLimit,Math.max(minimum,panelHeight));
   if (panelAnchor.x < 0 || panelAnchor.y < 0 || panelAnchor.x+size.width > innerWidth || panelAnchor.y+panelHeight > innerHeight-16) {
     panelAnchor=clampPanelPosition(panelAnchor,innerWidth,innerHeight,savedPanelHeight,panelMinimum);
-    panelHeight=size.height;
+    panelHeight=Math.min(size.height,panelHeightLimit);
     recoveries += 1;
   }
-  css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${size.height}px`});
+  css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${Math.min(size.height,panelHeightLimit)}px`});
   shortcut.setAttribute('aria-expanded','true');
 }
 

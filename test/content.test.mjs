@@ -677,6 +677,29 @@ test('0.1.4 saved tiny height and obstacle shortening cannot collapse quick cont
  const after=coordinates(f,'section');assert.ok(after.y+parseFloat(after.height)<=804,'drag uses measured minimum too');
  assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true');
 });
+test('short viewport caps saved full-height panel above native drawer without losing quick controls or preferences',()=>{
+ let drawer=null;
+ const geometry={...globalThis.XSCHED_UI,collectObstacles(){return drawer?[drawer]:[];}};
+ const stored=new Map([['xsched.probe.panelPos','{"x":740,"y":77}'],['xsched.probe.panelHeight','{"height":568}']]);
+ const f=fixture(undefined,'en','../fixtures/quick013-scheduled.html',()=>new Date(2028,0,1),geometry,undefined,stored);
+ const buttonBefore=()=>coordinates(f);
+ for(const top of [552,350]) {
+  drawer={left:980,right:1280,top,bottom:600};f.resize(1280,600);
+  const button=buttonBefore(),panel=f.shadow().querySelector('section'),point=coordinates(f,'section');
+  const rect={left:point.x,top:point.y,right:point.x+344,bottom:point.y+parseFloat(point.height)};
+  assert.equal(globalThis.XSCHED_UI.overlaps(rect,drawer),false);
+  assert.equal(parseFloat(point.height),top-8-point.y);
+  assert.equal(f.shadow().querySelector('.panel-body').style.overflow,'auto');
+  assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,5,'quick controls remain in the scrollable body');
+  f.click('.shortcut');f.click('.shortcut');f.poll();
+  assert.deepEqual(coordinates(f,'section'),point,'toggle/poll must not expand back into the drawer');
+  assert.deepEqual(buttonBefore(),button,'height clamp never moves the shortcut');
+  assert.equal(stored.get('xsched.probe.panelHeight'),'{"height":568}');
+  assert.equal(stored.get('xsched.probe.panelPos'),'{"x":740,"y":77}');
+ }
+ drawer=null;f.resize(1100,820);
+ assert.equal(f.shadow().querySelector('section').style.height,'568px','larger unobstructed viewport restores the preference');
+});
 test('0.1.4 observed completion updates max only, persists numeric source, and next list read replaces it',async()=>{
  const clock=()=>new Date(2027,11,31,21),target=new Date(2028,0,1,12,30).getTime();
  const prototype=parseHTML('<html></html>').document.defaultView.HTMLSelectElement.prototype,descriptor=Object.getOwnPropertyDescriptor(prototype,'value');

@@ -505,6 +505,20 @@ async function main() {
     assert(scrollInfo.height>=400 && scrollInfo.height<=568.5 && scrollInfo.max<=568 && scrollInfo.overflow==='auto' && scrollInfo.scroll>scrollInfo.client, '1280x600: panel meets 2/3 floor and viewport cap with independently scrollable content');
     await checkActions('short viewport before scroll');
     await checkNative('1280x600 native avoidance');
+    // Native avoidance may reduce preferred quick-area height. All its buttons
+    // must remain reachable through the body scroll, rather than being clipped.
+    const quickReachable=await page.evaluate(() => {
+      const shadow=document.getElementById('xsched-probe-root').shadowRoot;
+      const body=shadow.querySelector('.panel-body');
+      return [...shadow.querySelectorAll('.quick-controls button')].every(button => {
+        const before=button.getBoundingClientRect(),bounds=body.getBoundingClientRect();
+        if(before.bottom>bounds.bottom) body.scrollTop+=before.bottom-bounds.bottom;
+        else if(before.top<bounds.top) body.scrollTop-=bounds.top-before.top;
+        const rect=button.getBoundingClientRect();
+        return rect.top>=bounds.top-1 && rect.bottom<=bounds.bottom+1 && shadow.elementFromPoint((rect.left+rect.right)/2,(rect.top+rect.bottom)/2)===button;
+      });
+    });
+    assert(quickReachable,'1280x600 native avoidance: entire quick area remains reachable by scrolling');
     await page.evaluate(() => {const body=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');body.scrollTop=body.scrollHeight;});
     assert(await page.evaluate(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body').scrollTop>0), 'panel content actually scrolls');
     await checkAuthorLink('Scrolled short viewport author');
