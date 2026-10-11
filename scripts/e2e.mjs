@@ -510,7 +510,8 @@ async function main() {
     const quickReachable=await page.evaluate(() => {
       const shadow=document.getElementById('xsched-probe-root').shadowRoot;
       const body=shadow.querySelector('.panel-body');
-      return [...shadow.querySelectorAll('.quick-controls button')].every(button => {
+      const buttons=[...shadow.querySelectorAll('.quick-controls button')];
+      return buttons.length===6 && buttons.every(button => {
         const before=button.getBoundingClientRect(),bounds=body.getBoundingClientRect();
         if(before.bottom>bounds.bottom) body.scrollTop+=before.bottom-bounds.bottom;
         else if(before.top<bounds.top) body.scrollTop-=bounds.top-before.top;

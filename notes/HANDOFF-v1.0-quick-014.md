@@ -87,3 +87,31 @@ e2e 僅追加一個「20 輪完整開／關」情境（40 次 Dagaz 點擊），
 3. Dagaz 連續開／關 20 輪，期間在首頁與 Scheduled 間切換、縮放視窗；每次打開都應出現且在視窗內。不按原生排程／發佈。
 4. 若用了備援位置，可拖浮層到空處，再開／關確認不消失。
 5. 有問題附截圖及「複製診斷」（含 toggles／recoveries）私下貼回，不提交真機資料。
+
+
+## write-3：1280×600 原生抽屜重疊回歸
+
+從 `a55dcbd` 的外部紅燈接續；實作中途由外部存成 WIP `a740e26`，本輪接著完成。範圍只限這次幾何紅燈、直接相關回歸及測試結果。沒有 commit／push／merge。
+
+### 原因與證據
+
+外部紀錄只印出 `1280x600 native avoidance: shortcut/panel overlaps native-drawer`，沒有當下座標。不能從紀錄斷言是哪個初始落點，但程式能重現同一缺陷：舊 content.js:501–506 在已有／已儲存的 panelAnchor 上強制完整高度，只夾視窗邊界，不檢查原生元件；491 的初次避讓又要求 preferred height 等於 minimum height，找不到完整空位便用第 3 點的視窗內備援位置。兩條路徑都可能蓋住原生抽屜。不是「避開原生元件」的測試前提失效，而是完整高度下限與既有位置優先於避讓。
+
+`node /tmp/quick014-native-before.mjs` 用 linkedom＋真 content VM、合成座標重現：儲存浮層位置 `{x:740,y:77}`、高度 568，在 1280×600 被夾成 rect `(740,16)–(1084,584)`；抽屜 rect `(980,552)–(1280,600)`，overlap=true。修後同一案例 height=528、bottom=544、overlap=false，與抽屜隔 8px；body overflow=auto，原儲存位置／高度原樣。這是離線幾何證據，不是假稱已重跑 Chrome。
+
+### 最小高度的取捨與修法
+
+2/3 視窗與完整快速區仍是**偏好高度**。重新配置／resize 時，先在目前浮層位置算到原生元件前的可用高度，保留 8px 間隔；不足時可低於偏好高度。固定標題及複製操作列保留，快速時段區留在既有 overflow:auto 的 body，需捲動才能看到的按鈕可以逐一捲到並點擊，不移除／裁切快速區內容。如果連固定區＋一段可捲內容都放不下，才用既有有界 panelPlacement 先找完整尺寸空位，再找較矮空位，採用它回傳的 maxHeight；沒有擴大偵測範圍。所有候選都無解時保留第 3 點的可見備援，仍可能重疊；無法物理容納的極小視窗需使用者移位或放大，不能宣稱保證有空位。
+
+顯示高度上限保留在記憶體；toggle／poll 不會又升回完整下限。可用空間變大時恢復原高度偏好。自動避讓不改 localStorage 原儲存高度／位置，不移快捷鈕。這段取代前文「手動位置不因避讓縮高度」的限制說法，原生元件在空間不足時優先。
+
+### 回歸與實跑
+
+- 新增一個 content VM 回歸，測抽屜 top=552 與 top=350：儲存的大浮層均避讓，第二例低於 2/3 仍保留全部五個時段及 body 捲動；開關／poll 不重新撐高，原偏好保持，放大後恢復。
+- e2e 只在原短視窗情境加一個直接相關斷言：五個時段與間隔儲存鈕共六個，逐一捲到 body 內，矩形可見且 elementFromPoint 命中。沒有點它們或送出，沒有新增其他情境／守門。既有 native 不重疊、原生命中／物理點擊、固定操作列、內容實際捲動及 400px 下限斷言全部保留；此 fixture 離線案例縮後仍為 528px，不需要放寬舊斷言。
+- verify 只同步 AUTHOR_CONTENT_SHA256；ui.js／quick.js／position.js／manifest／network-policy 沒動。權限、網路與送出守門及所有攻擊自測不變。
+- PATH 優先 `/home/box/.local/bin`，Node v26.10.0。`npm test` 重跑 13/13 檔通過，0 敗、0 跳過；新增 content 回歸後細項 38/38。首次完整跑曾有 logo／review 檔案失敗，但只有檔案級摘要，未提供失敗細項，不能確定原因；詳細隔離實跑 logo 6/6、review 24/24，原指令重跑完整 13/13，未修改兩檔或放寬 timeout／斷言。來源摘要已同步，verify 實跑通過，沒有重現 SHA 失配。
+- `npm run verify` OK：仍為 30 API／14 icon／9 SVG／66 leak／37 storage／59 writer／22 author-link／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測。`git diff --check` 及 JS 語法檢查通過。
+- 已嘗試 `npm run e2e`：在 fixture server 啟動時失敗，`listen EPERM: operation not permitted 127.0.0.1`。Chrome for Testing／Xvfb 在，但沙箱不允許 listen；不能宣稱完整 e2e 通過。未產生／覆寫截圖，工作樹原有外部未追蹤截圖保留。
+
+外部請以相同 Node 26 與 PATH 執行 `npm run e2e`，確認原 `1280x600 native avoidance` 及後續情境全過；不只看單一情境通過。截圖仍用既有 `docs/v1.0-quick014-small-viewport-scroll.png`／`docs/v1.0-quick014-avoid-native.png`，沒有新增前綴或輸出路徑。
