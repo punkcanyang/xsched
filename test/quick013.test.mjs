@@ -2,9 +2,27 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 await import('../probe/quick.js');await import('../probe/ui.js');
 const Q=globalThis.XSCHED_QUICK,U=globalThis.XSCHED_UI;
 const now=new Date(2027,11,31,21,0);
+test('actual e2e fixture handler serves the numeric 013 name without accepting path traversal',()=>{
+  const source=readFileSync(new URL('../scripts/e2e.mjs',import.meta.url),'utf8');
+  const handler=source.slice(source.indexOf('function serveFixture('),source.indexOf('\nfunction listen('));
+  const context=vm.createContext({URL,readFileSync,join,FIXTURES:fileURLToPath(new URL('../fixtures',import.meta.url))});
+  vm.runInContext(handler+'\nglobalThis.serve=serveFixture;',context);
+  const request=name=>{
+    let code,body;
+    const response={writeHead(status){code=status;return this;},end(value){body=value;}};
+    context.serve({url:'/compose/post/unsent/scheduled?fixture='+encodeURIComponent(name)},response);
+    return {code,body};
+  };
+  assert.equal(request('quick013-scheduled').code,200);
+  assert.match(request('quick013-scheduled').body,/2028/);
+  assert.equal(request('en').code,200);
+  for(const name of ['../quick013-scheduled','quick013-scheduled/../en','https://example.invalid','quick999-scheduled'])assert.equal(request(name).code,400);
+});
 function store(hostname='x.com') {
   const data=new Map();
   const window={location:{hostname},localStorage:{getItem:key=>data.get(key),setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)}};

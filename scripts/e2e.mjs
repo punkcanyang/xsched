@@ -79,7 +79,7 @@ function serveFixture(req, res) {
   }
   const name = url.searchParams.get("fixture")
     || (url.pathname === "/home" ? "home" : "en");
-  if (!/^[a-zA-Z-]+$/.test(name)) {
+  if (!/^[a-zA-Z-]+$/.test(name) && name !== 'quick013-scheduled') {
     res.writeHead(400).end("bad fixture");
     return;
   }
@@ -330,7 +330,7 @@ async function main() {
     assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
     assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.1.3 (manifest 0.1.3)', 'diagnostic first line includes both versions');
     await checkAuthorLink('Scheduled author');
-    await page.screenshot({ path: join(DOCS, 'author-link-scheduled.png') });
+    await page.screenshot({ path: join(DOCS, 'v1.0-quick013-author-link-scheduled.png') });
     await checkNative('desktop scheduled open');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick013-scheduled-open.png') });
     await page.screenshot({ path: join(DOCS, 'v1.0-quick013-diag-version.png') });

@@ -307,8 +307,10 @@ function ensureHost() {
     const active=heightDrag;heightDrag=null;
     if(active.moved) {
       suppressPanelClick=true;
-      if(!positionStore.saveHeight(savedPanelHeight))savedPanelHeight=active.original;
-      panelNeedsLayout=true;positionUI();
+      if(!positionStore.saveHeight(savedPanelHeight)){savedPanelHeight=active.original;panelHeight=active.height;}
+      // A height gesture keeps the currently visible anchor; only resize/reload
+      // re-clamps the original stored position against a different panel size.
+      positionUI();
     }
     releaseDragCapture(active);
   });
@@ -476,6 +478,7 @@ function render(report, items) {
   const mountedNow = hostMounted(node) ? 1 : 0;
   const count = items.length;
   const effectiveCollapsed = collapsed === null ? !report.onScheduled : collapsed;
+  if (effectiveCollapsed) cancelHeightDrag();
   mounted = mountedNow;
 
   const runtime = runtimeState();
@@ -678,6 +681,7 @@ function tick() {
   if (detectedSignature !== quickSignature && !quick.isFilling(document) && !quick.fillDiagnostic(document)) quickStatus = "";
   quickSignature = detectedSignature;
   const next = `${pathname}${location.search || ""}|${report.onScheduled}`;
+  if (next !== session || scopeElement !== report.scopeElement) cacheSignature = '';
   if (next !== session || scopeElement !== report.scopeElement || (report.empty && report.items.length === 0)) {
     session = next;
     scopeElement = report.scopeElement || null;

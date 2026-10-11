@@ -255,3 +255,21 @@ for(const mode of ['transient','interim'])test(`013 generated ${mode} controlled
  assert.match(Q.fillDiagnostic(f.document),/^fill=ok/);
  for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
 });
+test('013 repeated input recycling stops at three writes and restores the whole original group',async()=>{
+ const f=fixture(),before=f.values();let recycled=0;
+ const detached=[];
+ f.document.addEventListener('input',event=>{
+  if(event.target===f.field('year') && recycled<3){
+   recycled++;detached.push(event.target);
+   event.target.replaceWith(event.target.cloneNode(true));
+  }
+ });
+ assert.equal(await Q.fillSlotResult(f.document,'evening',now),'failed');
+ assert.equal(recycled,3);
+ assert.deepEqual(f.values(),before);
+ assert.equal(f.window.fixtureSend.input,9,'three attempted input events plus six restoration input events');
+ assert.equal(f.window.fixtureSend.change,6,'no detached node receives change; restoration covers six fields');
+ assert.ok(detached.every(node=>!node.isConnected));
+ assert.match(Q.fillDiagnostic(f.document),/failed=year/);
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
+});

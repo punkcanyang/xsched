@@ -611,6 +611,40 @@ test('0.1.3 range editor rejects invalid values without overwriting; accepted se
  assert.equal(reload.shadow().querySelector('[data-xsched-range="a"]').value,'15');assert.equal(reload.shadow().querySelector('[data-xsched-range="b"]').value,'25');
  assert.ok(!reload.host().dataset.xschedDiag.includes('quickRange'));
 });
+test('0.1.3 identical replacement list refreshes the actual cache read timestamp',()=>{
+ let now=new Date(2027,11,31,21);
+ const f=fixture(undefined,'en','../fixtures/quick013-scheduled.html',()=>now);
+ const before=JSON.parse(f.stored.get('xsched.probe.lastScheduled'));
+ now=new Date(now.getTime()+60000);
+ const old=f.document.querySelector('[role="dialog"]'),replacement=old.cloneNode(true);
+ old.replaceWith(replacement);
+ f.mutate([{target:f.document.body,type:'childList',addedNodes:[replacement],removedNodes:[old]}]);
+ assert.deepEqual(JSON.parse(f.stored.get('xsched.probe.lastScheduled')),{time:before.time,readAt:now.getTime()});
+});
+test('0.1.3 shortcut collapse cancels height capture and never persists unfinished resizing',()=>{
+ const f=fixture(),panel=f.shadow().querySelector('section'),height=panel.style.height;
+ const captured=new Set();panel.setPointerCapture=id=>captured.add(id);panel.releasePointerCapture=id=>captured.delete(id);
+ f.pointer('pointerdown',50,100,{selector:'.panel-resizer'});
+ f.pointer('pointermove',50,60,{selector:'section'});
+ assert.notEqual(panel.style.height,height);
+ f.click('.shortcut');
+ assert.equal(captured.size,0);
+ f.pointer('pointerup',50,60,{selector:'section'});
+ assert.equal(f.stored.has('xsched.probe.panelHeight'),false);
+ f.click('.shortcut');assert.equal(panel.style.height,height);
+});
+test('0.1.3 height completion keeps the visible anchor when the stored position was clamped',()=>{
+ const stored=new Map([['xsched.probe.panelPos','{"x":5000,"y":5000}']]);
+ const f=fixture(undefined,undefined,undefined,null,undefined,undefined,stored);
+ const before=coordinates(f,'section');
+ f.pointer('pointerdown',50,100,{selector:'.panel-resizer'});
+ f.pointer('pointermove',50,60,{selector:'section'});
+ f.pointer('pointerup',50,60,{selector:'section'});
+ const after=coordinates(f,'section');
+ assert.equal(after.x,before.x);assert.equal(after.y,before.y);
+ assert.equal(parseFloat(after.height),parseFloat(before.height)-40);
+ assert.equal(stored.get('xsched.probe.panelPos'),'{"x":5000,"y":5000}','height gesture only saves height');
+});
 test('0.1.3 height handle persists only height, clamps on resize, reloads, and cleans cancelled capture without moving anchors',()=>{
  const f=fixture();const panel=f.shadow().querySelector('section');const start=coordinates(f,'section'),button=coordinates(f,'.shortcut');
  assert.equal(parseFloat(panel.style.height),546);
