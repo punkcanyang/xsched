@@ -963,9 +963,9 @@ async function main() {
     console.log("  ✓ non-Scheduled: home, Drafts, picker with adversarial selected tabs");
 
     // ── 0.4: immutable anchor, foreign widgets, dragging and numeric persistence ──
-    const baselineManifest=JSON.parse(execFileSync('git',['show','162a838:probe/manifest.json'],{encoding:'utf8'}));
+    const baselineManifest=JSON.parse(execFileSync('git',['show','4c16518:probe/manifest.json'],{encoding:'utf8'}));
     const currentManifest=JSON.parse(readFileSync(join(PROBE,'manifest.json'),'utf8'));
-    for(const field of ['permissions','host_permissions','web_accessible_resources']) assert(JSON.stringify(currentManifest[field])===JSON.stringify(baselineManifest[field]),'162a838 baseline manifest unchanged: '+field);
+    for(const field of ['permissions','host_permissions','web_accessible_resources']) assert(JSON.stringify(currentManifest[field])===JSON.stringify(baselineManifest[field]),'4c16518 baseline manifest unchanged: '+field);
     assert(JSON.stringify(currentManifest.content_scripts[0].matches)===JSON.stringify(baselineManifest.content_scripts[0].matches),'no new content-script hosts');
     await page.setViewport({width:1100,height:820});
     await open('extensions');
@@ -1155,18 +1155,7 @@ async function main() {
 
     // ── quick slots: synthetic picker, 2027+ clock, never native activation ─────
     await page.setViewport({width:1280,height:820});
-    async function quickFixture(name) {
-      await page.evaluate(()=>{window.localStorage.removeItem('xsched.probe.pos');window.localStorage.removeItem('xsched.probe.panelPos');});
-      await open(name,'/compose/post');
-      const contextId=await until(findExtensionContext,'quick picker isolated context');
-      // Module presence / document_idle does not imply the first throttled tick ran.
-      // A shortcut click before lastReport exists is intentionally ignored.
-      const initial=await until(async()=>{
-        const state=await probeState(page);
-        return state.present && state.mounted==='1' && state.mode==='other'
-          && state.diag.startsWith('xsched probe v0.1.3 (manifest 0.1.3)\n') ? state : null;
-      },'quick picker first diagnostic rendered: '+name);
-      assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
+    async function installQuickClock(contextId) {
       // Test-only Date replacement in BOTH worlds. Production has no clock override.
       const expression=`globalThis.__QuickRealDate=Date;
         globalThis.Date=class extends globalThis.__QuickRealDate {
@@ -1179,6 +1168,20 @@ async function main() {
       assert(await page.evaluate(()=>new Date().getFullYear()>=2027),'fixture clock is 2027+');
       const extClock=await network.send('Runtime.evaluate',{contextId,expression:'new Date().getFullYear()',returnByValue:true});
       assert(extClock.result.value>=2027,'extension clock is also 2027+');
+    }
+    async function quickFixture(name) {
+      await page.evaluate(()=>{window.localStorage.removeItem('xsched.probe.pos');window.localStorage.removeItem('xsched.probe.panelPos');});
+      await open(name,'/compose/post');
+      const contextId=await until(findExtensionContext,'quick picker isolated context');
+      // Module presence / document_idle does not imply the first throttled tick ran.
+      // A shortcut click before lastReport exists is intentionally ignored.
+      const initial=await until(async()=>{
+        const state=await probeState(page);
+        return state.present && state.mounted==='1' && state.mode==='other'
+          && state.diag.startsWith('xsched probe v0.1.3 (manifest 0.1.3)\n') ? state : null;
+      },'quick picker first diagnostic rendered: '+name);
+      assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
+      await installQuickClock(contextId);
       await toggle(true);
       return contextId;
     }
@@ -1358,6 +1361,83 @@ async function main() {
     await page.evaluate(()=>{const body=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');body.scrollTop=body.scrollHeight;});
     await page.screenshot({path:join(DOCS,'v1.0-quick013-diag-failure.png')});
     console.log('  ✓ quickfill: controlled native setters, ordered dependent re-query, numeric/padded/zero/Chinese values, bounded settled readback, full restoration and safe copied field diagnostics');
+
+    // ── 0.1.3: new cache slot, actual dates, numeric settings and height ────────
+    for(const variant of ['transient','interim']) {
+      await quickFixture('quick-real-'+variant);
+      await clickShadow('[data-xsched-slot="evening"]');
+      const state=await until(async()=>{const v=await realPickerState();return !v.busy && v.status==='已填入欄位；尚未排程'?v:null;},'013 bounded rebuild/final-only check: '+variant);
+      assert(state.values.year==='2028' && state.values.month==='1' && state.values.day==='1' && state.values.hour==='8' && state.values.period==='PM' && state.values.minute==='0','013 rebuilt/final values: '+variant);
+      assert(state.counts.input===6 && state.counts.change===6,'six ordered native writes despite transient rebuild/correction: '+variant);
+      assert(['confirm','schedule','post','calendar','submit'].every(key=>state.counts[key]===0),'zero activation through transient/interim fill: '+variant);
+      await page.screenshot({path:join(DOCS,'v1.0-quick013-'+variant+'.png')});
+    }
+    await page.evaluate(()=>{for(const key of ['xsched.probe.lastScheduled','xsched.probe.quickRange','xsched.probe.panelHeight'])window.localStorage.removeItem(key);});
+    await quickFixture('quick-real-numeric');
+    assert(await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-slot="random"]').disabled),'random unavailable without last-list cache');
+    assert(await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-cache').textContent.includes('Scheduled')),'missing cache explains visit Scheduled first');
+    const fixedLabels=await page.evaluate(()=>[...document.getElementById('xsched-probe-root').shadowRoot.querySelectorAll('[data-xsched-slot]')].filter(b=>b.dataset.xschedSlot!=='random').map(b=>b.textContent));
+    assert(fixedLabels.slice(0,3).every(label=>label.includes('明天')&&label.includes('2028')),'expired today labels explicitly show tomorrow, including cross-year date');
+    assert(fixedLabels[3].includes('2028') && fixedLabels[3].includes('09:00'),'workday button has its actual future date');
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-no-cache-dates.png')});
+    // Exercise the real reader/cache route, rather than manufacturing a cache in extension code.
+    await open('quick013-scheduled');
+    await until(async()=> (await probeState(page)).count===2,'013 two synthetic 2028 rows read');
+    const cacheContext=await until(findExtensionContext,'013 cache isolated context');
+    await installQuickClock(cacheContext);
+    // Re-read the synthetic list after installing the two-world 2027 clock. A
+    // changed fake timestamp proves cache refresh, then returns to the target row.
+    await page.evaluate(()=>document.querySelectorAll('[role="button"] span')[1].textContent='Will send on Sun, Jan 2, 2028 at 8:01 PM');
+    await until(()=>page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled')).time===new Date(2028,0,2,20,1).getTime()),'013 cache refreshed at frozen clock');
+    await page.evaluate(()=>document.querySelectorAll('[role="button"] span')[1].textContent='Will send on Sun, Jan 2, 2028 at 8:00 PM');
+    await until(()=>page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled')).time===new Date(2028,0,2,20).getTime()),'013 final cache refreshed');
+
+    const cache=await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled')));
+    const lastEpoch=await page.evaluate(()=>new Date(2028,0,2,20).getTime());
+    assert(cache.time===lastEpoch && Object.keys(cache).sort().join('|')==='readAt|time' && Object.values(cache).every(Number.isFinite),'cache is last epoch plus read time only');
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-cached-list.png')});
+    await quickFixture('quick-real-numeric');
+    assert(await page.evaluate(()=>!document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-slot="random"]').disabled),'persisted cache enables random in composer');
+    assert(await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-cache').textContent.includes('列表讀取時刻')),'actual cache read timestamp visible');
+    async function editRange(a,b) {
+      await page.evaluate((a,b)=>{const root=document.getElementById('xsched-probe-root').shadowRoot;root.querySelector('[data-xsched-range="a"]').value=String(a);root.querySelector('[data-xsched-range="b"]').value=String(b);},a,b);
+      await clickShadow('[data-xsched-range-save]');
+    }
+    await editRange(30,10);
+    await until(()=>page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-status').textContent.includes('正整數')),'invalid range explained');
+    assert(await page.evaluate(()=>window.localStorage.getItem('xsched.probe.quickRange')===null),'invalid interval cannot overwrite settings');
+    await editRange(20,20);
+    await until(()=>page.evaluate(()=>window.localStorage.getItem('xsched.probe.quickRange')===JSON.stringify({a:20,b:20})),'valid numeric interval persisted');
+    await clickShadow('[data-xsched-slot="random"]');
+    const randomFilled=await until(async()=>{const v=await realPickerState();return !v.busy && v.status==='已填入欄位；尚未排程'?v:null;},'cached last + interval fill');
+    assert(randomFilled.values.year==='2028' && randomFilled.values.month==='1' && randomFilled.values.day==='2' && randomFilled.values.hour==='8' && randomFilled.values.period==='PM' && randomFilled.values.minute==='20','last observed Jan 2 20:00 + 20 minutes exact native values');
+    assert(randomFilled.counts.input===6&&randomFilled.counts.change===6&&['confirm','schedule','post','calendar','submit'].every(key=>randomFilled.counts[key]===0),'random field fill never sends/submits');
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-random-filled.png')});
+    await page.evaluate(()=>window.localStorage.setItem('xsched.probe.lastScheduled',JSON.stringify({time:new Date(2027,0,1).getTime(),readAt:new Date(2027,0,1).getTime()})));
+    await quickFixture('quick-real-numeric');
+    await clickShadow('[data-xsched-slot="random"]');
+    const fallback=await until(async()=>{const v=await realPickerState();return !v.busy && v.status==='已填入欄位；尚未排程'?v:null;},'expired cache uses now + interval');
+    assert(fallback.values.year==='2027'&&fallback.values.month==='12'&&fallback.values.day==='31'&&fallback.values.hour==='9'&&fallback.values.period==='PM'&&fallback.values.minute==='20','expired cached result uses frozen now 21:00 + 20 minutes');
+    assert(['confirm','schedule','post','calendar','submit'].every(key=>fallback.counts[key]===0),'expired fallback never activates');
+    const buttonBeforeHeight=await buttonRect(),panelBeforeHeight=await panelRect();
+    assert(Math.abs(panelBeforeHeight.height-Math.floor(820*2/3))<=1,'default height is approximately 2/3 viewport');
+    const handle=await page.evaluate(()=>{const r=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-resizer').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};});
+    await page.mouse.move(handle.x,handle.y);await page.mouse.down();await page.mouse.move(handle.x,handle.y-80,{steps:8});await page.mouse.up();await sleep(150);
+    const resized=await panelRect();assert(Math.abs(resized.height-panelBeforeHeight.height+80)<=1,'physical bottom handle changes height');
+    assert(JSON.stringify(await buttonRect())===JSON.stringify(buttonBeforeHeight),'height change never moves Dagaz button');
+    assert(resized.left===panelBeforeHeight.left&&resized.top===panelBeforeHeight.top,'height change keeps independent panel anchor');
+    const storedHeight=await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.panelHeight')));
+    assert(Object.keys(storedHeight).join('|')==='height'&&Number.isFinite(storedHeight.height),'height payload is one numeric value');
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-height-dragged.png')});
+    await quickFixture('quick-real-numeric');
+    assert(Math.abs((await panelRect()).height-storedHeight.height)<=1,'height preference survives reload');
+    assert(await page.evaluate(()=>document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-range="a"]').value==='20'),'interval survives reload');
+    await page.setViewport({width:390,height:600});await sleep(650);
+    const clampedHeight=await panelRect();assert(clampedHeight.top>=0&&clampedHeight.bottom<=600&&clampedHeight.left>=0&&clampedHeight.right<=390,'saved height fits a smaller viewport');
+    assert(await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.panelHeight')).height)===storedHeight.height,'resize preserves original stored height');
+    await checkActions('013 height-clamped',true);
+    await page.screenshot({path:join(DOCS,'v1.0-quick013-height-clamped.png')});
+    console.log('  ✓ 013: final-only readback, bounded rebuild retries, random cache/fallback, numeric interval, actual dates, independent persisted height and clamp');
 
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);

@@ -688,7 +688,7 @@ function tick() {
     const replace = report.needsScroll === 0 && report.virtualized === 0;
     accumulated = mergeItems(accumulated, report.items, { replace });
     const times=accumulated.map(item=>item.at?.getTime()).filter(value=>Number.isSafeInteger(value) && value>0);
-    const signature=JSON.stringify(times);
+    const signature=JSON.stringify([times,report.timeFail,report.empty]);
     if(signature!==cacheSignature) {
       cacheSignature=signature;
       if(times.length && report.timeFail===0) {

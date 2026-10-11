@@ -33,7 +33,7 @@ const QUICK_SOURCE_SHA256 = "f0d0496df9bb4d756ba25d54df3bc97591b4447c803bf5bac94
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
 const AUTHOR_UI_SHA256 = "9111409a494f8510cb91320d30a1fb9a369d5def0aa9769a671c6875882be9cc";
-const AUTHOR_CONTENT_SHA256 = "ac2bd09d797c9369c3d0a1bf3c0e3a4867455591c7895bfd9f7eb8f116185773";
+const AUTHOR_CONTENT_SHA256 = "fe40904366fa13fe7f42ed11a88ff50596232f9be2cf184efa20c04b7976adbe";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');
@@ -823,6 +823,11 @@ export function nativeWriterSelfTest() {
     source.replace("const value=originalValue(control,key);", "const value=originals[key];"),
     source.replaceAll(" || control.closest(QUICK_CONFIG.dialog)!==dialog", ""),
   ];
+  asyncEdits.push(
+    source.replace('attempt<3 && !sent','true'),
+    source.replace('attempt<6;attempt++','true;attempt++'),
+    source.replace("if(error.message!=='detached' || attempt===2)throw error;",'')
+  );
   for(const edit of asyncEdits)if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length)throw new Error('native writer self-test: async protection removed');
   for (const edit of realEdits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: altered real picker boundary accepted');
   if(!scanSource(source,'probe/renamed.js').length) throw new Error('native writer self-test: renamed writer allowed');

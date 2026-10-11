@@ -246,3 +246,12 @@ test('transient missing day select is retried in the same dialog',async()=>{
  assert.equal(await Q.fillSlotResult(f.document,'evening',now),'filled');assert.equal(f.values().day,'1');
  assert.match(Q.fillDiagnostic(f.document),/^fill=ok/);
 });
+
+for(const mode of ['transient','interim'])test(`013 generated ${mode} controlled fixture completes all six fields and never activates`,async()=>{
+ const f=fixture(mode);
+ assert.equal(await Q.fillSlotResult(f.document,'evening',now),'filled');
+ assert.deepEqual(f.values(),{year:'2028',month:'1',day:'1',period:'PM',hour:'8',minute:'0'});
+ assert.equal(f.window.fixtureSend.input,6);assert.equal(f.window.fixtureSend.change,6);
+ assert.match(Q.fillDiagnostic(f.document),/^fill=ok/);
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0);
+});

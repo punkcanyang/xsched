@@ -35,7 +35,7 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 
 ## 本機位置儲存（閘 0.4／0.5 授權範圍）
 
-只允許 `probe/position.js` 存取 x.com 的 `window.localStorage`，只允許兩個固定 key：`xsched.probe.pos`（鈕）與 `xsched.probe.panelPos`（浮層），值只能是經有限數字驗證的 `{x,y}`。不存本文、帳號、網址或診斷；不加 storage 權限。其他模組的 localStorage，以及所有 sessionStorage／indexedDB／chrome.storage 仍由 verify 禁止；修改位置模組須重審來源摘要與 storage 攻擊自測。
+只允許 `probe/position.js` 存取 x.com 的 `window.localStorage`。原兩個固定 key：`xsched.probe.pos`（鈕）與 `xsched.probe.panelPos`（浮層），值只能是經有限數字驗證的 `{x,y}`。0.1.3 明確授權另三個固定 key：`xsched.probe.quickRange` 的正整數 `{a,b}`（a ≤ b）、`xsched.probe.lastScheduled` 的有效毫秒時間 `{time,readAt}`、`xsched.probe.panelHeight` 的有限正數 `{height}`；每個 schema 拒絕多餘欄位。不存本文、帳號、網址或診斷；不加 storage 權限。其他模組的 localStorage，以及所有 sessionStorage／indexedDB／chrome.storage 仍由 verify 禁止；修改位置模組須重審來源摘要與 storage 攻擊自測。
 
 ## 怎麼工作
 
@@ -76,6 +76,13 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 - `npm run e2e` 新增受控 picker：年月重建日 select、四種 value 變體各填四時段、缺年份零寫入、上下午修正後全組還原、safe option-values 骨架樣本與實體複製六欄診斷。以完整非同步狀態和 readback 判定成功，不能用第六個 change 代替完成。所有 X/calendar/send click 及 form submit 仍 0，網路政策與 0 擴充資源／背景請求斷言不動，權限與 `162a838` 相同。日期 input 繼續只讀 min/max，fixture 隱藏內建日曆圖示；不增加 data: 豁免。截圖改存 `docs/v1.0-quickfill-*.png`，新增 picker／時鐘皆 2027+，舊列表仍是假資料，舊截圖保留。
 - `node scripts/build-quick-fixtures.mjs` 可重建八份 `fixtures/quick-real-*.html`；腳本只讀合成設定，不讀老闆骨架。真機截圖、骨架、日期與 option 真值不得放 repo。完整 Chrome e2e 在沙箱外跑，未跑前不能宣稱 0.1.2 已通過真頁驗收。
 - 0.1.2 Codex 複審另測晚到的月份編碼切換、原 raw 仍存在時的日曆值還原，以及 input 後控制項移出原 dialog 時禁止 change。讀回與還原都按當前唯一選項映射核對日曆值，不能只比較 raw token。原 46 項 writer 攻擊保留，追加上述邊界的三項來源改寫攻擊為 49；quick.js 摘要同步，AUTHOR_* 摘要與其他守門不變。
+
+## 快速時段 0.1.3
+
+- 測 `test/quick013.test.mjs`：含頭尾的隨機整數分鐘、過期回退與 5 分鐘餘量、跨年、缺快取、五個固定數字 key、惡意 JSON／getter／storage 例外、九語實際日期與約 2/3 預設高度。真 content VM 另測讀列表快取、跨頁／reload、A/B 驗證、高度把手／取消／resize、鈕與浮層錨點不移動。
+- writer 逐欄重查並等待，全部填完才整組核對。暫時缺節點最多六次辨識、input 時回收最多三次寫入；不同 dialog／移出原 scope 不重試。最終讀回與還原仍核對目前 option 的日曆含義，零送出規則不變。
+- verify 原 21 storage 攻擊保留，追加三個新 key 的外部使用／非授權 key／錯 schema／數字驗證／快照驗證共 13 項成 34；原 49 writer 攻擊保留且調整為新流程對應保護，追加三項有界重試攻擊成 52。其他所有自測與原靜態禁令不減，唯一 storage 模組和 quick／ui／content 的來源摘要同步。
+- e2e 新增 2028 假列表讀取快取、五個時段（無快取第五鈕停用）、隨機間隔與已過快取回退、日期標籤、受控中途修正與暫時節點重建、高度拖曳／reload／窄視窗／固定操作鈕。只有預設高度需求改為約 2/3，原 60vh 斷言相應改成新上限；網路、權限、矩形／命中、送出 click／submit=0 斷言保留。`docs/v1.0-quick013-*.png` 由外部 Chrome e2e 產生；舊截圖保留。
 
 ## READY 的標準（PR 說明裡要有）
 

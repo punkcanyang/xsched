@@ -591,6 +591,16 @@ test('0.1.3 cache stores only last observed epoch/read time, survives navigation
  const blank=fixture('/compose/post','en','../fixtures/quick-dialog.html',clock);blank.click('.shortcut');
  assert.equal(blank.shadow().querySelector('[data-xsched-slot="random"]').disabled,true);
  assert.equal(blank.shadow().querySelector('[data-xsched-slot="random"]').title,'Visit Scheduled to read the list first');
+ // A failed read must preserve the cache. A subsequent confirmed empty read,
+ // even with the same zero parsed epochs, must clear it.
+ const empty=fixture(undefined,'en','../fixtures/quick013-scheduled.html',clock,undefined,undefined,stored);
+ for(const node of empty.document.querySelectorAll('[role="button"] span'))node.textContent='Will send on Sun, Jan 2, 2028 at 99:00 PM';
+ empty.mutate([{target:empty.document.body,type:'characterData',addedNodes:[],removedNodes:[]}]);
+ assert.match(empty.host().dataset.xschedDiag,/\btimeFail=[1-9]\d*\b/,'invalid dated labels must exercise a failed read, not an empty read');
+ assert.equal(stored.has('xsched.probe.lastScheduled'),true);
+ const removed=[...empty.document.querySelectorAll('[data-testid="cellInnerDiv"]')];for(const cell of removed)cell.remove();
+ empty.mutate([{target:empty.document.body,type:'childList',addedNodes:[],removedNodes:removed}]);
+ assert.equal(stored.has('xsched.probe.lastScheduled'),false);
 });
 test('0.1.3 range editor rejects invalid values without overwriting; accepted settings survive reload and never enter diagnostic',()=>{
  const f=fixture('/home');f.click('.shortcut');
