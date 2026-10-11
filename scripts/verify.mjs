@@ -22,18 +22,18 @@ const PROBE = join(ROOT, "probe");
 const DOCS = join(ROOT, "docs");
 // Fail closed: only this exact audited numeric-only position module may persist.
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
-const POSITION_SOURCE_SHA256 = "7485935c58ef6e3c1ae2db7417deea44e8224ace44c20b9d699da92e15bee335";
+const POSITION_SOURCE_SHA256 = "93c1958e1b6c9705b9554ad100c2494adf7b22f14e9512cd8e2e54bd1a177955";
 
 // Exact-source exception only for the sole native select input/change writer.
 // All other activation, network, storage and markup rules still scan this file.
-const QUICK_SOURCE_SHA256 = "f780b40ae0a8a8f4138d2b28fa89d0746146104b47c0536b328187d440d4d25e";
+const QUICK_SOURCE_SHA256 = "f0d0496df9bb4d756ba25d54df3bc97591b4447c803bf5bac942c450be64c937";
 
 // Owner-authorized exception: one exact DOM factory in root probe/ui.js only.
 // Pin both definition and sole call site to full reviewed sources. This prevents
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
-const AUTHOR_UI_SHA256 = "f019ce6e986ae868e495c8c1ea9253b9b20f683ad65ae8dc4094282fd2acbe66";
-const AUTHOR_CONTENT_SHA256 = "37ca32f2f9211967667eae865dc34622314d927d661ed659005339fcb394f74d";
+const AUTHOR_UI_SHA256 = "9111409a494f8510cb91320d30a1fb9a369d5def0aa9769a671c6875882be9cc";
+const AUTHOR_CONTENT_SHA256 = "ac2bd09d797c9369c3d0a1bf3c0e3a4867455591c7895bfd9f7eb8f116185773";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');
@@ -744,6 +744,10 @@ export function positionStorageSelfTest() {
     'window.indexedDB.open("xsched.probe.pos");',
     'chrome.storage.local.set({x:1,y:2});',
     'chrome["storage"].sync.set({x:1,y:2});',
+    'window.localStorage.setItem("xsched.probe.quickRange", "{a:1,b:2}");',
+    'window.localStorage.setItem("xsched.probe.lastScheduled", "private");',
+    'window.localStorage.setItem("xsched.probe.panelHeight", "private");',
+
   ];
   for (const attack of forbidden) if (!scanSource(attack,'probe/elsewhere.js').length) throw new Error('storage self-test: storage allowed outside boundary');
   const mutations = [
@@ -759,6 +763,17 @@ export function positionStorageSelfTest() {
     source+'\nwindow.indexedDB.open("xsched");',
     source+'\nchrome.storage.local.set({x:1});',
     source+'\nconst leak=fetch("https://evil.example/");',
+    source.replace('"xsched.probe.quickRange"','"other.range"'),
+    source.replace('"xsched.probe.lastScheduled"','"xsched.probe.sixth"'),
+    source.replace('"xsched.probe.panelHeight"','"other.height"'),
+    source.replace('JSON.stringify(snapshot)','JSON.stringify({body:"private"})'),
+    source.replace('!recordValid(key,value)','false'),
+    source.replace('!recordValid(key,snapshot)','false'),
+    source.replace('Number.isSafeInteger(value.a)','true'),
+    source.replace('value.a<=value.b','true'),
+    source.replace('Number.isSafeInteger(value.time)','true'),
+    source.replace('Number.isFinite(value.height)','true'),
+
   ];
   for (const attack of mutations) if (attack===source || !scanSource(attack,'probe/position.js',{positionModule:true}).length) throw new Error('storage self-test: edited boundary allowed');
   if (!scanSource(source,'probe/renamed.js').length) throw new Error('storage self-test: renamed module allowed');
@@ -798,10 +813,10 @@ export function nativeWriterSelfTest() {
   ];
   const asyncEdits=[
     source.replace("if(!control.isConnected || control.ownerDocument!==doc)throw new Error('detached');", ""),
-    source.replace("const picker=currentPicker(doc,dialog);\n      const control=picker?.fields[key];", "const picker=detected;\n      const control=picker.fields[key];"),
+    source.replace("const picker=await awaitPicker(doc,dialog);", "const picker=detected;"),
     source.replace("['year','month','day','period','hour','minute']", "['month','day','year','hour','minute','period']"),
     source.replace("await settle(doc);", "await Promise.resolve();"),
-    source.replace("if(!await readSettled(doc,()=>matchesTarget(currentPicker(doc,dialog),key,wanted[key])))", "if(false)"),
+    source.replace("if(!sent)", "if(false)"),
     source.replace("if(!await readSettled(doc,()=>restoredFieldMatches(key)))", "if(false)"),
     source.replace("return candidates.length===1 ? candidates[0] : null;", "return candidates[0];"),
     source.replace("return value!==null && detected.fields[key]?.value===value;", "return true;"),

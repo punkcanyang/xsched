@@ -1,14 +1,14 @@
 // Synthetic reconstruction of the documented picker shape. Never reads owner data.
 import {writeFileSync} from 'node:fs';
-const variants=['dialog','year-missing','rollback','numeric','padded','zero','period-values','autocorrect'];
+const variants=['dialog','year-missing','rollback','numeric','padded','zero','period-values','autocorrect','transient','interim'];
 function options(field,variant) {
   const size={month:12,day:31,year:variant==='year-missing'?1:3,hour:12,minute:60,period:2}[field];
   const values=Array.from({length:size},(_,i)=>field==='year'?2027+i:field==='minute'||field==='period'?i:i+1);
   return (field==='period'?'':'<option disabled selected value=""></option>')+values.map((n,i)=>{
     const text=field==='month'?`${n} 月`:field==='minute'?String(n).padStart(2,'0'):field==='period'?['上午','下午'][i]:String(n);
     let value=String(n);
-    if(field==='month')value=variant==='zero'?String(i):variant==='padded'?String(n).padStart(2,'0'):['numeric','period-values','autocorrect'].includes(variant)?String(n):'fake-month-'+n;
-    if(field==='period')value=variant==='period-values'?['上午','下午'][i]:['numeric','padded','zero','autocorrect'].includes(variant)?['AM','PM'][i]:'fake-period-'+i;
+    if(field==='month')value=variant==='zero'?String(i):variant==='padded'?String(n).padStart(2,'0'):['numeric','period-values','autocorrect','transient','interim'].includes(variant)?String(n):'fake-month-'+n;
+    if(field==='period')value=variant==='period-values'?['上午','下午'][i]:['numeric','padded','zero','autocorrect','transient','interim'].includes(variant)?['AM','PM'][i]:'fake-period-'+i;
     if(variant==='padded'&&['day','hour','minute'].includes(field))value=value.padStart(2,'0');
     return `<option value="${value}">${text}</option>`;
   }).join('');
@@ -39,8 +39,12 @@ function render(){
   const padded=old.querySelector('option[value="01"]')!==null;
   for(let day=1;day<=size;day++){const option=document.createElement('option');option.value=padded?String(day).padStart(2,'0'):String(day);option.textContent=String(day);replacement.append(option);}
   old.replaceWith(replacement);attach(replacement);
+  if(document.body.dataset.fixtureMode==='transient') {
+   const parent=replacement.parentElement;replacement.remove();
+   setTimeout(()=>{parent.append(replacement);nativeValue.set.call(replacement,state.day);},40);
+  }
  }
- for(const key of fields){const node=control(key);nativeValue.set.call(node,state[key]);directWrites.delete(node);}
+ for(const key of fields){const node=control(key);if(node){nativeValue.set.call(node,state[key]);directWrites.delete(node);}}
 }
 document.addEventListener('input',event=>{if(fields.some(key=>control(key)===event.target)&&!directWrites.has(event.target))inputs.add(event.target);});
 document.addEventListener('change',event=>{
@@ -51,7 +55,12 @@ document.addEventListener('change',event=>{
  if(rejectOnce&&((document.body.dataset.fixtureMode==='rollback'&&key==='hour'&&value==='8')||(document.body.dataset.fixtureMode==='autocorrect'&&key==='period'&&value==='PM'))){
   rejectOnce=false;window.fixtureRejects++;queue();return;
  }
- state[key]=value;if(key==='year'||key==='month')rebuild=true;queue();
+ state[key]=value;
+ if(document.body.dataset.fixtureMode==='interim') {
+  if(key==='period'&&value==='PM')state.period='AM';
+  if(key==='hour'&&value==='8')state.period='PM';
+ }
+ if(key==='year'||key==='month')rebuild=true;queue();
 });`;
 for(const variant of variants) {
  const field=key=>`<div><label id="fixture-label-${key}"><span>${({month:'月',day:'日',year:'年',hour:'時',minute:'分',period:'上午/下午'})[key]}</span></label><select id="fake-select-${key}" aria-labelledby="fixture-label-${key}" data-testid="">${options(key,variant)}</select></div>`;

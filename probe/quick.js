@@ -1,4 +1,4 @@
-// 0.1.2: picker structure proven by a masked skeleton; option encodings unverified.
+// 0.1.3: picker structure proven by a masked skeleton; option encodings unverified.
 // No X control is activated. The user opens the picker and confirms it themselves.
 (() => {
 'use strict';
@@ -22,6 +22,20 @@ const QUICK_CONFIG = Object.freeze({
   marginMs: 5 * 60 * 1000,
 });
 const SLOT_IDS = Object.freeze(['morning','lunch','evening','workday']);
+function validRange(range) {
+  return range && Number.isSafeInteger(range.a) && Number.isSafeInteger(range.b) && range.a>0 && range.a<=range.b;
+}
+function randomSlot(cache,range,now=new Date(),random=Math.random) {
+  if(!cache || !Number.isSafeInteger(cache.time) || cache.time<=0 || !validRange(range) || !Number.isFinite(now.getTime()))return null;
+  const sample=random();
+  if(!Number.isFinite(sample) || sample<0 || sample>=1)return null;
+  const minutes=range.a+Math.floor(sample*(range.b-range.a+1));
+  let time=cache.time+minutes*60000;
+  if(time<now.getTime()+QUICK_CONFIG.marginMs)time=now.getTime()+minutes*60000;
+  // Native selects have minute precision. Round UP and preserve the safety margin.
+  const at=new Date(Math.ceil(Math.max(time,now.getTime()+QUICK_CONFIG.marginMs)/60000)*60000);
+  return Number.isFinite(at.getTime()) ? at : null;
+}
 function nextSlot(id, now = new Date()) {
   if (!SLOT_IDS.includes(id) || !(now instanceof Date) || !Number.isFinite(now.getTime())) return null;
   const hour = id === 'lunch' ? 12 : id === 'evening' ? 20 : 9;
@@ -303,6 +317,17 @@ async function readSettled(doc, matches) {
   }
   return false;
 }
+async function awaitPicker(doc,dialog) {
+  // Rebuilt selects may be absent for a few turns. Never switch to another dialog.
+  for(let attempt=0;attempt<6;attempt++) {
+    const picker=currentPicker(doc,dialog);
+    if(picker)return picker;
+    if(!dialog.isConnected || !visible(dialog,doc))return null;
+    await settle(doc);
+    if(attempt<5)await new Promise(resolve=>doc.defaultView.setTimeout(resolve,25));
+  }
+  return null;
+}
 function captureRows(doc, initial, wanted, expected) {
   const detected=currentPicker(doc,initial.dialog);
   return FILL_ORDER.filter(key=>wanted[key]!==null).map(key=>{
@@ -355,13 +380,21 @@ async function writeNativeControls(doc, detected, wanted, expected, at) {
   try {
     for(const key of keys) {
       failedField=key;
-      const picker=currentPicker(doc,dialog);
-      const control=picker?.fields[key];
-      const value=picker ? mappedValue(picker,key,wanted[key]) : null;
-      if(!control || value===null || !withinDateBounds(picker.fields.dateInput,at))throw new Error('options');
-      expected[key]=value; // a re-render may change the option encoding
-      write(control,value);
-      if(!await readSettled(doc,()=>matchesTarget(currentPicker(doc,dialog),key,wanted[key])))throw new Error('readback');
+      let sent=false;
+      for(let attempt=0;attempt<3 && !sent;attempt++) {
+        const picker=await awaitPicker(doc,dialog);
+        const control=picker?.fields[key];
+        const value=picker ? mappedValue(picker,key,wanted[key]) : null;
+        if(!control || value===null || !withinDateBounds(picker.fields.dateInput,at))throw new Error('options');
+        expected[key]=value;
+        try {write(control,value);sent=true;}
+        catch(error) {
+          // Only a detached/replaced node is retryable, not a scope change or refusal.
+          if(error.message!=='detached' || attempt===2)throw error;
+        }
+        await settle(doc);
+      }
+      if(!sent)throw new Error('detached');
     }
     writtenAll=true;
     if(!await readSettled(doc,matches))throw new Error('readback');
@@ -390,12 +423,12 @@ async function writeNativeControls(doc, detected, wanted, expected, at) {
     return result;
   }
 }
-async function fillSlotResult(doc,id,now = new Date()) {
+async function fillSlotResult(doc,id,now = new Date(),options={}) {
   if (doc.defaultView.location?.hostname !== 'x.com') return 'missing';
   if(transactions.has(doc))return 'failed';
   transactions.add(doc);
   try {
-    const detected = detectControls(doc), at = nextSlot(id,now);
+    const detected = detectControls(doc), at = id==='random' ? randomSlot(options.cache,options.range,now,options.random || Math.random) : nextSlot(id,now);
     if (!detected.ready || !at) {
       const reason=detected.reason || 'missing';
       // Without proven controls, do not sample unrelated DOM. Report unknown
@@ -434,5 +467,5 @@ function isFilling(doc) {return transactions.has(doc);}
 function diagnostic(counts) {
   return ['schedDialog','dateCtl','timeCtl','selects'].map(key=>`${key}=${Number.isSafeInteger(counts?.[key]) && counts[key]>=0 ? counts[key] : 0}`).join(' ');
 }
-globalThis.XSCHED_QUICK = {QUICK_CONFIG,SLOT_IDS,nextSlot,detectControls,fillSlot,fillSlotResult,fieldValues,diagnostic,fillDiagnostic,isFilling};
+globalThis.XSCHED_QUICK = {QUICK_CONFIG,SLOT_IDS,nextSlot,randomSlot,validRange,detectControls,fillSlot,fillSlotResult,fieldValues,diagnostic,fillDiagnostic,isFilling};
 })();

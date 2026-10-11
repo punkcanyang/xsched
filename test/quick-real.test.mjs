@@ -69,7 +69,7 @@ test('after-event readback mismatch restores entire group and emits restoration 
  const f=fixture();const before=f.values();let rejected=false;
  f.field('hour').addEventListener('change',()=>{if(!rejected&&f.field('hour').value==='8'){rejected=true;f.field('hour').value='';}});
  assert.equal(await Q.fillSlotResult(f.document,'evening',now),'failed');assert.deepEqual(f.values(),before);
- assert.deepEqual(f.counts,{click:0,submit:0,input:11,change:11});
+ assert.deepEqual(f.counts,{click:0,submit:0,input:12,change:12});
 });
 test('restoration refusal/missing controls are incomplete; uniquely labelled replacements are restored',async()=>{
  const f=fixture();let phase=0;f.field('hour').addEventListener('change',()=>{phase++;f.field('hour').value=phase===1?'':'1';});

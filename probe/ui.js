@@ -24,7 +24,32 @@ const QUICK_STRINGS = Object.freeze({
   de: { slots:['9:00','12:30','20:00','Nächster Werktag 9:00'], heading:'Schnellzeiten (Felder ungeprüft)', missing:'Planungsfelder nicht erkannt', ready:'Füllt nur Felder; selbst bestätigen. Kein Versand.', filled:'Felder ausgefüllt; noch nicht geplant', yearMissing:"Das Zieljahr fehlt in den X-Optionen", optionsMissing:"Die Optionen können diese Zeit nicht darstellen", failed:"Ausfüllen fehlgeschlagen; wiederhergestellt. Alle Felder prüfen", rollbackFailed:"Wiederherstellung unvollständig; alle Felder selbst prüfen", range:"Das Datum liegt außerhalb des erlaubten X-Bereichs" },
   pt: { slots:['9:00','12:30','20:00','Próximo dia útil 9:00'], heading:'Horários rápidos (campos não verificados)', missing:'Campos de agendamento não detectados', ready:'Só preenche campos; confirme você. Nada é enviado.', filled:'Campos preenchidos; ainda não agendado', yearMissing:"O ano de destino não está nas opções do X", optionsMissing:"As opções não representam este horário", failed:"Falha ao preencher; restaurado. Confira cada campo", rollbackFailed:"Restauração incompleta; confira todos os campos", range:"A data está fora do intervalo permitido pelo X" },
 });
-function quickStringsFor(doclang,navlang) { return QUICK_STRINGS[languageKey(doclang) || languageKey(navlang) || 'en']; }
+const QUICK_EXTRAS = Object.freeze({
+  'zh-Hant':{random:'最後一則＋隨機分鐘',settings:'隨機間隔（分鐘）',save:'儲存間隔',rangeInvalid:'A、B 須為正整數且 A ≤ B',storageFailed:'無法儲存設定',noCache:'請先到 Scheduled 讀取一次列表',readAt:'列表讀取時刻',partialCache:'快取只涵蓋已讀到的列，請自行捲到底',resize:'拖曳調整浮層高度',today:'今天',tomorrow:'明天'},
+  'zh-Hans':{random:'最后一条＋随机分钟',settings:'随机间隔（分钟）',save:'保存间隔',rangeInvalid:'A、B 须为正整数且 A ≤ B',storageFailed:'无法保存设置',noCache:'请先到 Scheduled 读取一次列表',readAt:'列表读取时间',partialCache:'缓存仅包含已读取的行，请自行滚动到底',resize:'拖动调整浮层高度',today:'今天',tomorrow:'明天'},
+  en:{random:'Last post + random minutes',settings:'Random interval (minutes)',save:'Save interval',rangeInvalid:'A and B must be positive integers; A ≤ B',storageFailed:'Settings could not be saved',noCache:'Visit Scheduled to read the list first',readAt:'List read at',partialCache:'Cache covers only observed rows; scroll to the end yourself',resize:'Drag to resize panel height',today:'Today',tomorrow:'Tomorrow'},
+  ja:{random:'最後の投稿＋ランダム分',settings:'ランダム間隔（分）',save:'間隔を保存',rangeInvalid:'A、B は正の整数、A ≤ B',storageFailed:'設定を保存できません',noCache:'先に Scheduled の一覧を読み取ってください',readAt:'一覧の読取時刻',partialCache:'読取済みの行のみ。ご自身で最後までスクロールしてください',resize:'ドラッグしてパネルの高さを変更',today:'今日',tomorrow:'明日'},
+  ko:{random:'마지막 게시물＋무작위 분',settings:'무작위 간격(분)',save:'간격 저장',rangeInvalid:'A와 B는 양의 정수, A ≤ B',storageFailed:'설정을 저장할 수 없습니다',noCache:'먼저 Scheduled 목록을 읽어 주세요',readAt:'목록 읽은 시각',partialCache:'읽은 행만 저장됩니다. 직접 끝까지 스크롤하세요',resize:'드래그하여 패널 높이 조절',today:'오늘',tomorrow:'내일'},
+  es:{random:'Última publicación + minutos al azar',settings:'Intervalo aleatorio (minutos)',save:'Guardar intervalo',rangeInvalid:'A y B deben ser enteros positivos; A ≤ B',storageFailed:'No se pudo guardar',noCache:'Visita Scheduled para leer la lista primero',readAt:'Lista leída a las',partialCache:'Solo filas leídas; desplázate hasta el final',resize:'Arrastra para cambiar la altura',today:'Hoy',tomorrow:'Mañana'},
+  fr:{random:'Dernière publication + minutes aléatoires',settings:'Intervalle aléatoire (minutes)',save:"Enregistrer l’intervalle",rangeInvalid:'A et B doivent être des entiers positifs ; A ≤ B',storageFailed:'Enregistrement impossible',noCache:'Ouvrez Scheduled pour lire la liste',readAt:'Liste lue à',partialCache:'Lignes lues seulement ; faites défiler jusqu’à la fin',resize:'Glissez pour régler la hauteur',today:"Aujourd’hui",tomorrow:'Demain'},
+  de:{random:'Letzter Beitrag + zufällige Minuten',settings:'Zufallsabstand (Minuten)',save:'Abstand speichern',rangeInvalid:'A und B müssen positive Ganzzahlen sein; A ≤ B',storageFailed:'Speichern fehlgeschlagen',noCache:'Zuerst die Liste in Scheduled lesen',readAt:'Liste gelesen um',partialCache:'Nur gelesene Zeilen; selbst bis zum Ende scrollen',resize:'Ziehen, um die Höhe anzupassen',today:'Heute',tomorrow:'Morgen'},
+  pt:{random:'Última publicação + minutos aleatórios',settings:'Intervalo aleatório (minutos)',save:'Salvar intervalo',rangeInvalid:'A e B devem ser inteiros positivos; A ≤ B',storageFailed:'Não foi possível salvar',noCache:'Abra Scheduled para ler a lista primeiro',readAt:'Lista lida às',partialCache:'Apenas linhas lidas; role até o fim',resize:'Arraste para ajustar a altura',today:'Hoje',tomorrow:'Amanhã'},
+});
+function quickStringsFor(doclang,navlang) {
+  const key=languageKey(doclang) || languageKey(navlang) || 'en';
+  return {...QUICK_STRINGS[key],...QUICK_EXTRAS[key]};
+}
+function slotLabel(id,at,now,doclang,navlang) {
+  const labels=quickStringsFor(doclang,navlang);
+  if(!at)return '';
+  const same=(a,b)=>a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+  const tomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+  const prefix=same(at,now) ? labels.today : same(at,tomorrow) ? labels.tomorrow : '';
+  const lang=languageKey(doclang) || languageKey(navlang) || 'en';
+  const date=new Intl.DateTimeFormat(lang,{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'}).format(at);
+  const time=String(at.getHours()).padStart(2,'0')+':'+String(at.getMinutes()).padStart(2,'0');
+  return `${prefix} ${date} ${time}`.trim();
+}
 function languageKey(value) {
   const tag = typeof value === 'string' ? value.toLowerCase() : '';
   if (/^zh(?:-|$)/.test(tag)) return /(?:-hant|-tw|-hk|-mo)(?:-|$)/.test(tag) ? 'zh-Hant' : 'zh-Hans';
@@ -137,18 +162,19 @@ function clampPosition(pos, width, height) {
   return { x: Math.min(maxX, Math.max(Math.min(16, maxX), pos.x)), y: Math.min(maxY, Math.max(Math.min(16, maxY), pos.y)) };
 }
 // Clamp an independent panel without rewriting its original saved coordinates.
-function panelSize(width, height) {
-  return { width:Math.max(0,Math.min(344,width-32)), height:Math.max(0,Math.min(Math.floor(height*.6),height-32)) };
+function panelSize(width, height, requested=null) {
+  const desired=Number.isFinite(requested) && requested>0 ? requested : Math.floor(height*2/3);
+  return { width:Math.max(0,Math.min(344,width-32)), height:Math.max(0,Math.min(Math.max(180,desired),height-32)) };
 }
-function clampPanelPosition(pos, width, height) {
-  const size = panelSize(width,height);
+function clampPanelPosition(pos, width, height, requested=null) {
+  const size = panelSize(width,height,requested);
   const maxX=Math.max(0,width-size.width-16), maxY=Math.max(0,height-size.height-16);
   return {x:Math.min(maxX,Math.max(Math.min(16,maxX),pos.x)),y:Math.min(maxY,Math.max(Math.min(16,maxY),pos.y))};
 }
 // Only the panel moves. Try above/below, then beside the immutable button anchor.
 function panelPlacement(width, height, anchor, obstacles, naturalHeight, minimum) {
   const panelWidth = Math.min(344, Math.max(0, width - 32));
-  const cap = Math.min(Math.floor(height * .6), height - 32);
+  const cap = height - 32;
   const align = left => Math.max(16, Math.min(width - panelWidth - 16, left));
   const above = anchor.y - 12 - 16, below = height - 16 - anchor.y - 44 - 12;
   const lefts = [...new Set([align(anchor.x+44-panelWidth),align(anchor.x),
@@ -176,5 +202,5 @@ function panelPlacement(width, height, anchor, obstacles, naturalHeight, minimum
   }
   return { clear:false };
 }
-globalThis.XSCHED_UI = { STRINGS, QUICK_STRINGS, quickStringsFor, stringsFor, createAuthorLink, overlaps, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition };
+globalThis.XSCHED_UI = { STRINGS, QUICK_STRINGS, QUICK_EXTRAS, quickStringsFor, slotLabel, stringsFor, createAuthorLink, overlaps, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition };
 })();

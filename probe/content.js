@@ -9,6 +9,9 @@ const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 const { stringsFor, createAuthorLink, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition } = globalThis.XSCHED_UI;
 const positionStore = globalThis.XSCHED_POSITION;
 const quick = globalThis.XSCHED_QUICK;
+let quickRange = positionStore.loadRange() || {a:10,b:30};
+let lastCache = positionStore.loadCache();
+let cacheSignature = '';
 let quickSignature = "";
 let quickStatus = "";
 
@@ -45,7 +48,9 @@ let anchor = null;
 let drag = null;
 let suppressClick = false;
 let savedPanelPosition = positionStore.loadPanel();
-let panelAnchor = savedPanelPosition ? clampPanelPosition(savedPanelPosition,innerWidth,innerHeight) : null;
+let savedPanelHeight = positionStore.loadHeight();
+let panelAnchor = savedPanelPosition ? clampPanelPosition(savedPanelPosition,innerWidth,innerHeight,savedPanelHeight) : null;
+let heightDrag = null;
 let panelDrag = null;
 let suppressPanelClick = false;
 let deferPanelSave = false; // reset previews must leave both keys deleted
@@ -62,6 +67,12 @@ function cancelPanelDrag() {
   panelDrag = null;
   panelAnchor = active.origin;
   suppressPanelClick = true;
+  releaseDragCapture(active);
+}
+function cancelHeightDrag() {
+  if(!heightDrag)return;
+  const active=heightDrag;heightDrag=null;
+  savedPanelHeight=active.original;panelHeight=active.height;
   releaseDragCapture(active);
 }
 function persistPanel() {
@@ -128,7 +139,7 @@ function ensureHost() {
   if (retired) return null;
   for (const old of document.querySelectorAll("#xsched-probe-root")) if (old !== host) retireLegacy(old);
   if (host && host.isConnected) return host;
-  cancelDrag(); cancelPanelDrag();
+  cancelDrag(); cancelPanelDrag(); cancelHeightDrag();
   const now = Date.now();
   if (now - remountWindowStart >= REMOUNT_WINDOW_MS) {
     remountWindowStart = now;
@@ -175,7 +186,7 @@ function ensureHost() {
     border: "1px solid #38444d",
     "box-shadow": "0 8px 28px rgba(0, 0, 0, 0.45)",
     padding: "10px 12px 12px",
-    "max-height": "60vh",
+    "max-height": "calc(100vh - 32px)",
     "max-width": "344px",
     overflow: "auto",
     "flex-direction": "column",
@@ -211,7 +222,7 @@ function ensureHost() {
     if (!collapsed && deferPanelSave) persistPanel();
   });
   shortcut.addEventListener('pointerdown', event => {
-    if (drag || panelDrag || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+    if (drag || panelDrag || heightDrag || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
     suppressClick = false;
     drag = { id:event.pointerId, target:shortcut, startX:event.clientX, startY:event.clientY, origin:{...anchor}, moved:false };
     try { shortcut.setPointerCapture(event.pointerId); } catch { /* mouse-only DOM fixtures */ }
@@ -249,9 +260,14 @@ function ensureHost() {
   shortcut.addEventListener('pointercancel', cancel);
   shortcut.addEventListener('lostpointercapture', cancel);
   panel.addEventListener('pointerdown', event => {
+    if(event.target?.closest?.('.panel-resizer') && !drag && !panelDrag && !heightDrag && event.button===0 && event.isPrimary!==false && Number.isFinite(event.clientY)) {
+      heightDrag={id:event.pointerId,target:panel,startY:event.clientY,height:panelHeight,original:savedPanelHeight,moved:false};
+      try {panel.setPointerCapture(event.pointerId);} catch { /* DOM fixtures */ }
+      event.preventDefault();return;
+    }
     if (!panelDrag) suppressPanelClick=false;
     const target = event.target;
-    if (!target?.closest?.('.panel-header') || target.closest('button, a, input, textarea, select, [role="button"]') || drag || panelDrag
+    if (!target?.closest?.('.panel-header') || target.closest('button, a, input, textarea, select, [role="button"]') || drag || panelDrag || heightDrag
       || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY) || !panelAnchor) return;
     suppressPanelClick = false;
     panelDrag = {id:event.pointerId,target:panel,startX:event.clientX,startY:event.clientY,origin:{...panelAnchor},moved:false};
@@ -262,7 +278,7 @@ function ensureHost() {
     const dx=event.clientX-panelDrag.startX,dy=event.clientY-panelDrag.startY;
     if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!panelDrag.moved && Math.hypot(dx,dy)<6)) return;
     panelDrag.moved=true;event.preventDefault();
-    panelAnchor=clampPanelPosition({x:panelDrag.origin.x+dx,y:panelDrag.origin.y+dy},innerWidth,innerHeight);
+    panelAnchor=clampPanelPosition({x:panelDrag.origin.x+dx,y:panelDrag.origin.y+dy},innerWidth,innerHeight,savedPanelHeight);
     positionUI();
   });
   panel.addEventListener('pointerup', event => {
@@ -277,6 +293,28 @@ function ensureHost() {
   };
   panel.addEventListener('pointercancel',cancelPanel);
   panel.addEventListener('lostpointercapture',cancelPanel);
+  panel.addEventListener('pointermove',event=>{
+    if(!heightDrag || event.pointerId!==heightDrag.id)return;
+    const delta=event.clientY-heightDrag.startY;
+    if(!Number.isFinite(delta) || (!heightDrag.moved && Math.abs(delta)<6))return;
+    heightDrag.moved=true;event.preventDefault();
+    savedPanelHeight=Math.max(180,Math.min(innerHeight-16-panelAnchor.y,heightDrag.height+delta));
+    panelHeight=Math.min(savedPanelHeight,Math.max(0,innerHeight-16-panelAnchor.y));
+    positionUI();
+  });
+  panel.addEventListener('pointerup',event=>{
+    if(!heightDrag || event.pointerId!==heightDrag.id)return;
+    const active=heightDrag;heightDrag=null;
+    if(active.moved) {
+      suppressPanelClick=true;
+      if(!positionStore.saveHeight(savedPanelHeight))savedPanelHeight=active.original;
+      panelNeedsLayout=true;positionUI();
+    }
+    releaseDragCapture(active);
+  });
+  const cancelHeight=event=>{if(heightDrag && event.pointerId===heightDrag.id){cancelHeightDrag();positionUI();}};
+  panel.addEventListener('pointercancel',cancelHeight);
+  panel.addEventListener('lostpointercapture',cancelHeight);
   panel.addEventListener('click',event => {
     if (suppressPanelClick && event.detail !== 0) {
       suppressPanelClick=false;event.preventDefault();event.stopImmediatePropagation();
@@ -392,7 +430,7 @@ function positionUI() {
   const panel = host.shadowRoot.querySelector("section");
   const shortcut = host.shadowRoot.querySelector(".shortcut");
   const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
-  const size=panelSize(innerWidth,innerHeight);
+  const size=panelSize(innerWidth,innerHeight,savedPanelHeight);
   css(panel,{position:'fixed',right:'auto',bottom:'auto',width:`${size.width}px`,display:wantsOpen?'flex':'none'});
   if (!wantsOpen) { shortcut.setAttribute('aria-expanded','false');return; }
   const chromeHeight=(panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
@@ -400,7 +438,7 @@ function positionUI() {
   const minimum=chromeHeight+32;
   if (!panelAnchor) {
     const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
-    // Full 60vh keeps size reproducible after reload with only numeric x/y persisted.
+    // Initial height is 2/3 viewport, or the independent saved numeric height.
     const chosen=panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,size.height);
     if (!chosen.clear || size.height<minimum) {
       css(panel,{display:'none'});shortcut.setAttribute('aria-expanded','false');return;
@@ -410,12 +448,12 @@ function positionUI() {
     if (!deferPanelSave) persistPanel();
   }
   if (panelNeedsLayout) {
-    panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight);
+    panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight);
     panelHeight=size.height;
     // On resize/reload only, shorten at fixed x/y to avoid newly intersecting widgets.
     // Never reposition the panel in response to button drag, polling or mutations.
     const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
-    for (const rect of obstacles) {
+    for (const rect of savedPanelHeight===null ? obstacles : []) {
       if (panelAnchor.x<rect.right+8 && panelAnchor.x+size.width>rect.left-8 && rect.bottom>panelAnchor.y) {
         panelHeight=Math.min(panelHeight,Math.max(0,rect.top-8-panelAnchor.y));
       }
@@ -425,6 +463,7 @@ function positionUI() {
     panelHeight=Math.max(Math.min(size.height,minimum),panelHeight);
     panelNeedsLayout=false;
   }
+  panelHeight=Math.min(panelHeight,Math.max(0,innerHeight-16-panelAnchor.y));
   css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${size.height}px`});
   const visible=panelHeight>=minimum;
   shortcut.setAttribute('aria-expanded',String(visible));
@@ -457,7 +496,9 @@ function render(report, items) {
   }).replace("\n", "\n" + quick.diagnostic(detected.counts) + (quick.fillDiagnostic(document) ? "\n" + quick.fillDiagnostic(document) : "") + "\n");
 
   const strings = stringsFor(document.documentElement.lang, navigator.language);
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
+  const now=new Date();
+  const slotLabels=quick.SLOT_IDS.map(id=>globalThis.XSCHED_UI.slotLabel(id,quick.nextSlot(id,now),now,document.documentElement.lang,navigator.language));
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,slotLabels,items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
     positionUI();
@@ -491,6 +532,7 @@ function render(report, items) {
   minimize.addEventListener("click", event => {
     event.preventDefault(); event.stopPropagation();
     cancelPanelDrag();
+    cancelHeightDrag();
     collapsed = true;
     render(lastReport, lastItems);
   });
@@ -512,19 +554,42 @@ function render(report, items) {
     status.className = 'quick-status';
     status.setAttribute('role','status');
     body.append(textNode('strong',labels.heading),status,slots);
-    quick.SLOT_IDS.forEach((id,index) => {
-      const label = labels.slots[index];
+    const cacheLine=textNode('p',lastCache ? `${labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
+    cacheLine.className='quick-cache';
+    body.append(cacheLine);
+    const settings=css(document.createElement('div'),{display:'flex',gap:'6px','align-items':'center','flex-wrap':'wrap',margin:'0 0 8px'});
+    settings.className='quick-settings';settings.append(textNode('strong',labels.settings));
+    const inputA=document.createElement('input'),inputB=document.createElement('input');
+    for(const entry of [[inputA,'a','A'],[inputB,'b','B']]) {
+      const input=entry[0];input.type='number';input.min='1';input.step='1';input.value=String(quickRange[entry[1]]);
+      input.dataset.xschedRange=entry[1];input.setAttribute('aria-label',`${labels.settings} ${entry[2]}`);
+      css(input,{width:'64px',background:'#15202b',color:'white',border:'1px solid #536471','border-radius':'4px'});settings.append(input);
+    }
+    const saveRange=makeButton(labels.save,'xschedRangeSave');saveRange.title=labels.save;saveRange.setAttribute('aria-label',labels.save);
+    saveRange.disabled=quick.isFilling(document);
+    saveRange.addEventListener('click',event=>{
+      event.preventDefault();event.stopPropagation();if(!event.isTrusted)return;
+      const value={a:Number(inputA.value),b:Number(inputB.value)};
+      if(!quick.validRange(value))quickStatus='rangeInvalid';
+      else if(!positionStore.saveRange(value))quickStatus='storageFailed';
+      else {quickRange=value;quickStatus='';}
+      schedule();
+    });
+    settings.append(saveRange);body.append(settings);
+    [...quick.SLOT_IDS,'random'].forEach((id,index) => {
+      const label = id==='random' ? `${labels.random} ${quickRange.a}–${quickRange.b}` : slotLabels[index];
+      if(!label)return;
       const button = makeButton(label);
       button.dataset.xschedSlot = id;
-      button.disabled = !detected.ready || quick.isFilling(document);
-      button.title = detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
+      button.disabled = !detected.ready || quick.isFilling(document) || (id==='random' && !lastCache);
+      button.title = id==='random' && !lastCache ? labels.noCache : detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
       button.setAttribute('aria-label',button.title);
       if (button.disabled) css(button,{opacity:'.55',cursor:'default'});
       button.addEventListener('click',async event => {
         event.preventDefault();event.stopPropagation();
         if (!event.isTrusted) return;
         // Re-detect and preflight at the instant of the user's click, never reuse old controls.
-        const pending = quick.fillSlotResult(document,id);
+        const pending = quick.fillSlotResult(document,id,new Date(),{cache:lastCache,range:quickRange});
         schedule();
         quickStatus = await pending;
         status.textContent = labels[quickStatus] || labels.missing;
@@ -584,7 +649,7 @@ function render(report, items) {
     reset.setAttribute('aria-label', strings.reset);
     reset.addEventListener('click', event => {
       event.preventDefault(); event.stopPropagation();
-      cancelDrag(); cancelPanelDrag();
+      cancelDrag(); cancelPanelDrag(); cancelHeightDrag();
       positionStore.reset(); savedPosition=null;savedPanelPosition=null;panelAnchor=null;
       deferPanelSave=true;panelNeedsLayout=true;
       applyAnchor(true); positionUI();
@@ -595,6 +660,9 @@ function render(report, items) {
     const author = css(createAuthorLink(), { position:'absolute', right:'12px', bottom:'1px', margin:'0', font:'10px/1 ui-sans-serif, system-ui, sans-serif', color:'#8b98a5', 'text-decoration':'underline' });
     author.className = 'panel-author';
     panel.append(author);
+    const resizer=css(document.createElement('div'),{height:'12px','flex-shrink':'0',cursor:'ns-resize','touch-action':'none','user-select':'none','text-align':'center',color:'#8b98a5'});
+    resizer.className='panel-resizer';resizer.textContent='═';resizer.setAttribute('role','separator');resizer.setAttribute('aria-orientation','horizontal');resizer.setAttribute('aria-label',labels.resize);resizer.title=labels.resize;
+    panel.append(resizer);
     body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
   }
 
@@ -619,8 +687,18 @@ function tick() {
   if (report.onScheduled) {
     const replace = report.needsScroll === 0 && report.virtualized === 0;
     accumulated = mergeItems(accumulated, report.items, { replace });
+    const times=accumulated.map(item=>item.at?.getTime()).filter(value=>Number.isSafeInteger(value) && value>0);
+    const signature=JSON.stringify(times);
+    if(signature!==cacheSignature) {
+      cacheSignature=signature;
+      if(times.length && report.timeFail===0) {
+        const value={time:Math.max(...times),readAt:Date.now()};
+        if(positionStore.saveCache(value))lastCache=value;
+      } else if(report.empty && !times.length) {if(positionStore.clearCache())lastCache=null;}
+    }
   } else {
     accumulated = [];
+    cacheSignature='';
   }
   render(report, accumulated);
 }
@@ -655,11 +733,12 @@ function pollLocation() {
   }
   if (!host || !host.isConnected) scheduleRemount();
   else if (hostMounted(host) !== Boolean(mounted)) schedule();
+  else if(lastReport) render(lastReport,lastItems); // refresh actual slot dates at the margin boundary
 }
 
 function onResize() {
-  cancelDrag(); cancelPanelDrag();
-  if (panelAnchor) panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight);
+  cancelDrag(); cancelPanelDrag(); cancelHeightDrag();
+  if (panelAnchor) panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight);
   panelNeedsLayout=true;
   applyAnchor(true); positionUI(); schedule();
 }
@@ -702,6 +781,7 @@ function start() {
 }
 
 function stop() {
+  if(heightDrag)cancelHeightDrag();
   if (drag) { cancelDrag(); applyAnchor(false); }
   if (panelDrag) { cancelPanelDrag(); positionUI(); }
   observer?.disconnect();
