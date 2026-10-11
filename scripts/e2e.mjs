@@ -404,7 +404,7 @@ async function main() {
       chrome.runtime.getManifest = () => ({version: '0.0.2'});
     ` });
     await until(async () => (await probeState(page)).version.includes('⚠ 版本不符'), 'manifest mismatch warning');
-    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.1.3 / manifest 0.0.2'), 'diagnostic mismatch warning');
+    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.1.4 / manifest 0.0.2'), 'diagnostic mismatch warning');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-version-mismatch.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: `chrome.runtime.getManifest = () => { throw new Error('Extension context invalidated. private account'); };` });
     await until(async () => (await probeState(page)).version.includes('擴充已重新載入'), 'context invalidated warning');
@@ -502,7 +502,7 @@ async function main() {
       const panel=shadow.querySelector('section'),body=shadow.querySelector('.panel-body');
       return {height:panel.getBoundingClientRect().height,max:parseFloat(getComputedStyle(panel).maxHeight),overflow:getComputedStyle(body).overflowY,scroll:body.scrollHeight,client:body.clientHeight};
     });
-    assert(scrollInfo.height<=400.5 && scrollInfo.max<=400 && scrollInfo.overflow==='auto' && scrollInfo.scroll>scrollInfo.client, '1280x600: panel <=2/3 viewport by default with independently scrollable content');
+    assert(scrollInfo.height>=400 && scrollInfo.height<=568.5 && scrollInfo.max<=568 && scrollInfo.overflow==='auto' && scrollInfo.scroll>scrollInfo.client, '1280x600: panel meets 2/3 floor and viewport cap with independently scrollable content');
     await checkActions('short viewport before scroll');
     await checkNative('1280x600 native avoidance');
     await page.evaluate(() => {const body=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');body.scrollTop=body.scrollHeight;});
@@ -705,7 +705,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched probe v0\.1\.3 \(manifest 0\.1\.3\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.1\.4 \(manifest 0\.1\.4\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
@@ -801,7 +801,7 @@ async function main() {
     const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
     const skeleton = skeletonCopies.result.value[0];
-    assert(/^xsched-skeleton v0\.1\.3 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(/^xsched-skeleton v0\.1\.4 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
     for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture", "punkcan", "https://x.com/punkcan"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
@@ -819,7 +819,7 @@ async function main() {
       const s = await probeState(page);
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
-    assert(/^xsched-skeleton v0\.1\.3 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    assert(/^xsched-skeleton v0\.1\.4 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
     const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
     await select.asElement().click();
     await select.dispose();
@@ -1394,7 +1394,7 @@ async function main() {
 
     const cache=await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled')));
     const lastEpoch=await page.evaluate(()=>new Date(2028,0,2,20).getTime());
-    assert(cache.time===lastEpoch && Object.keys(cache).sort().join('|')==='readAt|time' && Object.values(cache).every(Number.isFinite),'cache is last epoch plus read time only');
+    assert(cache.time===lastEpoch && Object.keys(cache).sort().join('|')==='readAt|source|time' && cache.source===1 && Object.values(cache).every(Number.isFinite),'cache has last epoch, read time and numeric list source only');
     await page.screenshot({path:join(DOCS,'v1.0-quick014-cached-list.png')});
     await quickFixture('quick-real-numeric');
     assert(await page.evaluate(()=>!document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-slot="random"]').disabled),'persisted cache enables random in composer');
@@ -1420,10 +1420,10 @@ async function main() {
     assert(fallback.values.year==='2027'&&fallback.values.month==='12'&&fallback.values.day==='31'&&fallback.values.hour==='9'&&fallback.values.period==='PM'&&fallback.values.minute==='20','expired cached result uses frozen now 21:00 + 20 minutes');
     assert(['confirm','schedule','post','calendar','submit'].every(key=>fallback.counts[key]===0),'expired fallback never activates');
     const buttonBeforeHeight=await buttonRect(),panelBeforeHeight=await panelRect();
-    assert(Math.abs(panelBeforeHeight.height-Math.floor(820*2/3))<=1,'default height is approximately 2/3 viewport');
+    assert(panelBeforeHeight.height>=Math.floor(820*2/3) && panelBeforeHeight.height<=788,'default height meets 2/3 floor and fits viewport');
     const handle=await page.evaluate(()=>{const r=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-resizer').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};});
-    await page.mouse.move(handle.x,handle.y);await page.mouse.down();await page.mouse.move(handle.x,handle.y-80,{steps:8});await page.mouse.up();await sleep(150);
-    const resized=await panelRect();assert(Math.abs(resized.height-panelBeforeHeight.height+80)<=1,'physical bottom handle changes height');
+    await page.mouse.move(handle.x,handle.y);await page.mouse.down();await page.mouse.move(handle.x,handle.y+80,{steps:8});await page.mouse.up();await sleep(150);
+    const resized=await panelRect();assert(Math.abs(resized.height-panelBeforeHeight.height-80)<=1,'physical bottom handle changes height');
     assert(JSON.stringify(await buttonRect())===JSON.stringify(buttonBeforeHeight),'height change never moves Dagaz button');
     assert(resized.left===panelBeforeHeight.left&&resized.top===panelBeforeHeight.top,'height change keeps independent panel anchor');
     const storedHeight=await page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.panelHeight')));
@@ -1438,6 +1438,134 @@ async function main() {
     await checkActions('013 height-clamped',true);
     await page.screenshot({path:join(DOCS,'v1.0-quick014-height-clamped.png')});
     console.log('  ✓ 013: final-only readback, bounded rebuild retries, random cache/fallback, numeric interval, actual dates, independent persisted height and clamp');
+
+    // ── 0.1.4: immediate fill geometry and passive completion observation ─────
+    // These are synthetic X controls. ONLY page.mouse / Puppeteer user input may
+    // activate them. All preceding automatic-fill cases retain zero native clicks.
+    await page.setViewport({width:1280,height:820});
+    const cacheKey='xsched.probe.lastScheduled';
+    async function checkQuickGeometry(label) {
+      const state=await page.evaluate(()=>{
+        const host=document.getElementById('xsched-probe-root'),root=host.shadowRoot;
+        const panel=root.querySelector('section'),area=root.querySelector('.quick-controls'),body=root.querySelector('.panel-body');
+        const p=panel.getBoundingClientRect(),b=body.getBoundingClientRect(),q=area.getBoundingClientRect();
+        const within=r=>r.width>0 && r.height>0 && r.left>=b.left && r.right<=b.right+1 && r.top>=b.top-1 && r.bottom<=b.bottom+1 && r.top>=0 && r.bottom<=innerHeight;
+        const buttons=[...area.querySelectorAll('button')].map(button=>{
+          const r=button.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;
+          return {visible:within(r),hit:document.elementFromPoint(x,y)===host && root.elementFromPoint(x,y)===button};
+        });
+        return {height:p.height,floor:Math.floor(innerHeight*2/3),cap:innerHeight-32,quick:within(q),slots:area.querySelectorAll('[data-xsched-slot]').length,buttons};
+      });
+      assert(state.height>=state.floor && state.height<=state.cap+1,label+': height floor and viewport cap');
+      assert(state.quick && state.slots===5 && state.buttons.length===6,label+': full quick area, all five slots and interval save visible');
+      for(const button of state.buttons)assert(button.visible && button.hit,label+': every quick button visible and hit-testable');
+      await checkActions(label,true);
+      return state.height;
+    }
+    await page.evaluate(()=>{
+      window.localStorage.setItem('xsched.probe.panelHeight',JSON.stringify({height:80}));
+      window.localStorage.setItem('xsched.probe.lastScheduled',JSON.stringify({time:new Date(2028,0,1,9).getTime(),readAt:new Date(2027,11,31,21).getTime(),source:1}));
+    });
+    for(const viewport of [{width:1280,height:820},{width:1280,height:600}]) {
+      await page.setViewport(viewport);await quickFixture('quick-real-numeric');
+      const height=await checkQuickGeometry('014 just opened');
+      await clickShadow('[data-xsched-slot="lunch"]');
+      const during=await checkQuickGeometry('014 immediately after slot click');
+      assert(during===height,'first immediate fill cannot collapse or resize panel');
+      const result=await until(async()=>{const v=await realPickerState();return !v.busy && v.status==='已填入欄位；尚未排程'?v:null;},'014 complete immediate fill');
+      assert((await checkQuickGeometry('014 settled fill'))===height,'settled status leaves height unchanged');
+      assert(['confirm','schedule','post','calendar','submit'].every(key=>result.counts[key]===0),'014 immediate fill never activates native controls');
+      await page.screenshot({path:join(DOCS,viewport.height===600?'v1.0-quick014-height-floor-small.png':'v1.0-quick014-immediate-fill.png')});
+    }
+    await page.setViewport({width:1280,height:820});
+    async function completionFixture(mode,priorHour=9) {
+      await page.evaluate((hour)=>window.localStorage.setItem('xsched.probe.lastScheduled',JSON.stringify({time:new Date(2028,0,1,hour).getTime(),readAt:new Date(2027,11,31,21).getTime(),source:1})),priorHour);
+      await quickFixture('quick-real-numeric');
+      await page.evaluate(mode=>{
+        window.fixtureUntrustedActivations=0;
+        const picker=document.querySelector('[role="dialog"][aria-modal=true]'),composer=picker.parentElement.closest('[role="dialog"]');
+        const schedule=document.getElementById('schedule'),confirm=document.getElementById('confirm');
+        schedule.textContent=mode==='unknown'?'Unverified Schedule label':'Schedule';confirm.textContent=mode==='cancel'?'Cancel':'Confirm';
+        const toast=()=>{const node=document.createElement('div');node.setAttribute('role','alert');node.textContent='Your post was scheduled.';document.body.append(node);};
+        if(mode==='stale')toast();
+        for(const button of document.querySelectorAll('button'))button.addEventListener('click',event=>{if(!event.isTrusted)window.fixtureUntrustedActivations++;});
+        confirm.addEventListener('click',()=>{if(mode==='cancel'||mode==='confirm-only'||mode==='two-stage')picker.remove();});
+        schedule.addEventListener('click',()=>{
+          if(mode==='error') {const node=document.createElement('div');node.setAttribute('role','alert');node.textContent='Error';document.body.append(node);return;}
+          if(mode==='toast'){toast();return;}
+          if(mode==='stale')return;
+          picker.remove();
+        });
+        if(mode==='two-stage') {
+          const final=document.createElement('button');final.type='button';final.id='fixture-final-schedule';final.textContent='Schedule';composer.append(final);
+          final.addEventListener('click',event=>{if(!event.isTrusted)window.fixtureUntrustedActivations++;window.fixtureSend.schedule++;composer.remove();});
+        }
+      },mode);
+      const before=await page.evaluate(key=>window.localStorage.getItem(key),cacheKey);
+      if(mode!=='unfilled') {
+        await clickShadow('[data-xsched-slot="lunch"]');
+        await until(async()=>{const v=await realPickerState();return !v.busy && v.status==='已填入欄位；尚未排程';},'014 observation candidate filled');
+        assert(await page.evaluate(key=>window.localStorage.getItem(key),cacheKey)===before,'fill alone cannot advance cache: '+mode);
+        const counts=(await realPickerState()).counts;
+        assert(['confirm','schedule','post','calendar','submit'].every(key=>counts[key]===0),'zero native activations before simulated USER: '+mode);
+      }
+      if(mode==='changed') {
+        await page.evaluate(()=>{
+          const control=document.getElementById('fake-select-minute');
+          Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(control,'31');
+          for(const type of ['input','change'])control.dispatchEvent(new Event(type,{bubbles:true}));
+        });
+        await until(async()=> /schedWatch=0/.test((await probeState(page)).diag),'014 edit disarms watch');
+      }
+      if(mode==='plain')await page.evaluate(()=>document.querySelector('[aria-modal=true]').remove());
+      else if(['cancel','confirm-only','two-stage'].includes(mode))await page.click('#confirm');
+      else await page.click('#schedule');
+      if(mode==='two-stage') {
+        await sleep(550);
+        assert(await page.evaluate(key=>window.localStorage.getItem(key),cacheKey)===before,'Confirm closure is provisional');
+        await page.click('#fixture-final-schedule');
+      }
+      const success=['close','toast','two-stage','older'].includes(mode);
+      if(success && priorHour<12)await until(()=>page.evaluate(key=>JSON.parse(window.localStorage.getItem(key)).source===2,cacheKey),'014 cache completion: '+mode);
+      else await sleep(1000);
+      const result=await page.evaluate(key=>({cache:JSON.parse(window.localStorage.getItem(key)),raw:window.localStorage.getItem(key),label:document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-cache').textContent,counts:{...window.fixtureSend},untrusted:window.fixtureUntrustedActivations}),cacheKey);
+      assert(result.untrusted===0 && result.counts.submit===0 && result.counts.post===0 && result.counts.calendar===0,'no extension activation or submission: '+mode);
+      assert(result.counts.schedule===(['plain','cancel','confirm-only'].includes(mode)?0:1),'native schedule count is exactly the explicit test-user click: '+mode);
+      assert(result.counts.confirm===(['cancel','confirm-only','two-stage'].includes(mode)?1:0),'Confirm/cancel count is exactly the explicit test-user click: '+mode);
+      if(success && priorHour<12) {
+        const expected=await page.evaluate(()=>new Date(2028,0,1,12,30).getTime());
+        assert(result.cache.time===expected && result.cache.source===2 && result.label.includes('剛才排的'),'observed filled time and source: '+mode);
+      } else assert(result.raw===before,'cancel/error/ambiguous/older outcome leaves entire cache unchanged: '+mode);
+      assert(Object.keys(result.cache).sort().join('|')==='readAt|source|time' && Object.values(result.cache).every(Number.isFinite),'cache contains numeric schema only: '+mode);
+      await page.screenshot({path:join(DOCS,'v1.0-quick014-observed-'+mode+'.png')});
+    }
+    for(const mode of ['close','toast','plain','cancel','changed','error','unfilled','unknown','stale','confirm-only','two-stage'])await completionFixture(mode);
+    await completionFixture('older',14);
+    // Establish an OBSERVED cache later than the next list's maximum, rather than
+    // just checking that a list-derived cache can be overwritten by another list.
+    await page.evaluate(()=>window.localStorage.setItem('xsched.probe.lastScheduled',JSON.stringify({time:new Date(2028,0,2,20).getTime(),readAt:new Date(2027,11,31,21).getTime(),source:1})));
+    await quickFixture('quick-real-numeric');await editRange(20,20);
+    await page.evaluate(()=>{
+      const button=document.getElementById('schedule');button.textContent='Schedule';
+      button.addEventListener('click',()=>document.querySelector('[aria-modal=true]').remove());
+    });
+    await clickShadow('[data-xsched-slot="random"]');
+    const laterFill=await until(async()=>{const v=await realPickerState();return !v.busy && v.status==='已填入欄位；尚未排程'?v:null;},'014 later candidate filled');
+    assert(laterFill.values.day==='2' && laterFill.values.hour==='8' && laterFill.values.minute==='20' && laterFill.values.period==='PM','later observed candidate is Jan 2 20:20');
+    assert(['confirm','schedule','post','calendar','submit'].every(key=>laterFill.counts[key]===0),'later candidate has zero automatic native activations');
+    await page.click('#schedule');
+    await until(()=>page.evaluate(()=>{const saved=JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled'));return saved.source===2 && saved.time===new Date(2028,0,2,20,20).getTime();}),'014 later observed cache established');
+    assert(await page.evaluate(()=>window.fixtureSend.schedule===1 && window.fixtureSend.submit===0),'later candidate has exactly one test-user schedule click and no submit');
+    // The later observed time is not authoritative over the next list read.
+    await open('quick013-scheduled');await until(async()=> (await probeState(page)).count===2,'014 list re-read');
+    const authorityContext=await until(findExtensionContext,'014 list context');await installQuickClock(authorityContext);
+    await page.evaluate(()=>document.querySelectorAll('[role="button"] span')[1].textContent='Will send on Sun, Jan 2, 2028 at 8:01 PM');
+    await until(()=>page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled')).time===new Date(2028,0,2,20,1).getTime()),'014 re-read under future clock');
+    await page.evaluate(()=>document.querySelectorAll('[role="button"] span')[1].textContent='Will send on Sun, Jan 2, 2028 at 8:00 PM');
+    await until(()=>page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled')).time===new Date(2028,0,2,20).getTime()),'014 authoritative fake list restored');
+    assert(await page.evaluate(()=>{const saved=JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled'));return saved.source===1 && saved.time===new Date(2028,0,2,20).getTime();}),'Scheduled list replaces observed source and maximum');
+    await page.screenshot({path:join(DOCS,'v1.0-quick014-list-authoritative.png')});
+    console.log('  ✓ 014: immediate full quick area / height floor, passive trusted completion, cancellation/error vetoes, max-only advance and authoritative list');
 
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);

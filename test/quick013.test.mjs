@@ -64,6 +64,37 @@ test('numeric persistence: exactly five fixed keys, strict schemas, invalid JSON
   Object.defineProperty(f.window,'localStorage',{get(){throw Error('blocked');}});
   assert.equal(f.api.loadHeight(),null);assert.equal(f.api.saveRange({a:1,b:2}),false);
 });
+test('0.1.4 cache source is a numeric enum only; legacy cache remains readable and malicious source fails closed',()=>{
+ const f=store(),key='xsched.probe.lastScheduled',base={time:now.getTime(),readAt:now.getTime()};
+ assert.equal(f.api.saveCache(base),true);assert.deepEqual({...f.api.loadCache()},base);
+ for(const source of [1,2]) {
+  assert.equal(f.api.saveCache({...base,source}),true);
+  assert.deepEqual(JSON.parse(f.data.get(key)),{...base,source});
+  assert.ok(Object.values(f.api.loadCache()).every(Number.isFinite));
+ }
+ const before=f.data.get(key);
+ for(const source of [0,3,-1,1.1,NaN,Infinity,'1','private',null,{},['2']]) {
+  assert.equal(f.api.saveCache({...base,source}),false);
+  assert.equal(f.data.get(key),before);
+  f.data.set(key,JSON.stringify({...base,source}));assert.equal(f.api.loadCache(),null);
+  f.data.set(key,before);
+ }
+ assert.equal(f.api.saveCache({...base,source:2,body:'private'}),false);
+ let reads=0;assert.equal(f.api.saveCache({...base,get source(){return ++reads<=2?2:'private';}}),false);
+ assert.equal(f.data.get(key),before);
+});
+test('0.1.4 nine cache-source captions and height floor include measured quick area and tiny saved heights',()=>{
+ for(const lang of Object.keys(U.STRINGS)) {
+  const text=U.quickStringsFor(lang,'en');
+  for(const key of ['lastTime','fromList','fromSchedule','recordedAt'])assert.ok(typeof text[key]==='string' && text[key].length,key+'/'+lang);
+  assert.notEqual(text.fromList,text.fromSchedule);
+ }
+ for(const height of [600,820,1024])assert.equal(U.panelSize(1100,height,80).height,Math.floor(height*2/3));
+ assert.equal(U.panelSize(1100,820,80,650).height,650);
+ assert.equal(U.panelSize(390,600,80,900).height,568,'viewport caps a physically oversized quick area');
+ const pos=U.clampPanelPosition({x:9999,y:9999},1100,820,80,650);
+ assert.equal(pos.y,154);assert.ok(pos.y+650<=804);
+});
 test('nine languages show actual future date/time, tomorrow and workday; panel height defaults 2/3 and is bounded',()=>{
   assert.deepEqual(Object.keys(U.QUICK_EXTRAS).sort(),Object.keys(U.STRINGS).sort());
   for(const lang of Object.keys(U.STRINGS)) {

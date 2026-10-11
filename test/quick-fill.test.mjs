@@ -97,6 +97,29 @@ test('0.1.4 failed writer and disposed session cannot arm completion',async()=>{
  const f=fixture();await Q.fillSlotResult(f.document,'morning',now);Q.stopSchedulingWatch(f.document);
  userEvent(f,completionButton(f));f.document.querySelector('[aria-modal=true]').remove();assert.equal(observeTwice(f),null);
 });
+test('0.1.4 stale success / disabled or foreign Schedule / unknown label cannot advance a filled picker',async()=>{
+ for(const mode of ['stale','disabled','foreign','unknown']) {
+  const f=fixture();
+  const toast=f.document.createElement('div');toast.setAttribute('role','status');toast.textContent='Your post was scheduled.';f.document.body.append(toast);
+  await Q.fillSlotResult(f.document,'lunch',now);
+  let button=completionButton(f,mode==='unknown'?'Schedule fixture':'Schedule');
+  if(mode==='foreign'){button=f.document.createElement('button');button.textContent='Schedule';f.document.body.append(button);}
+  if(mode==='disabled')button.disabled=true;
+  userEvent(f,button);
+  if(mode!=='stale')f.document.querySelector('[aria-modal=true]').remove();
+  assert.equal(observeTwice(f),null,mode);
+ }
+});
+test('0.1.4 late error vetoes provisional closure; announcements and their identities never enter diagnostics',async()=>{
+ const f=fixture();await Q.fillSlotResult(f.document,'lunch',now);userEvent(f,completionButton(f));
+ f.document.querySelector('[aria-modal=true]').remove();assert.equal(Q.observeScheduling(f.document,now.getTime()),null);
+ const error=f.document.createElement('div');error.setAttribute('role','alert');
+ const decoy='Error @decoy_handle decoy@example.invalid https://example.invalid/private';error.textContent=decoy;f.document.body.append(error);
+ assert.equal(Q.observeScheduling(f.document,now.getTime()),null,'error blocks second observation');
+ for(const output of [Q.schedulingDiagnostic(f.document),Q.fillDiagnostic(f.document)]) {
+  assert.ok(!output.includes(decoy));assert.ok(!output.includes('decoy'));assert.ok(!output.includes('https'));
+ }
+});
 for(const variant of ['dialog','numeric','padded','zero','period-values'])test(`controlled ${variant}: four slots, dependent day replacement, exact option encodings and no sends`,async()=>{
  const f=fixture(variant);const oldDay=f.field('day');
  for(const id of Q.SLOT_IDS) {

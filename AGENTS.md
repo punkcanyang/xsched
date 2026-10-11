@@ -35,7 +35,7 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 
 ## 本機位置儲存（閘 0.4／0.5 授權範圍）
 
-只允許 `probe/position.js` 存取 x.com 的 `window.localStorage`。原兩個固定 key：`xsched.probe.pos`（鈕）與 `xsched.probe.panelPos`（浮層），值只能是經有限數字驗證的 `{x,y}`。0.1.3 明確授權另三個固定 key：`xsched.probe.quickRange` 的正整數 `{a,b}`（a ≤ b）、`xsched.probe.lastScheduled` 的有效毫秒時間 `{time,readAt}`、`xsched.probe.panelHeight` 的有限正數 `{height}`；每個 schema 拒絕多餘欄位。不存本文、帳號、網址或診斷；不加 storage 權限。其他模組的 localStorage，以及所有 sessionStorage／indexedDB／chrome.storage 仍由 verify 禁止；修改位置模組須重審來源摘要與 storage 攻擊自測。
+只允許 `probe/position.js` 存取 x.com 的 `window.localStorage`。原兩個固定 key：`xsched.probe.pos`（鈕）與 `xsched.probe.panelPos`（浮層），值只能是經有限數字驗證的 `{x,y}`。0.1.3 明確授權另三個固定 key：`xsched.probe.quickRange` 的正整數 `{a,b}`（a ≤ b）、`xsched.probe.lastScheduled` 的有效毫秒時間 `{time,readAt}`（0.1.4 可另含數字 source：1＝列表、2＝觀察到使用者排程完成；拒絕其他列舉與額外欄位）、`xsched.probe.panelHeight` 的有限正數 `{height}`；每個 schema 拒絕多餘欄位。不存本文、帳號、網址或診斷；不加 storage 權限。其他模組的 localStorage，以及所有 sessionStorage／indexedDB／chrome.storage 仍由 verify 禁止；修改位置模組須重審來源摘要與 storage 攻擊自測。
 
 ## 怎麼工作
 
@@ -83,6 +83,12 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 - writer 逐欄重查並等待，全部填完才整組核對。暫時缺節點最多六次辨識、input 時回收最多三次寫入；不同 dialog／移出原 scope 不重試。最終讀回與還原仍核對目前 option 的日曆含義，零送出規則不變。
 - verify 原 21 storage 攻擊保留，追加三個新 key 的外部使用／非授權 key／錯 schema／數字驗證／快照驗證共 13 項成 34；原 49 writer 攻擊保留且調整為新流程對應保護，追加三項有界重試攻擊成 52。其他所有自測與原靜態禁令不減，唯一 storage 模組和 quick／ui／content 的來源摘要同步。
 - e2e 新增 2028 假列表讀取快取、五個時段（無快取第五鈕停用）、隨機間隔與已過快取回退、日期標籤、受控中途修正與暫時節點重建、高度拖曳／reload／窄視窗／固定操作鈕。只有預設高度需求改為約 2/3，原 60vh 斷言相應改成新上限；網路、權限、矩形／命中、送出 click／submit=0 斷言保留。`docs/v1.0-quick013-*.png` 由外部 Chrome e2e 產生；舊截圖保留。
+
+## 快速時段 0.1.4 write-1
+
+- `npm test` 保留舊測試，新增只讀成功觀察：可信使用者親按精確原生排程鈕、原日曆值匹配、相符關閉或新成功提示連續兩次才更新；取消／改值／未知與錯誤提示／舊提示／確認但未排程／失敗／超時都不更新。另測 max 保留、列表較早值覆蓋、九語來源與 reload、數字 source 1/2 及 getter 拒絕；高度至少 2/3 且納入完整快速區、舊高度夾位、立即填值高度不變、標題列拖到底部也不裁切。
+- `npm run verify` 原 66 leak／34 storage／52 writer 及全部其他守門保留，追加成 37 storage／59 writer。唯一位置模組只對原 lastScheduled key 增加 optional 數字 source，仍只存數字、拒絕多餘欄位；四份來源摘要同步。被動監聽原生事件不代表授權派送 click／鼠鍵／submit；防送出禁令不變。
+- `npm run e2e` 新增打開後立即填值幾何、完整快速區和全部按鈕矩形／命中、成功／取消／錯誤等觀察及 max／列表權威覆蓋。原自動填值情境仍要求所有 X click=0；新觀察情境由 Puppeteer 模擬使用者親點原生鈕，單獨核對每次點擊，擴充發起點擊必須 0，submit=0。fixture／時鐘全合成 2027+，保留 0 擴充資源／背景請求與原網路政策，manifest 除版本外與 4f7a084 相同。截圖用 `docs/v1.0-quick014-*.png`，舊圖保留；本機未跑 Chrome 不得宣稱完整 e2e 通過。
 
 ## READY 的標準（PR 說明裡要有）
 

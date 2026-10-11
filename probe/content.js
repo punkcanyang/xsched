@@ -279,7 +279,7 @@ function ensureHost() {
     const dx=event.clientX-panelDrag.startX,dy=event.clientY-panelDrag.startY;
     if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!panelDrag.moved && Math.hypot(dx,dy)<6)) return;
     panelDrag.moved=true;event.preventDefault();
-    panelAnchor=clampPanelPosition({x:panelDrag.origin.x+dx,y:panelDrag.origin.y+dy},innerWidth,innerHeight,savedPanelHeight);
+    panelAnchor=clampPanelPosition({x:panelDrag.origin.x+dx,y:panelDrag.origin.y+dy},innerWidth,innerHeight,savedPanelHeight,panelMinimum);
     positionUI();
   });
   panel.addEventListener('pointerup', event => {
@@ -558,7 +558,7 @@ function render(report, items) {
     status.className = 'quick-status';
     status.setAttribute('role','status');
     quickControls.append(textNode('strong',labels.heading),status,slots);
-    const cacheLine=textNode('p',lastCache ? `${labels.lastTime}: ${formatTime(new Date(lastCache.time))} — ${lastCache.source===2 ? labels.fromSchedule : labels.fromList}. ${labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
+    const cacheLine=textNode('p',lastCache ? `${labels.lastTime}: ${formatTime(new Date(lastCache.time))} — ${lastCache.source===2 ? labels.fromSchedule : labels.fromList}. ${lastCache.source===2 ? labels.recordedAt : labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
     cacheLine.className='quick-cache';
     quickControls.append(cacheLine);
     const settings=css(document.createElement('div'),{display:'flex',gap:'6px','align-items':'center','flex-wrap':'wrap',margin:'0 0 8px'});

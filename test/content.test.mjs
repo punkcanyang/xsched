@@ -661,3 +661,49 @@ test('0.1.3 height handle persists only height, clamps on resize, reloads, and c
  reload.pointer('pointerdown',20,100,{selector:'.panel-resizer'});reload.pointer('pointermove',20,60,{selector:'section'});reload.pointer('pointercancel',20,60,{selector:'section'});
  assert.equal(captures.size,0);assert.deepEqual(coordinates(reload,'section'),before);assert.equal(JSON.parse(f.stored.get('xsched.probe.panelHeight')).height,586);
 });
+test('0.1.4 saved tiny height and obstacle shortening cannot collapse quick controls, including immediate fill',async()=>{
+ const clock=()=>new Date(2027,11,31,21);
+ const stored=new Map([['xsched.probe.panelPos','{"x":30,"y":30}'],['xsched.probe.panelHeight','{"height":80}']]);
+ const geometry={...globalThis.XSCHED_UI,collectObstacles(){return [{left:0,right:400,top:100,bottom:700}];}};
+ const f=fixture('/compose/post','en','../fixtures/quick-dialog.html',clock,geometry,undefined,stored);f.click('.shortcut');
+ const panel=f.shadow().querySelector('section'),before=coordinates(f,'section'),button=coordinates(f,'.shortcut');
+ assert.equal(parseFloat(before.height),546);assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,5);
+ f.click('[data-xsched-slot="morning"]');assert.equal(panel.style.height,before.height,'busy render does not shrink');
+ await waitFill(f);f.poll();assert.equal(panel.style.height,before.height,'success/failure status does not shrink');
+ assert.deepEqual(coordinates(f,'.shortcut'),button);assert.equal(stored.get('xsched.probe.panelHeight'),'{"height":80}','display clamp keeps saved preference');
+ const quickArea=f.shadow().querySelector('.quick-controls');quickArea.getBoundingClientRect=()=>({height:500});
+ f.poll();assert.equal(parseFloat(panel.style.height),672,'complete quick area contributes to minimum');
+ f.pointer('pointerdown',50,100,{selector:'.panel-header'});f.pointer('pointermove',50,1000,{selector:'section'});f.pointer('pointerup',50,1000,{selector:'section'});
+ const after=coordinates(f,'section');assert.ok(after.y+parseFloat(after.height)<=804,'drag uses measured minimum too');
+ assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true');
+});
+test('0.1.4 observed completion updates max only, persists numeric source, and next list read replaces it',async()=>{
+ const clock=()=>new Date(2027,11,31,21),target=new Date(2028,0,1,12,30).getTime();
+ const prototype=parseHTML('<html></html>').document.defaultView.HTMLSelectElement.prototype,descriptor=Object.getOwnPropertyDescriptor(prototype,'value');
+ Object.defineProperty(prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value ?? this.querySelector('option')?.value ?? '';},set(value){for(const option of this.querySelectorAll('option'))option.removeAttribute('selected');for(const option of this.querySelectorAll('option'))if(option.value===value)option.setAttribute('selected','');}});
+ try {
+  for(const prior of [null,target-60000,target+60000]) {
+   const original=prior ? {time:prior,readAt:clock().getTime(),source:1} : null;
+   const stored=new Map(original ? [['xsched.probe.lastScheduled',JSON.stringify(original)]] : []);
+   const f=fixture('/compose/post','zh-Hant','../fixtures/quick-dialog.html',clock,undefined,undefined,stored);f.click('.shortcut');
+   f.click('[data-xsched-slot="lunch"]');await waitFill(f);
+   assert.equal(stored.get('xsched.probe.lastScheduled'),original?JSON.stringify(original):undefined,'fill alone never advances cache');
+   const native=f.document.getElementById('schedule');native.textContent='Schedule';
+   const event=new f.document.defaultView.Event('click',{bubbles:true});Object.defineProperty(event,'isTrusted',{value:true});native.dispatchEvent(event);
+   f.document.querySelector('[role="dialog"]').remove();f.poll();f.poll();
+   const saved=JSON.parse(stored.get('xsched.probe.lastScheduled'));
+   assert.equal(saved.time,Math.max(prior || 0,target));assert.equal(saved.source,prior>target?1:2);
+   assert.ok(Object.values(saved).every(Number.isFinite));
+   assert.ok(f.shadow().querySelector('.quick-cache').textContent.includes(prior>target?'讀自 Scheduled 列表':'剛才排的'));
+   assert.match(f.host().dataset.xschedDiag,/schedWatch=0 schedIntent=0/);
+   if(!prior) {
+    const reload=fixture('/compose/post','zh-Hant','../fixtures/quick-dialog.html',clock,undefined,undefined,stored);reload.click('.shortcut');
+    assert.ok(reload.shadow().querySelector('.quick-cache').textContent.includes('剛才排的'),'source survives reload');
+    const authoritative=fixture(undefined,'en','../fixtures/quick013-scheduled.html',clock,undefined,undefined,stored);
+    const last=authoritative.document.querySelectorAll('[role="button"] span')[1];last.textContent='Will send on Sat, Jan 1, 2028 at 10:00 AM';
+    authoritative.mutate([{target:last,type:'characterData',addedNodes:[],removedNodes:[]}]);
+    assert.deepEqual(JSON.parse(stored.get('xsched.probe.lastScheduled')),{time:new Date(2028,0,1,10).getTime(),readAt:clock().getTime(),source:1},'list can replace observed cache with an earlier max');
+   }
+  }
+ } finally {Object.defineProperty(prototype,'value',descriptor);}
+});

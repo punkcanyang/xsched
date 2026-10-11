@@ -319,7 +319,7 @@ function watchFilledPicker(doc,detected,wanted,at,started) {
     }
     if(event.type!=='click')return;
     const button=target.closest?.(COMPLETION_CONFIG.button);
-    if(!button || button.querySelector('article, [data-testid="tweetText"]'))return;
+    if(!button || button.disabled || button.getAttribute('aria-disabled')==='true' || !visible(button,doc) || button.querySelector('article, [data-testid="tweetText"]'))return;
     const text=String(button.getAttribute('aria-label') || button.textContent || '').trim();
     if(text.length>40)return;
     if(COMPLETION_CONFIG.cancel.includes(text)){stopSchedulingWatch(doc);return;}
@@ -341,7 +341,7 @@ function watchFilledPicker(doc,detected,wanted,at,started) {
 function observeScheduling(doc, now=Date.now()) {
   const state=scheduleWatches.get(doc);
   if(!state)return null;
-  if(!Number.isFinite(now) || now<state.started || now-state.started>COMPLETION_CONFIG.maxMs || state.time<=now) {
+  if(doc.defaultView.location?.hostname!=='x.com' || !Number.isFinite(now) || now<state.started || now-state.started>COMPLETION_CONFIG.maxMs || state.time<=now) {
     stopSchedulingWatch(doc);return null;
   }
   const fresh=notices(doc).filter(row=>state.baseline.get(row.node)!==row.stamp);

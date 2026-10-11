@@ -114,7 +114,7 @@ test('version header detects mismatch/invalidated runtime without echoing arbitr
   }
   assert.match(R.buildDiagnostic({ manifestVersion: '0.1.4' }), /^xsched probe v0\.1\.4 \(manifest 0\.1\.4\)\n/);
 });
-test('all package and script versions are 0.1.3', async () => {
+test('all package and script versions are 0.1.4', async () => {
   await import('../probe/skeleton.js');
   for (const file of ['../package.json', '../package-lock.json', '../probe/manifest.json']) {
     assert.equal(JSON.parse(readFileSync(new URL(file, import.meta.url))).version, '0.1.4');
