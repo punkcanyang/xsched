@@ -49,3 +49,16 @@ Chrome for Testing／Xvfb 沿用既有環境；沙箱 listen 受限，本輪沒�
 成功觀察不是 X 伺服器確認。原生排程／確認／取消及成功提示的精確九語 UI 文案仍是保守假設，集中在 COMPLETION_CONFIG；沒有真提示 DOM 證據。看不準、另一個 dialog 取代原本節點、成功後同步清空欄位、未知新通知或超過 10 分鐘都不推進，請回 Scheduled 重讀。關閉後仍可能有更晚的錯誤，連續兩次觀察不能保證任意延遲；列表重讀才是校正依據。
 
 未捲完的列表快取仍不完整；沿用 reader 的累加／去重與未解析列限制，沒有改讀法。自動面板找不到完整空位時仍可保守收合；手動位置不因避讓縮高度，可能與既有元件重疊，請自行拖到空處。極小視窗無法物理容納全部快速區，優先保留視窗邊界與捲動。需外部完整 e2e、假資料截圖、獨立複審及老闆驗收後才 READY。
+
+## write-2：第 3 點 P0，先查根因（修正前）
+
+本輪從 `22be1dc` 接續，只修浮層重新叫出／恢復與兩個診斷計數，不新增功能，不擴大 verify 或 e2e 守門。先讀程式再執行 `node /tmp/quick014-reopen-before.mjs`（linkedom＋真 content VM，合成資料與 2027 假時鐘），結果如下：
+
+| 可能原因 | 程式與離線證據 | 結論 |
+|---|---|---|
+| 開關狀態跟 DOM 不同步 | content.js:217–223 只反轉 collapsed；452–453／469–471 能將 section 隱藏，卻不改 collapsed。模擬 panelPlacement 找不到空位，四次點擊全部 expanded=false／display=none。 | 可重現：邏輯以為開，實體仍藏起來，再點鈕沒有恢復路徑。 |
+| remount 後事件未重綁 | ensureHost 每次新建都執行 shortcut.addEventListener；VM 移除 host 後 remounts=1，點鈕 expanded=true。 | 沒重現事件漏綁；但 ensureHost:144 只檢查 host connected，section 被移除時 poll 得到 TypeError：Cannot read properties of null (reading 'style')。shadow 子樹缺損未恢復是真缺口。 |
+| SPA 移除 host | content.js:782–805 的 observer、pollLocation:755 的斷線偵測與 ensureHost 有界重掛已存在。VM 移除 host 可恢復，沿用既有測試驗證 body 替換與節流。 | 能恢復整個 host；問題是沒有檢查連線中的 host 是否還含完整面板。保留原重掛節流。 |
+| 夾位反而越界 | ui.js 的 clampPanelPosition 使用面板完整尺寸；存 x/y=5000 後 resize 到 390×600，VM 得 left=30px、top=184px、height=400px。 | 未重現公式把儲存座標夾到視窗外；仍要補實際面板 rect 越界時的恢復，以防外部樣式或缺損。 |
+
+以上能證明程式缺陷，不能確認老闆那次的真頁觸發路徑，沒有新的真機 DOM／診斷證據。修法限定：點鈕以實際面板可見性決定開／關；缺損時重建自家 host 並重綁；未找到初始避讓空位時改用視窗內備援位置；只在需要恢復時重新夾位。保留使用者正常收合與位置獨立性、原有自動重掛節流，以及外部把整個 host 隱藏時 mounted=0 的既有診斷；再次明確開啟時可重建它。新增 toggles／recoveries 純數字計數，不匯出內容。
