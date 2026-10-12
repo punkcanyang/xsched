@@ -25,7 +25,7 @@ const DOCS = join(ROOT, "docs");
 const POSITION_SOURCE_SHA256 = "4aacb059d7c4995156b5b808fbcc74aff48b2874fdc934466116cc9a346a74c7";
 
 // Exact-source exception only for the sole native select input/change writer.
-const COMPOSER_SOURCE_SHA256 = "b0838352b99eef0e6692df4b326b0483a7d5f0b4cb496779a18052dde68bb6bd";
+const COMPOSER_SOURCE_SHA256 = "b2675b0d0449b9396dd67d96721e44000ff4bb4c1200559ebf982093f5ebfd97";
 const COMPOSER_CLICK_STATEMENT = "  icon.click();";
 // All other activation, network, storage and markup rules still scan this file.
 const QUICK_SOURCE_SHA256 = "89d46a6617da3dab6827011d6cd5eeffba767be344cb8fec80ca201d7ce59506";
@@ -793,7 +793,7 @@ export function nativeWriterSelfTest() {
   if (scanSource(source,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: audited source rejected');
   const composerSource=readFileSync(join(PROBE,'composer.js'),'utf8');
   if(scanSource(composerSource,'probe/composer.js').length)throw new Error('native writer self-test: composer source rejected');
-  for(const edited of [composerSource+'\nbutton.click();',composerSource.replace('icon.click();','entry.scope.click();'),composerSource.replace('if(!event?.isTrusted)return false;','if(false)return false;'),composerSource.replace('if(!current)return false;','if(false)return false;')]) {
+  for(const edited of [composerSource+'\nbutton.click();',composerSource.replace('icon.click();','entry.scope.click();'),composerSource.replace('if(!event?.isTrusted)return false;','if(false)return false;'),composerSource.replace('if(!current || !current.icon)return false;','if(false)return false;')]) {
     if(edited===composerSource || !scanSource(edited,'probe/composer.js').length)throw new Error('native writer self-test: edited composer activation allowed');
   }
   if(!scanSource(composerSource,'probe/renamed.js').length)throw new Error('native writer self-test: renamed composer allowed');

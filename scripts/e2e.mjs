@@ -1629,6 +1629,56 @@ async function main() {
     assert(recoveryCount(endCounts)>=recoveryCount(startCounts)+4,'P0 missing/hidden/offscreen/SPA-host recovery counted');
     console.log('  ✓ P0: twenty open/close cycles with SPA/resize, shadow recovery and in-viewport panels');
 
+    // ── 0.1.5: composer entry, only native picker icon activation ──────────────
+    await page.setViewport({width:320,height:820});
+    await open('quick-composer','/compose/post');
+    const composerContext=await until(findExtensionContext,'015 composer isolated world');
+    await installQuickClock(composerContext);
+    await until(()=>page.evaluate(()=>document.querySelector('.xsched-composer-root')?.shadowRoot.querySelector('[data-xsched-composer-slot="morning"]')?.textContent.includes('2028')),'015 actual future slot labels');
+    assert((await probeState(page)).expanded==='false','015 composer works without opening Dagaz panel');
+    async function composerClick(id) {
+      const handle=await page.evaluateHandle(id=>document.querySelector('.xsched-composer-root').shadowRoot.querySelector('[data-xsched-composer-slot="'+id+'"]'),id);
+      try {await handle.asElement().click();} finally {await handle.dispose();}
+    }
+    const inlineGeometry=await page.evaluate(()=>{
+      const host=document.querySelector('.xsched-composer-root'),buttons=[...host.shadowRoot.querySelectorAll('button')];
+      const native=[...document.querySelectorAll('.fixture-toolbar button')].map(el=>el.getBoundingClientRect());
+      return buttons.length===5 && buttons.every(button=>{const r=button.getBoundingClientRect();return r.width>0 && r.left>=0 && r.right<=innerWidth && button.title===button.getAttribute('aria-label') && !native.some(n=>r.left<n.right && r.right>n.left && r.top<n.bottom && r.bottom>n.top);});
+    });
+    assert(inlineGeometry,'015 five localized wrapped slots fit 320px without covering native toolbar');
+    await page.screenshot({path:join(DOCS,'v1.0-quick015-composer.png')});
+    for(const [index,id,hour,minute,period] of [[0,'morning','9','0','AM'],[1,'lunch','12','30','PM'],[2,'evening','8','0','PM']]) {
+      await composerClick(id);
+      await until(()=>page.evaluate(()=>{
+        const notice=document.querySelector('.xsched-composer-notice')?.shadowRoot.querySelector('[role="status"]');
+        return notice?.textContent.includes('Fields filled') && document.getElementById('xsched-probe-root').dataset.xschedDiag.includes('fill=ok');
+      }),'015 '+id+' fill completed');
+      const filled=await page.evaluate(()=>({values:Object.fromEntries(['month','day','year','hour','minute','period'].map(key=>[key,document.getElementById('fake-select-'+key).value]))}));
+      assert(filled.values.year==='2028' && filled.values.month==='1' && filled.values.day==='1' && filled.values.hour===hour && filled.values.minute===minute && filled.values.period===period,'015 '+id+' complete native readback');
+      assert(await page.evaluate(index=>window.fixtureSend.icon===index+1 && window.fixtureSend.input>0 && window.fixtureSend.change>0 && ['confirm','schedule','post','calendar','submit'].every(key=>window.fixtureSend[key]===0),index),'015 one icon activation per use; input/change and zero confirm/schedule/post/submit');
+      assert((await probeState(page)).expanded==='false','015 Dagaz panel remains closed');
+      await page.screenshot({path:join(DOCS,'v1.0-quick015-filled-'+id+'.png')});
+      // Test teardown only: extension cannot click Close or mutate the X dialog.
+      await page.evaluate(()=>document.querySelector('[role="dialog"]').remove());
+      await until(()=>page.evaluate(()=>!document.querySelector('.xsched-composer-root').shadowRoot.querySelector('button').disabled),'015 next composer use available');
+    }
+    // Same entry failures: stale icon, no new picker and writer rollback.
+    await page.evaluate(()=>document.querySelector('[data-testid="scheduleOption"]').remove());
+    await until(()=>page.evaluate(()=>{const root=document.querySelector('.xsched-composer-root')?.shadowRoot;return root && [...root.querySelectorAll('button')].every(button=>button.disabled) && root.querySelector('[role="status"]').textContent.includes('not found');}),'015 missing icon is clearly disabled');
+    for(const mode of ['no-dialog','reject']) {
+      await open('quick-composer','/compose/post');
+      const ctx=await until(findExtensionContext,'015 failure world');await installQuickClock(ctx);
+      await until(()=>page.evaluate(()=>document.querySelector('.xsched-composer-root')?.shadowRoot.querySelector('button')),'015 failure entry mounted');
+      await page.evaluate(mode=>window.fixtureMode=mode,mode);
+      await composerClick('evening');
+      await until(()=>page.evaluate(()=>{const notice=document.querySelector('.xsched-composer-notice')?.shadowRoot.querySelector('[role="status"]');return notice && !notice.textContent.includes('Opening');}),'015 '+mode+' clear failure');
+      assert(await page.evaluate(()=>window.fixtureSend.icon===1 && ['confirm','schedule','post','calendar','submit'].every(key=>window.fixtureSend[key]===0)),'015 failure does not send or close controls');
+      if(mode==='no-dialog')assert(await page.evaluate(()=>window.fixtureSend.input===0 && window.fixtureSend.change===0),'015 missing dialog has zero writes');
+      else assert(await page.evaluate(()=>['year','month','day','hour','minute'].every(key=>document.getElementById('fake-select-'+key).value==='') && document.getElementById('fake-select-period').value==='AM'),'015 rejection restores whole original form');
+      await page.screenshot({path:join(DOCS,'v1.0-quick015-'+mode+'.png')});
+    }
+    console.log('  ✓ 015: three composer uses, 320px toolbar, sole icon click, native readback, failure rollback and zero sends');
+
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);
     for (const event of requests) {
