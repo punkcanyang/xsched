@@ -22,6 +22,8 @@ const REMOUNT_WINDOW_MS = 3000;
 const REMOUNT_LIMIT = 3;
 
 let host = null;
+let panelElement = null;
+let shortcutElement = null;
 let timer = 0;
 let scrolled = 0;
 let accumulated = [];
@@ -36,6 +38,8 @@ let observer = null;
 let lastRender = "";
 let mounted = 0;
 let remounts = 0;
+let toggles = 0;
+let recoveries = 0;
 let hostCreations = 0;
 let remountWindowStart = 0;
 let remountWindowCount = 0;
@@ -55,7 +59,9 @@ let panelDrag = null;
 let suppressPanelClick = false;
 let deferPanelSave = false; // reset previews must leave both keys deleted
 let panelHeight = 0;
+let panelHeightLimit = Infinity; // available space; never rewrite the saved height preference
 let panelNeedsLayout = true;
+let panelMinimum = 0; // stable within a viewport; status/render may never shrink it
 
 function releaseDragCapture(active) {
   try { active.target.releasePointerCapture(active.id); } catch { /* already released or disconnected */ }
@@ -135,10 +141,36 @@ const previous = globalThis.XSCHED_PROBE_SESSION;
 if (previous && typeof previous.dispose === "function") previous.dispose();
 for (const old of document.querySelectorAll('#xsched-probe-root')) retireLegacy(old);
 
-function ensureHost() {
+function panelHidden(panel) {
+  const style = getComputedStyle(panel);
+  return panel.hidden || panel.inert || panel.getAttribute('aria-hidden') === 'true'
+    || [style.visibility, panel.style.visibility].some(value => value === 'hidden' || value === 'collapse')
+    || style.opacity === '0' || panel.style.opacity === '0';
+}
+
+function panelVisible() {
+  if (!hostMounted(host) || !panelElement?.isConnected || panelHidden(panelElement)) return false;
+  if (getComputedStyle(panelElement).display === 'none' || panelElement.style.display === 'none') return false;
+  const rect = panelElement.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 && rect.left >= 0 && rect.top >= 0
+    && rect.right <= innerWidth + 1 && rect.bottom <= innerHeight + 1;
+}
+
+function ensureHost(explicitOpen = false) {
   if (retired) return null;
   for (const old of document.querySelectorAll("#xsched-probe-root")) if (old !== host) retireLegacy(old);
-  if (host && host.isConnected) return host;
+  if (host?.isConnected) {
+    const complete = panelElement?.parentNode === host.shadowRoot && shortcutElement?.parentNode === host.shadowRoot;
+    const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
+    // Normal user collapse is not damage. Preserve externally hidden host diagnostics
+    // until an explicit open; a missing/hidden/offscreen PANEL is recovered on poll.
+    const damaged = !complete || (explicitOpen && !hostMounted(host))
+      || (wantsOpen && hostMounted(host) && (panelHidden(panelElement)
+        || (!panelNeedsLayout && (!explicitOpen || panelElement.style.display !== 'none') && !panelVisible())));
+    if (!damaged) return host;
+    if (explicitOpen && !hostMounted(host)) anchor = { ...clampPosition(anchor,innerWidth,innerHeight), clear:true };
+    host.remove();
+  }
   cancelDrag(); cancelPanelDrag(); cancelHeightDrag();
   const now = Date.now();
   if (now - remountWindowStart >= REMOUNT_WINDOW_MS) {
@@ -147,11 +179,14 @@ function ensureHost() {
   }
   // Count actual creations, not mutation notifications. Retry on the location poll
   // after the window expires, so a transient redraw never disables us permanently.
-  if (remountWindowCount >= REMOUNT_LIMIT) return null;
+  if (remountWindowCount >= REMOUNT_LIMIT) {
+    if (!explicitOpen) return null;
+    remountWindowStart = now; remountWindowCount = 0; // deliberate user retry
+  }
   remountWindowCount += 1;
   const existed = hostCreations > 0;
   hostCreations += 1;
-  if (existed) remounts += 1;
+  if (existed) { remounts += 1; recoveries += 1; }
   host = document.createElement("div");
   host.id = HOST_ID;
   host.setAttribute("data-xsched-host", "1");
@@ -171,6 +206,7 @@ function ensureHost() {
   });
   const shadow = host.attachShadow({ mode: "open" });
   const panel = document.createElement("section");
+  panelElement = panel;
   panel.className = "panel";
   css(panel, {
     position: "absolute",
@@ -194,6 +230,7 @@ function ensureHost() {
   });
   panel.id = "xsched-panel";
   const shortcut = makeButton("", "xschedToggle");
+  shortcutElement = shortcut;
   shortcut.className = "shortcut";
   css(shortcut, { position: "relative", width: "44px", height: "44px", "box-sizing":"border-box", padding: "8px", display: "grid", "place-items": "center", "pointer-events": "auto", "box-shadow": "0 4px 16px #0008", "touch-action":"none", "user-select":"none", cursor:"grab" });
   shortcut.setAttribute("aria-controls", panel.id);
@@ -217,8 +254,9 @@ function ensureHost() {
     event.stopPropagation();
     if (suppressClick && event.detail !== 0) { suppressClick = false; return; }
     if (!lastReport) return;
-    collapsed = !(collapsed === null ? !lastReport.onScheduled : collapsed);
-    render(lastReport, lastItems);
+    collapsed = panelVisible();
+    toggles += 1;
+    render(lastReport, lastItems, !collapsed);
     if (!collapsed && deferPanelSave) persistPanel();
   });
   shortcut.addEventListener('pointerdown', event => {
@@ -278,7 +316,7 @@ function ensureHost() {
     const dx=event.clientX-panelDrag.startX,dy=event.clientY-panelDrag.startY;
     if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!panelDrag.moved && Math.hypot(dx,dy)<6)) return;
     panelDrag.moved=true;event.preventDefault();
-    panelAnchor=clampPanelPosition({x:panelDrag.origin.x+dx,y:panelDrag.origin.y+dy},innerWidth,innerHeight,savedPanelHeight);
+    panelAnchor=clampPanelPosition({x:panelDrag.origin.x+dx,y:panelDrag.origin.y+dy},innerWidth,innerHeight,savedPanelHeight,panelMinimum);
     positionUI();
   });
   panel.addEventListener('pointerup', event => {
@@ -298,7 +336,8 @@ function ensureHost() {
     const delta=event.clientY-heightDrag.startY;
     if(!Number.isFinite(delta) || (!heightDrag.moved && Math.abs(delta)<6))return;
     heightDrag.moved=true;event.preventDefault();
-    savedPanelHeight=Math.max(180,Math.min(innerHeight-16-panelAnchor.y,heightDrag.height+delta));
+    const minimum=panelSize(innerWidth,innerHeight,1,panelMinimum).height;
+    savedPanelHeight=Math.max(minimum,Math.min(innerHeight-16-panelAnchor.y,heightDrag.height+delta));
     panelHeight=Math.min(savedPanelHeight,Math.max(0,innerHeight-16-panelAnchor.y));
     positionUI();
   });
@@ -327,6 +366,7 @@ function ensureHost() {
   applyAnchor(false);
   // A fresh host has no panel content: force the next render to build it.
   lastRender = "";
+  panelNeedsLayout = true;
   return host;
 }
 
@@ -431,49 +471,67 @@ function positionUI() {
   if (!host?.isConnected) return;
   const panel = host.shadowRoot.querySelector("section");
   const shortcut = host.shadowRoot.querySelector(".shortcut");
+  if (!panel || !shortcut || (hostMounted(host) && panelHidden(panel))) { scheduleRemount(); return; }
   const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
-  const size=panelSize(innerWidth,innerHeight,savedPanelHeight);
+  if (wantsOpen && panelAnchor && !panelNeedsLayout && hostMounted(host) && !panelVisible()) { scheduleRemount(); return; }
+  let size=panelSize(innerWidth,innerHeight,savedPanelHeight,panelMinimum);
   css(panel,{position:'fixed',right:'auto',bottom:'auto',width:`${size.width}px`,display:wantsOpen?'flex':'none'});
   if (!wantsOpen) { shortcut.setAttribute('aria-expanded','false');return; }
   const chromeHeight=(panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
     +(panel.querySelector('.panel-actions')?.getBoundingClientRect().height || 0)+40;
-  const minimum=chromeHeight+32;
+  const quickControls=panel.querySelector('.quick-controls');
+  const measured=chromeHeight+32+(quickControls?.getBoundingClientRect().height || 0)+12;
+  const nextMinimum=Math.max(panelMinimum,measured);
+  if(nextMinimum>panelMinimum) {panelMinimum=nextMinimum;panelNeedsLayout=true;}
+  size=panelSize(innerWidth,innerHeight,savedPanelHeight,panelMinimum);
+  const minimum=size.height;
   if (!panelAnchor) {
     const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
     // Initial height is 2/3 viewport, or the independent saved numeric height.
     const chosen=panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,size.height);
-    if (!chosen.clear || size.height<minimum) {
-      css(panel,{display:'none'});shortcut.setAttribute('aria-expanded','false');return;
-    }
-    panelAnchor={x:chosen.left,y:chosen.top};
+    // Availability must not trap open intent behind display:none. If avoidance
+    // has no answer, show a viewport-clamped panel the user can drag elsewhere.
+    panelAnchor=chosen.clear ? {x:chosen.left,y:chosen.top}
+      : clampPanelPosition({x:anchor.x+44-size.width,y:anchor.y-12-size.height},innerWidth,innerHeight,savedPanelHeight,panelMinimum);
+    if (!chosen.clear) recoveries += 1;
     panelNeedsLayout=true;
     if (!deferPanelSave) persistPanel();
   }
   if (panelNeedsLayout) {
-    panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight);
+    panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight,panelMinimum);
     panelHeight=size.height;
-    // On resize/reload only, shorten at fixed x/y to avoid newly intersecting widgets.
-    // Never reposition the panel in response to button drag, polling or mutations.
     const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
-    for (const rect of savedPanelHeight===null ? obstacles : []) {
-      if (panelAnchor.x<rect.right+8 && panelAnchor.x+size.width>rect.left-8 && rect.bottom>panelAnchor.y) {
-        panelHeight=Math.min(panelHeight,Math.max(0,rect.top-8-panelAnchor.y));
+    panelHeightLimit=innerHeight-16-panelAnchor.y;
+    for (const rect of obstacles) {
+      if (panelAnchor.x < rect.right+8 && panelAnchor.x+size.width > rect.left-8 && rect.bottom+8 > panelAnchor.y) {
+        panelHeightLimit=Math.min(panelHeightLimit,rect.top-8-panelAnchor.y);
       }
     }
-    // Saved/manual coordinates win over collision avoidance. Keep the handle and
-    // fixed actions visible even when shortening cannot clear a widget at this point.
-    panelHeight=Math.max(Math.min(size.height,minimum),panelHeight);
+    // Full quick-area height is preferred. Native controls take precedence when
+    // it cannot fit: keep fixed actions plus a scrollable slice of the body.
+    const scrollMinimum=Math.min(size.height,chromeHeight+80);
+    if (panelHeightLimit < scrollMinimum) {
+      const full=panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,size.height);
+      const chosen=full.clear ? full : panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,scrollMinimum);
+      if (chosen.clear) {
+        panelAnchor={x:chosen.left,y:chosen.top};
+        panelHeightLimit=chosen.maxHeight;
+      } else panelHeightLimit=size.height; // preserve the existing visible fallback if no rectangle fits
+    }
     panelNeedsLayout=false;
   }
-  panelHeight=Math.min(panelHeight,Math.max(0,innerHeight-16-panelAnchor.y));
-  css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${size.height}px`});
-  const visible=panelHeight>=minimum;
-  shortcut.setAttribute('aria-expanded',String(visible));
-  if (!visible) css(panel,{display:'none'});
+  panelHeight=Math.min(panelHeightLimit,Math.max(minimum,panelHeight));
+  if (panelAnchor.x < 0 || panelAnchor.y < 0 || panelAnchor.x+size.width > innerWidth || panelAnchor.y+panelHeight > innerHeight-16) {
+    panelAnchor=clampPanelPosition(panelAnchor,innerWidth,innerHeight,savedPanelHeight,panelMinimum);
+    panelHeight=Math.min(size.height,panelHeightLimit);
+    recoveries += 1;
+  }
+  css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${Math.min(size.height,panelHeightLimit)}px`});
+  shortcut.setAttribute('aria-expanded','true');
 }
 
-function render(report, items) {
-  const node = ensureHost();
+function render(report, items, explicitOpen = false) {
+  const node = ensureHost(explicitOpen);
   if (!node) { mounted = 0; return; }
   const mountedNow = hostMounted(node) ? 1 : 0;
   const count = items.length;
@@ -496,7 +554,8 @@ function render(report, items) {
     lang: typeof navigator !== "undefined" && navigator ? navigator.language : "",
     doclang: document.documentElement ? document.documentElement.lang : "",
     samples: report.samples || [],
-  }).replace("\n", "\n" + quick.diagnostic(detected.counts) + (quick.fillDiagnostic(document) ? "\n" + quick.fillDiagnostic(document) : "") + "\n");
+  }).replace(' samples=', ` toggles=${toggles} recoveries=${recoveries} samples=`)
+    .replace("\n", "\n" + quick.diagnostic(detected.counts) + "\n" + quick.schedulingDiagnostic(document) + (quick.fillDiagnostic(document) ? "\n" + quick.fillDiagnostic(document) : "") + "\n");
 
   const strings = stringsFor(document.documentElement.lang, navigator.language);
   const now=new Date();
@@ -537,6 +596,7 @@ function render(report, items) {
     cancelPanelDrag();
     cancelHeightDrag();
     collapsed = true;
+    toggles += 1;
     render(lastReport, lastItems);
   });
   heading.append(kicker, minimize);
@@ -551,15 +611,17 @@ function render(report, items) {
 
   if (!effectiveCollapsed) {
     const labels = globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language);
+    const quickControls=css(document.createElement('div'),{'font-size':'12px','line-height':'1.4'});
+    quickControls.className='quick-controls';body.append(quickControls);
     const slots = css(document.createElement('div'),{display:'flex',gap:'6px','flex-wrap':'wrap',margin:'0 0 8px'});
     slots.className = 'quick-slots';
-    const status = textNode('p',labels[quickStatus || detected.reason] || (!detected.ready ? labels.missing : labels.ready),{color:'#ffd400',margin:'0 0 8px'});
+    const status = textNode('p',labels[quickStatus || detected.reason] || (!detected.ready ? labels.missing : labels.ready),{color:'#ffd400',margin:'0 0 8px','min-height':'2.8em'});
     status.className = 'quick-status';
     status.setAttribute('role','status');
-    body.append(textNode('strong',labels.heading),status,slots);
-    const cacheLine=textNode('p',lastCache ? `${labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
+    quickControls.append(textNode('strong',labels.heading),status,slots);
+    const cacheLine=textNode('p',lastCache ? `${labels.lastTime}: ${formatTime(new Date(lastCache.time))} — ${lastCache.source===2 ? labels.fromSchedule : labels.fromList}. ${lastCache.source===2 ? labels.recordedAt : labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
     cacheLine.className='quick-cache';
-    body.append(cacheLine);
+    quickControls.append(cacheLine);
     const settings=css(document.createElement('div'),{display:'flex',gap:'6px','align-items':'center','flex-wrap':'wrap',margin:'0 0 8px'});
     settings.className='quick-settings';settings.append(textNode('strong',labels.settings));
     const inputA=document.createElement('input'),inputB=document.createElement('input');
@@ -578,11 +640,12 @@ function render(report, items) {
       else {quickRange=value;quickStatus='';}
       schedule();
     });
-    settings.append(saveRange);body.append(settings);
+    settings.append(saveRange);quickControls.append(settings);
     [...quick.SLOT_IDS,'random'].forEach((id,index) => {
       const label = id==='random' ? `${labels.random} ${quickRange.a}–${quickRange.b}` : slotLabels[index];
       if(!label)return;
       const button = makeButton(label);
+      css(button,{'font-size':'12px','line-height':'1.4',padding:'5px 7px'});
       button.dataset.xschedSlot = id;
       button.disabled = !detected.ready || quick.isFilling(document) || (id==='random' && !lastCache);
       button.title = id==='random' && !lastCache ? labels.noCache : detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
@@ -673,7 +736,21 @@ function render(report, items) {
   positionUI();
 }
 
+function refreshObservedCache() {
+  const completed=quick.observeScheduling(document,Date.now());
+  if(!completed)return false;
+  const previous=positionStore.loadCache() || lastCache;
+  if(previous && previous.time>=completed.time) {lastCache=previous;return false;}
+  const value={time:completed.time,readAt:Date.now(),source:2};
+  if(!positionStore.saveCache(value))return false;
+  lastCache=value;
+  // A subsequent actual Scheduled read is authoritative, including an older max.
+  cacheSignature='';
+  return true;
+}
+
 function tick() {
+  refreshObservedCache();
   const pathname = location.pathname || "";
   const report = readSnapshot(document, { pathname });
   const detected = quick.detectControls(document);
@@ -696,7 +773,7 @@ function tick() {
     if(signature!==cacheSignature) {
       cacheSignature=signature;
       if(times.length && report.timeFail===0) {
-        const value={time:Math.max(...times),readAt:Date.now()};
+        const value={time:Math.max(...times),readAt:Date.now(),source:1};
         if(positionStore.saveCache(value))lastCache=value;
       } else if(report.empty && !times.length) {if(positionStore.clearCache())lastCache=null;}
     }
@@ -724,6 +801,7 @@ function onScroll(event) {
 }
 
 function pollLocation() {
+  if(refreshObservedCache())schedule();
   const detected = quick.detectControls(document);
   if (JSON.stringify([detected.counts,detected.ready,detected.reason]) !== quickSignature) schedule();
   const state = JSON.stringify(runtimeState());
@@ -742,6 +820,7 @@ function pollLocation() {
 
 function onResize() {
   cancelDrag(); cancelPanelDrag(); cancelHeightDrag();
+  panelMinimum=0;
   if (panelAnchor) panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight);
   panelNeedsLayout=true;
   applyAnchor(true); positionUI(); schedule();
@@ -785,6 +864,7 @@ function start() {
 }
 
 function stop() {
+  quick.stopSchedulingWatch(document);
   if(heightDrag)cancelHeightDrag();
   if (drag) { cancelDrag(); applyAnchor(false); }
   if (panelDrag) { cancelPanelDrag(); positionUI(); }

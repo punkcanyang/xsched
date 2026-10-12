@@ -22,18 +22,18 @@ const PROBE = join(ROOT, "probe");
 const DOCS = join(ROOT, "docs");
 // Fail closed: only this exact audited numeric-only position module may persist.
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
-const POSITION_SOURCE_SHA256 = "93c1958e1b6c9705b9554ad100c2494adf7b22f14e9512cd8e2e54bd1a177955";
+const POSITION_SOURCE_SHA256 = "4aacb059d7c4995156b5b808fbcc74aff48b2874fdc934466116cc9a346a74c7";
 
 // Exact-source exception only for the sole native select input/change writer.
 // All other activation, network, storage and markup rules still scan this file.
-const QUICK_SOURCE_SHA256 = "f0d0496df9bb4d756ba25d54df3bc97591b4447c803bf5bac942c450be64c937";
+const QUICK_SOURCE_SHA256 = "89d46a6617da3dab6827011d6cd5eeffba767be344cb8fec80ca201d7ce59506";
 
 // Owner-authorized exception: one exact DOM factory in root probe/ui.js only.
 // Pin both definition and sole call site to full reviewed sources. This prevents
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
-const AUTHOR_UI_SHA256 = "9111409a494f8510cb91320d30a1fb9a369d5def0aa9769a671c6875882be9cc";
-const AUTHOR_CONTENT_SHA256 = "01d962e67dc32c0f33271c6866b3444f9b2d23bb4e9c8e76f4210ad3a7dad8b4";
+const AUTHOR_UI_SHA256 = "0f1ccfd4e6d659fa496388a07c529fadd2399ae3c71c59afa31c0b87ef490fed";
+const AUTHOR_CONTENT_SHA256 = "3ac43ce4cb7255b6f2b2847e27e070b1bfc6fd90d64ec3979904d2345cacd2d9";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');
@@ -773,6 +773,9 @@ export function positionStorageSelfTest() {
     source.replace('value.a<=value.b','true'),
     source.replace('Number.isSafeInteger(value.time)','true'),
     source.replace('Number.isFinite(value.height)','true'),
+    source.replace('value.source===1 || value.source===2','true'),
+    source.replace('snapshot.source=value.source','snapshot.source="private"'),
+    source.replace("keys.includes('source')",'true'),
 
   ];
   for (const attack of mutations) if (attack===source || !scanSource(attack,'probe/position.js',{positionModule:true}).length) throw new Error('storage self-test: edited boundary allowed');
@@ -827,6 +830,15 @@ export function nativeWriterSelfTest() {
     source.replace('attempt<3 && !sent','true'),
     source.replace('attempt<6;attempt++','true;attempt++'),
     source.replace("if(error.message!=='detached' || attempt===2)throw error;",'')
+  );
+  asyncEdits.push(
+    source.replace('if(!event.isTrusted)return;','if(false)return;'),
+    source.replace("if(!COMPLETION_CONFIG.schedule.includes(text))return;",'if(false)return;'),
+    source.replace('if(open && !state.matches())','if(false)'),
+    source.replace('if(!open && !state.closedMatches())','if(false)'),
+    source.replace('if(!state.intent) {','if(false) {'),
+    source.replace('if(++state.closeReads<2)return null;',''),
+    source.replace('fresh.some(row=>!COMPLETION_CONFIG.success.includes(row.text))','false')
   );
   for(const edit of asyncEdits)if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length)throw new Error('native writer self-test: async protection removed');
   for (const edit of realEdits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: altered real picker boundary accepted');

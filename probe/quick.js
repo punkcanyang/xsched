@@ -1,4 +1,4 @@
-// 0.1.3: picker structure proven by a masked skeleton; option encodings unverified.
+// 0.1.4: picker structure proven by a masked skeleton; option encodings unverified.
 // No X control is activated. The user opens the picker and confirms it themselves.
 (() => {
 'use strict';
@@ -261,6 +261,112 @@ function withinDateBounds(input,at) {
 const FILL_ORDER = Object.freeze(['year','month','day','period','hour','minute']);
 const transactions = new WeakSet();
 const fillReports = new WeakMap();
+// Read-only completion evidence. No success toast DOM/wording has been supplied:
+// these exact, bounded UI labels are conservative assumptions, not row/body text.
+const COMPLETION_CONFIG = Object.freeze({
+  button:'button, [role="button"]', notice:'[role="alert"], [role="status"]',
+  schedule:['Schedule','排程','预排','預排','予約設定','예약','Programar','Programmer','Planen','Agendar'],
+  confirm:['Confirm','確認','确认','確定','확인','Confirmar','Confirmer','Bestätigen'],
+  cancel:['Cancel','Close','取消','關閉','关闭','キャンセル','閉じる','취소','닫기','Cancelar','Cerrar','Annuler','Fermer','Abbrechen','Schließen','Fechar'],
+  success:['Your post was scheduled.','Your post was scheduled','Post scheduled','貼文已排程','推文已排程','帖子已预排','推文已预排','投稿を予約しました','게시물이 예약되었습니다','Publicación programada','Publication programmée','Beitrag geplant','Publicação agendada'],
+  error:/error|failed|try again|錯誤|失敗|错误|失败|エラー|失敗|오류|실패|error|échec|fehler|erro|falha/i,
+  maxMs:10*60*1000,
+});
+const scheduleWatches = new WeakMap();
+function noticeStamp(text) {
+  let hash=0;
+  for(let i=0;i<text.length;i++)hash=(hash*31+text.charCodeAt(i))|0;
+  return hash;
+}
+function notices(doc) {
+  return [...doc.querySelectorAll(COMPLETION_CONFIG.notice)].slice(0,32)
+    .filter(node=>!node.closest(QUICK_CONFIG.excluded) && visible(node,doc))
+    .map(node=>{const text=String(node.textContent || '').trim();return {node,text,stamp:noticeStamp(text)};});
+}
+function stopSchedulingWatch(doc) {
+  const state=scheduleWatches.get(doc);
+  if(!state)return;
+  for(const type of ['click','input','change','keydown'])doc.removeEventListener(type,state.listener,true);
+  scheduleWatches.delete(doc);
+}
+function watchFilledPicker(doc,detected,wanted,at,started) {
+  stopSchedulingWatch(doc);
+  const dialog=detected.dialog, composer=dialog.parentElement?.closest(QUICK_CONFIG.dialog) || null;
+  const state={dialog,composer,wanted:{...wanted},time:at.getTime(),started,intent:false,confirmed:false,closeReads:0,
+    scope:null,fields:detected.fields,baseline:new Map(notices(doc).map(row=>[row.node,row.stamp]))};
+  const matches=()=>{
+    const current=currentPicker(doc,dialog);
+    const matched=Boolean(current && FILL_ORDER.filter(key=>wanted[key]!==null).every(key=>matchesTarget(current,key,wanted[key])));
+    if(matched)state.fields=current.fields;
+    return matched;
+  };
+  state.matches=matches;
+  state.closedMatches=()=>FILL_ORDER.filter(key=>wanted[key]!==null).every(key=>{
+    const control=state.fields[key];
+    return control?.closest(QUICK_CONFIG.dialog)===dialog && !control.closest(QUICK_CONFIG.excluded)
+      && realOptions(control,key)?.get(wanted[key])===control.value;
+  });
+  state.listener=event=>{
+    if(!event.isTrusted)return;
+    const target=event.target;
+    if(!target || target.closest?.(QUICK_CONFIG.excluded))return;
+    const inside=dialog.contains(target) || Boolean(composer?.contains(target));
+    if(!inside)return;
+    if(event.type==='keydown' && event.key==='Escape'){stopSchedulingWatch(doc);return;}
+    if(event.type==='input' || event.type==='change') {
+      if((dialog.contains(target) && !matches()) || (!dialog.contains(target) && target.matches?.('select, input[type="date"], input[type="time"]')))stopSchedulingWatch(doc);
+      return;
+    }
+    if(event.type!=='click')return;
+    const button=target.closest?.(COMPLETION_CONFIG.button);
+    if(!button || button.disabled || button.getAttribute('aria-disabled')==='true' || !visible(button,doc) || button.querySelector('article, [data-testid="tweetText"]'))return;
+    const text=String(button.getAttribute('aria-label') || button.textContent || '').trim();
+    if(text.length>40)return;
+    if(COMPLETION_CONFIG.cancel.includes(text)){stopSchedulingWatch(doc);return;}
+    const open=dialog.isConnected && visible(dialog,doc);
+    if(open && !matches()){stopSchedulingWatch(doc);return;}
+    if(!open && !state.closedMatches()){stopSchedulingWatch(doc);return;}
+    if(COMPLETION_CONFIG.confirm.includes(text) && dialog.contains(button) && open)state.confirmed=true;
+    if(!COMPLETION_CONFIG.schedule.includes(text))return;
+    // A setting Confirm is not the final Schedule. After Confirm closes the picker,
+    // only its ORIGINAL enclosing composer can provide the final user action.
+    if(!open && (!state.confirmed || !composer?.isConnected || !visible(composer,doc)))return;
+    state.scope=open && dialog.contains(button) ? dialog : composer;
+    if(!state.scope || !state.scope.contains(button))return;
+    state.intent=true;state.closeReads=0;
+  };
+  scheduleWatches.set(doc,state);
+  for(const type of ['click','input','change','keydown'])doc.addEventListener(type,state.listener,true);
+}
+function observeScheduling(doc, now=Date.now()) {
+  const state=scheduleWatches.get(doc);
+  if(!state)return null;
+  if(doc.defaultView.location?.hostname!=='x.com' || !Number.isFinite(now) || now<state.started || now-state.started>COMPLETION_CONFIG.maxMs || state.time<=now) {
+    stopSchedulingWatch(doc);return null;
+  }
+  const fresh=notices(doc).filter(row=>state.baseline.get(row.node)!==row.stamp);
+  // Unknown/error announcements veto success, including an error beside a toast.
+  if(fresh.some(row=>!COMPLETION_CONFIG.success.includes(row.text)) || notices(doc).some(row=>row.text.length<=160 && COMPLETION_CONFIG.error.test(row.text))) {
+    stopSchedulingWatch(doc);return null;
+  }
+  const open=state.dialog.isConnected && visible(state.dialog,doc);
+  if(open && !state.matches()){stopSchedulingWatch(doc);return null;}
+  if(!open && !state.closedMatches()){stopSchedulingWatch(doc);return null;}
+  if(!state.intent) {
+    if(!open && !(state.confirmed && state.composer?.isConnected && visible(state.composer,doc)))stopSchedulingWatch(doc);
+    return null;
+  }
+  const closed=!state.scope.isConnected || !visible(state.scope,doc);
+  if(!closed && !fresh.some(row=>COMPLETION_CONFIG.success.includes(row.text))){state.closeReads=0;return null;}
+  // Observe on two turns so an immediate error/cancel can still veto the closure.
+  if(++state.closeReads<2)return null;
+  stopSchedulingWatch(doc);
+  return {time:state.time};
+}
+function schedulingDiagnostic(doc) {
+  const state=scheduleWatches.get(doc);
+  return `schedWatch=${state?1:0} schedIntent=${state?.intent?1:0}`;
+}
 const safeValue = value => globalThis.XSCHED_SKELETON.safeOptionValue(value);
 function targetParts(fields, at) {
   return {year:at.getFullYear(),month:at.getMonth()+1,day:at.getDate(),period:fields.period ? at.getHours()<12?'AM':'PM' : null,hour:fields.period ? at.getHours()%12||12 : at.getHours(),minute:at.getMinutes()};
@@ -339,7 +445,7 @@ function captureRows(doc, initial, wanted, expected) {
 }
 // Sole audited event writer. Every target is preflighted before any mutation.
 // Re-query before EACH field; only native select setter + input/change, no X clicks.
-async function writeNativeControls(doc, detected, wanted, expected, at) {
+async function writeNativeControls(doc, detected, wanted, expected, at, started) {
   const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype,'value')?.set;
   const dialog=detected.dialog;
   const keys=FILL_ORDER.filter(key=>wanted[key]!==null);
@@ -399,6 +505,7 @@ async function writeNativeControls(doc, detected, wanted, expected, at) {
     writtenAll=true;
     if(!await readSettled(doc,matches))throw new Error('readback');
     fillReports.set(doc,{result:'ok',wanted});
+    watchFilledPicker(doc,currentPicker(doc,dialog),wanted,at,started);
     return 'filled';
   } catch {
     const rows=captureRows(doc,initial,wanted,expected);
@@ -426,6 +533,7 @@ async function writeNativeControls(doc, detected, wanted, expected, at) {
 async function fillSlotResult(doc,id,now = new Date(),options={}) {
   if (doc.defaultView.location?.hostname !== 'x.com') return 'missing';
   if(transactions.has(doc))return 'failed';
+  stopSchedulingWatch(doc);
   transactions.add(doc);
   try {
     const detected = detectControls(doc), at = id==='random' ? randomSlot(options.cache,options.range,now,options.random || Math.random) : nextSlot(id,now);
@@ -450,7 +558,7 @@ async function fillSlotResult(doc,id,now = new Date(),options={}) {
       fillReports.set(doc,{result:reason,failed:reason==='range'?['year','month','day']:rows.filter(row=>expected[row.field]===null).map(row=>row.field),rows});
       return reason;
     }
-    return await writeNativeControls(doc,detected,wanted,expected,at);
+    return await writeNativeControls(doc,detected,wanted,expected,at,now.getTime());
   } finally {transactions.delete(doc);}
 }
 async function fillSlot(doc,id,now = new Date()) {return await fillSlotResult(doc,id,now)==='filled';}
@@ -467,5 +575,5 @@ function isFilling(doc) {return transactions.has(doc);}
 function diagnostic(counts) {
   return ['schedDialog','dateCtl','timeCtl','selects'].map(key=>`${key}=${Number.isSafeInteger(counts?.[key]) && counts[key]>=0 ? counts[key] : 0}`).join(' ');
 }
-globalThis.XSCHED_QUICK = {QUICK_CONFIG,SLOT_IDS,nextSlot,randomSlot,validRange,detectControls,fillSlot,fillSlotResult,fieldValues,diagnostic,fillDiagnostic,isFilling};
+globalThis.XSCHED_QUICK = {QUICK_CONFIG,COMPLETION_CONFIG,SLOT_IDS,nextSlot,randomSlot,validRange,detectControls,fillSlot,fillSlotResult,fieldValues,diagnostic,fillDiagnostic,isFilling,observeScheduling,stopSchedulingWatch,schedulingDiagnostic};
 })();
