@@ -17,7 +17,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.1.4';
+  let manifest = '0.1.5';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -330,10 +330,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.4 (manifest 0.1.4)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.5 (manifest 0.1.5)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.4 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.5 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -342,7 +342,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.4/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.5/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -540,7 +540,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.4/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.5/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');

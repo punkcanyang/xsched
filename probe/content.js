@@ -1,5 +1,5 @@
 // xsched quick slots — independent draggable UI, native field fill, local diagnostics.
-// All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
+// All visible UI stays in shadow DOM. Only composer.js may open the native picker.
 (() => {
 "use strict";
 if (location.hostname !== "x.com" && location.hostname !== "twitter.com") return;
@@ -62,6 +62,13 @@ let panelHeight = 0;
 let panelHeightLimit = Infinity; // available space; never rewrite the saved height preference
 let panelNeedsLayout = true;
 let panelMinimum = 0; // stable within a viewport; status/render may never shrink it
+const composer = globalThis.XSCHED_COMPOSER?.create(document,{
+  quick,
+  labels:()=>globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language),
+  slotLabel:(id,at,now)=>globalThis.XSCHED_UI.slotLabel(id,at,now,document.documentElement.lang,navigator.language),
+  settings:()=>({cache:lastCache,range:quickRange}),
+  changed(result){quickStatus=result;schedule();},
+});
 
 function releaseDragCapture(active) {
   try { active.target.releasePointerCapture(active.id); } catch { /* already released or disconnected */ }
@@ -782,6 +789,7 @@ function tick() {
     cacheSignature='';
   }
   render(report, accumulated);
+  composer?.refresh();
 }
 
 function schedule() {
@@ -801,6 +809,7 @@ function onScroll(event) {
 }
 
 function pollLocation() {
+  composer?.refresh();
   if(refreshObservedCache())schedule();
   const detected = quick.detectControls(document);
   if (JSON.stringify([detected.counts,detected.ready,detected.reason]) !== quickSignature) schedule();
@@ -864,6 +873,7 @@ function start() {
 }
 
 function stop() {
+  composer?.dispose();
   quick.stopSchedulingWatch(document);
   if(heightDrag)cancelHeightDrag();
   if (drag) { cancelDrag(); applyAnchor(false); }

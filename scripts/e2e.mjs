@@ -328,7 +328,7 @@ async function main() {
       return s.count === 2 && s.expanded === 'true' ? s : null;
     }, 'shortcut Scheduled defaults open');
     assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
-    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.1.4 (manifest 0.1.4)', 'diagnostic first line includes both versions');
+    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.1.5 (manifest 0.1.5)', 'diagnostic first line includes both versions');
     await checkAuthorLink('Scheduled author');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-author-link-scheduled.png') });
     await checkNative('desktop scheduled open');
@@ -404,14 +404,14 @@ async function main() {
       chrome.runtime.getManifest = () => ({version: '0.0.2'});
     ` });
     await until(async () => (await probeState(page)).version.includes('⚠ 版本不符'), 'manifest mismatch warning');
-    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.1.4 / manifest 0.0.2'), 'diagnostic mismatch warning');
+    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.1.5 / manifest 0.0.2'), 'diagnostic mismatch warning');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-version-mismatch.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: `chrome.runtime.getManifest = () => { throw new Error('Extension context invalidated. private account'); };` });
     await until(async () => (await probeState(page)).version.includes('擴充已重新載入'), 'context invalidated warning');
     assert(!(await probeState(page)).diag.includes('private account'), 'runtime exception is never copied into diagnostic');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-runtime-invalidated.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: 'chrome.runtime.getManifest = globalThis.__originalManifest;' });
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.4 (manifest 0.1.4)'), 'runtime warning clears');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.5 (manifest 0.1.5)'), 'runtime warning clears');
 
     // Reproduce an actual 0.0.2 reader/content session in another isolated world.
     // Historical sources are read from the task's base commit, never downloaded.
@@ -426,7 +426,7 @@ async function main() {
     await until(async () => (await probeState(page)).diag.startsWith('xsched-gate0 v0.0.2'), 'actual old host visible');
     const takeover = await network.send('Runtime.evaluate', { contextId: versionContext, expression: readFileSync(join(PROBE, 'content.js'), 'utf8') });
     assert(!takeover.exceptionDetails, 'new script reinjection avoids top-level const collisions');
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.4'), 'new script takes over old UI');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.5'), 'new script takes over old UI');
     await sleep(1200); // legacy poll has run repeatedly
     assert(await page.evaluate(() => document.querySelectorAll('#xsched-probe-root').length === 1 && [...document.querySelectorAll('[data-xsched-retired]')].every((el) => el.getBoundingClientRect().height === 0)), 'one active UI; legacy stays connected and hidden');
     await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
@@ -720,7 +720,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched probe v0\.1\.4 \(manifest 0\.1\.4\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.1\.5 \(manifest 0\.1\.5\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
@@ -816,7 +816,7 @@ async function main() {
     const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
     const skeleton = skeletonCopies.result.value[0];
-    assert(/^xsched-skeleton v0\.1\.4 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(/^xsched-skeleton v0\.1\.5 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
     for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture", "punkcan", "https://x.com/punkcan"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
@@ -834,7 +834,7 @@ async function main() {
       const s = await probeState(page);
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
-    assert(/^xsched-skeleton v0\.1\.4 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    assert(/^xsched-skeleton v0\.1\.5 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
     const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
     await select.asElement().click();
     await select.dispose();
@@ -1193,7 +1193,7 @@ async function main() {
       const initial=await until(async()=>{
         const state=await probeState(page);
         return state.present && state.mounted==='1' && state.mode==='other'
-          && state.diag.startsWith('xsched probe v0.1.4 (manifest 0.1.4)\n') ? state : null;
+          && state.diag.startsWith('xsched probe v0.1.5 (manifest 0.1.5)\n') ? state : null;
       },'quick picker first diagnostic rendered: '+name);
       assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
       await installQuickClock(contextId);
@@ -1229,7 +1229,7 @@ async function main() {
       assert(filled.status==='Fields filled; not scheduled yet','fill is not reported as scheduled');
       if(id==='lunch')await page.screenshot({path:join(DOCS,'v1.0-quick014-slot-filled.png')});
     }
-    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.1.4'),'new diagnostic available');
+    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.1.5'),'new diagnostic available');
     await network.send('Runtime.evaluate',{contextId:quickContext,expression:`globalThis.__quickCopies=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText(text){globalThis.__quickCopies.push(text);return Promise.resolve();}}});`});
     await clickShadow('[data-xsched-copy]');await clickShadow('[data-xsched-skeleton]');
     const exported=await network.send('Runtime.evaluate',{contextId:quickContext,expression:'globalThis.__quickCopies',returnByValue:true});

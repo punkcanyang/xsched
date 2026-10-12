@@ -25,6 +25,8 @@ const DOCS = join(ROOT, "docs");
 const POSITION_SOURCE_SHA256 = "4aacb059d7c4995156b5b808fbcc74aff48b2874fdc934466116cc9a346a74c7";
 
 // Exact-source exception only for the sole native select input/change writer.
+const COMPOSER_SOURCE_SHA256 = "b0838352b99eef0e6692df4b326b0483a7d5f0b4cb496779a18052dde68bb6bd";
+const COMPOSER_CLICK_STATEMENT = "  icon.click();";
 // All other activation, network, storage and markup rules still scan this file.
 const QUICK_SOURCE_SHA256 = "89d46a6617da3dab6827011d6cd5eeffba767be344cb8fec80ca201d7ce59506";
 
@@ -33,7 +35,7 @@ const QUICK_SOURCE_SHA256 = "89d46a6617da3dab6827011d6cd5eeffba767be344cb8fec80c
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
 const AUTHOR_UI_SHA256 = "0f1ccfd4e6d659fa496388a07c529fadd2399ae3c71c59afa31c0b87ef490fed";
-const AUTHOR_CONTENT_SHA256 = "3ac43ce4cb7255b6f2b2847e27e070b1bfc6fd90d64ec3979904d2345cacd2d9";
+const AUTHOR_CONTENT_SHA256 = "ee384a67fb1cca2f6e92ffc8f6348c6ff8a44459b25783baf7f9d7a0c038e674";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');
@@ -391,6 +393,8 @@ export function scanSource(text, label, { positionModule = false, quickModule = 
   const errors = [];
   const digest = createHash('sha256').update(text).digest('hex');
   const auditedQuick = quickModule && label === 'probe/quick.js' && digest === QUICK_SOURCE_SHA256;
+  const auditedComposer = label === 'probe/composer.js' && digest === COMPOSER_SOURCE_SHA256;
+  if(label === 'probe/composer.js' && !auditedComposer)errors.push(`${label}: composer activation differs from reviewed source`);
   // Main 0.1.1 writes the field map through a nested computed index, not a
   // destructuring target. Omit only this statement in the exact audited module;
   // changed/renamed sources and all other statements retain the original guard.
@@ -445,11 +449,12 @@ export function scanSource(text, label, { positionModule = false, quickModule = 
   // patterns; inspecting only a scalar `document = ...` misses that case.
   if (new RegExp(String.raw`\b(?:document|createElement)\s*(?:${targetEnd}${writeOperator}|[)}\]\s]*\b(?:of|in)\b)|\b(?:const|let|var|function|class)\s+document\b|\b(?:const|let|var)\s*[\[{][^;]*\bdocument\b`).test(canonical)) errors.push(`${label}: document/element factory mutation forbidden`);
   if (/\b(?:createAuthorLink|XSCHED_UI)\b/.test(canonical) && !auditedAuthorUi && !auditedAuthorContent) errors.push(`${label}: author factory references are restricted to reviewed UI/content`);
+  const activationChecked=auditedComposer ? text.replace(COMPOSER_CLICK_STATEMENT,'') : text;
   for (const rule of BANNED) {
     if (auditedQuick && rule.name === "native event dispatch outside audited writer") continue;
     if (auditedPosition && ['persistent storage','storage accessor/alias'].includes(rule.name)) continue;
     const authorAttribute = rule.name === 'resource attribute';
-    if (rule.re.test(authorAttribute ? checked : text) || rule.re.test(authorAttribute ? checkedCanonical : canonical)) errors.push(`${label}: contains banned API "${rule.name}"`);
+    if (rule.re.test(authorAttribute ? checked : activationChecked) || rule.re.test(authorAttribute ? checkedCanonical : canonicalSource(activationChecked))) errors.push(`${label}: contains banned API "${rule.name}"`);
   }
   const navigation = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, "");
   if (/\blocation\s*(?:=|\.\s*(?:assign|replace)\s*\(|\.\s*(?:href|pathname|search|hash)\s*=)/.test(navigation)) errors.push(`${label}: only the fixed Scheduled navigation is allowed`);
@@ -786,6 +791,12 @@ export function positionStorageSelfTest() {
 export function nativeWriterSelfTest() {
   const source=readFileSync(join(PROBE,'quick.js'),'utf8');
   if (scanSource(source,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: audited source rejected');
+  const composerSource=readFileSync(join(PROBE,'composer.js'),'utf8');
+  if(scanSource(composerSource,'probe/composer.js').length)throw new Error('native writer self-test: composer source rejected');
+  for(const edited of [composerSource+'\nbutton.click();',composerSource.replace('icon.click();','entry.scope.click();'),composerSource.replace('if(!event?.isTrusted)return false;','if(false)return false;'),composerSource.replace('if(!current)return false;','if(false)return false;')]) {
+    if(edited===composerSource || !scanSource(edited,'probe/composer.js').length)throw new Error('native writer self-test: edited composer activation allowed');
+  }
+  if(!scanSource(composerSource,'probe/renamed.js').length)throw new Error('native writer self-test: renamed composer allowed');
   const attacks=[
     'button.click()', 'const activate=button.click; activate.call(button)', 'button["cl"+"ick"]()',
     'form.submit()', 'const send=form.submit; send.call(form)', 'form["sub"+"mit"]()', 'form.requestSubmit()',
@@ -843,7 +854,7 @@ export function nativeWriterSelfTest() {
   for(const edit of asyncEdits)if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length)throw new Error('native writer self-test: async protection removed');
   for (const edit of realEdits) if(edit===source || !scanSource(edit,'probe/quick.js',{quickModule:true}).length) throw new Error('native writer self-test: altered real picker boundary accepted');
   if(!scanSource(source,'probe/renamed.js').length) throw new Error('native writer self-test: renamed writer allowed');
-  return attacks.length+edits.length+1+realEdits.length+asyncEdits.length;
+  return attacks.length+edits.length+1+realEdits.length+asyncEdits.length+5;
 }
 
 export function authorLinkSelfTest() {
