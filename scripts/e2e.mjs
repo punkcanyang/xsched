@@ -1789,6 +1789,30 @@ async function main() {
     }
     assert(hits.length===2 && hits.every(Boolean),'P1(f) dragged Dagaz cannot cover Copy diagnostics or author link');
 
+    // P1(e): full page reload of this composer restores the last JSON boolean switch.
+    // The shortcut may sit under the open panel after P1(f); collapse with minimize.
+    await until(async () => {
+      const state = await probeState(page);
+      return state.expanded === 'true' && state.panelVisible === true ? state : null;
+    }, '015 panel open before reload');
+    assert(await page.evaluate(() => window.localStorage.getItem('xsched.probe.panelOpen') === 'true'), '015 open switch is stored as JSON true');
+    await page.reload({waitUntil:'domcontentloaded'});
+    await until(async () => {
+      const state = await probeState(page);
+      return state.expanded === 'true' && state.panelVisible === true ? state : null;
+    }, '015 open panel survives full reload');
+    await clickShadow('[data-xsched-minimize]');
+    await until(async () => {
+      const state = await probeState(page);
+      return state.expanded === 'false' && state.panelVisible === false ? state : null;
+    }, '015 minimize before collapsed reload');
+    assert(await page.evaluate(() => window.localStorage.getItem('xsched.probe.panelOpen') === 'false'), '015 collapsed switch is stored as JSON false');
+    await page.reload({waitUntil:'domcontentloaded'});
+    await until(async () => {
+      const state = await probeState(page);
+      return state.expanded === 'false' && state.panelVisible === false ? state : null;
+    }, '015 collapsed panel survives full reload');
+
     console.log('  ✓ 015: three composer uses, 320px toolbar, sole icon click, native readback, failure rollback and zero sends');
 
     // ── network discipline ─────────────────────────────────────────────────────

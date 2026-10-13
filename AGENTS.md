@@ -35,7 +35,7 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 
 ## 本機位置儲存（閘 0.4／0.5 授權範圍）
 
-只允許 `probe/position.js` 存取 x.com 的 `window.localStorage`。原兩個固定 key：`xsched.probe.pos`（鈕）與 `xsched.probe.panelPos`（浮層），值只能是經有限數字驗證的 `{x,y}`。0.1.3 明確授權另三個固定 key：`xsched.probe.quickRange` 的正整數 `{a,b}`（a ≤ b）、`xsched.probe.lastScheduled` 的有效毫秒時間 `{time,readAt}`（0.1.4 可另含數字 source：1＝列表、2＝觀察到使用者排程完成；拒絕其他列舉與額外欄位）、`xsched.probe.panelHeight` 的有限正數 `{height}`；每個 schema 拒絕多餘欄位。不存本文、帳號、網址或診斷；不加 storage 權限。其他模組的 localStorage，以及所有 sessionStorage／indexedDB／chrome.storage 仍由 verify 禁止；修改位置模組須重審來源摘要與 storage 攻擊自測。
+只允許 `probe/position.js` 存取 x.com 的 `window.localStorage`。原兩個固定 key：`xsched.probe.pos`（鈕）與 `xsched.probe.panelPos`（浮層），值只能是經有限數字驗證的 `{x,y}`。0.1.3 明確授權另三個固定 key：`xsched.probe.quickRange` 的正整數 `{a,b}`（a ≤ b）、`xsched.probe.lastScheduled` 的有效毫秒時間 `{time,readAt}`（0.1.4 可另含數字 source：1＝列表、2＝觀察到使用者排程完成；拒絕其他列舉與額外欄位）、`xsched.probe.panelHeight` 的有限正數 `{height}`；每個 schema 拒絕多餘欄位。0.1.5 明確授權第六個固定 key：`xsched.probe.panelOpen`，值只能是 JSON 布林 `true` 或 `false`；整頁載入新編輯框時浮層依此恢復上次開關，沒有值時預設展開。不存本文、帳號、網址或診斷；不加 storage 權限。其他模組的 localStorage，以及所有 sessionStorage／indexedDB／chrome.storage 仍由 verify 禁止；修改位置模組須重審來源摘要與 storage 攻擊自測。
 
 ## 怎麼工作
 

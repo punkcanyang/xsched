@@ -28,7 +28,14 @@ let timer = 0;
 let scrolled = 0;
 let accumulated = [];
 let session = "";
-let collapsed = null; // auto until first click; preserve user choice across routes/remounts
+// null = auto (Scheduled open, elsewhere closed) until the first click.
+// A full page load that already has a new composer restores the boolean switch;
+// a missing or invalid value defaults to expanded. The choice then survives SPA/remounts.
+function restoredCollapsed() {
+  if (!document.querySelector('[data-testid="tweetTextarea_0"][role="textbox"]')) return null;
+  return positionStore.loadOpen() === false;
+}
+let collapsed = restoredCollapsed();
 let retired = false;
 let runtimeSignature = "";
 let pollId = 0;
@@ -268,6 +275,7 @@ function ensureHost(explicitOpen = false) {
     toggles += 1;
     render(lastReport, lastItems, !collapsed);
     if (!collapsed && deferPanelSave) persistPanel();
+    positionStore.saveOpen(collapsed === false);
   });
   shortcut.addEventListener('pointerdown', event => {
     if (drag || panelDrag || heightDrag || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
@@ -612,6 +620,7 @@ function render(report, items, explicitOpen = false) {
     collapsed = true;
     toggles += 1;
     render(lastReport, lastItems);
+    positionStore.saveOpen(false);
   });
   heading.append(kicker, minimize);
   const countLine = textNode("div", report.onScheduled ? `讀到 ${count} 則` : "xsched 探針：非 Scheduled 頁", { "font-size":"18px", "font-weight":"760", margin:"4px 0 0" });

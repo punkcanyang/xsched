@@ -20,9 +20,10 @@ import esprima from "esprima";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROBE = join(ROOT, "probe");
 const DOCS = join(ROOT, "docs");
-// Fail closed: only this exact audited numeric-only position module may persist.
+// Fail closed: only this exact audited position module may persist.
+// Fixed numeric keys, plus the authorized JSON boolean xsched.probe.panelOpen.
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
-const POSITION_SOURCE_SHA256 = "4aacb059d7c4995156b5b808fbcc74aff48b2874fdc934466116cc9a346a74c7";
+const POSITION_SOURCE_SHA256 = "49cde823f66f1adb67c305ffb522c9a83115a006e730c9f201cfee564bd38170";
 
 // Exact-source exception only for the sole native select input/change writer.
 const COMPOSER_SOURCE_SHA256 = "785f7cf451f1e81fc9d00db622c8b19e52bb024f18c7928fef99317549bbfb98";
@@ -35,7 +36,7 @@ const QUICK_SOURCE_SHA256 = "a35fb5c6b8480cf4b1dde3916443befa8e201d9dd980d446fa7
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
 const AUTHOR_UI_SHA256 = "5eb978a06ed129bbb4345d3218fb108ce3fcf81cf3b5bbd219dadc66795736b0";
-const AUTHOR_CONTENT_SHA256 = "bab754bdfe186d788af9678bb48ad8aa8e99fde98d24885b2282be636dfb3f96";
+const AUTHOR_CONTENT_SHA256 = "015a57ac8621bd3b95ee085468a7de5239aac3dcbb84224c3b0d2029548d0d24";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');

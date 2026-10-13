@@ -1,4 +1,5 @@
-// Sole audited persistence boundary: fixed keys, numeric positions/settings/times.
+// Sole audited persistence boundary: fixed keys, numeric positions/settings/times,
+// and one JSON boolean for the panel switch.
 (() => {
 "use strict";
 const POSITION_KEY = "xsched.probe.pos";
@@ -6,6 +7,7 @@ const PANEL_KEY = "xsched.probe.panelPos";
 const RANGE_KEY = "xsched.probe.quickRange";
 const CACHE_KEY = "xsched.probe.lastScheduled";
 const HEIGHT_KEY = "xsched.probe.panelHeight";
+const OPEN_KEY = "xsched.probe.panelOpen";
 const allowedKey = key => key === POSITION_KEY || key === PANEL_KEY;
 function valid(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -87,5 +89,27 @@ function saveCache(value){return writeRecord(CACHE_KEY,value);}
 function clearCache(){return erase(CACHE_KEY);}
 function loadHeight(){return readRecord(HEIGHT_KEY)?.height ?? null;}
 function saveHeight(height){return writeRecord(HEIGHT_KEY,{height});}
-globalThis.XSCHED_POSITION = Object.freeze({ load, save, loadPanel, savePanel, reset, loadRange, saveRange, loadCache, saveCache, clearCache, loadHeight, saveHeight });
+// Panel switch is a JSON boolean only. Objects, numbers and strings are refused.
+function booleanState(value) {
+  return value === true || value === false ? value : null;
+}
+function loadOpen() {
+  try {
+    if (window.location.hostname !== "x.com") return null;
+    const raw = window.localStorage.getItem(OPEN_KEY);
+    if (typeof raw !== "string" || raw.length > 128 || (raw !== "true" && raw !== "false")) return null;
+    return booleanState(JSON.parse(raw));
+  } catch { return null; }
+}
+function saveOpen(value) {
+  try {
+    const state = booleanState(value);
+    if (window.location.hostname !== "x.com" || state === null) return false;
+    const raw = JSON.stringify(state === true);
+    if ((state === true && raw !== "true") || (state === false && raw !== "false")) return false;
+    window.localStorage.setItem(OPEN_KEY, raw);
+    return true;
+  } catch { return false; }
+}
+globalThis.XSCHED_POSITION = Object.freeze({ load, save, loadPanel, savePanel, reset, loadRange, saveRange, loadCache, saveCache, clearCache, loadHeight, saveHeight, loadOpen, saveOpen });
 })();
