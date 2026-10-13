@@ -17,7 +17,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.1.4';
+  let manifest = '0.1.5';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -330,10 +330,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.4 (manifest 0.1.4)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.5 (manifest 0.1.5)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.4 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.5 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -342,7 +342,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.4/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.5/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -540,7 +540,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.4/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.5/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -790,4 +790,89 @@ test('P0 twenty open/close cycles survive SPA, viewport resize and remount witho
   f.click('.shortcut');f.poll();assert.equal(panel.style.display,'none','close cycle '+n);
  }
  assert.match(f.host().dataset.xschedDiag,/toggles=41 recoveries=\d+ samples=/);
+});
+
+test('P1(c) SPA loading preserves observed cache; confirmed loaded list may replace it',()=>{
+ const clock=()=>new Date(2028,0,1),cache={time:new Date(2028,0,2,20).getTime(),readAt:clock().getTime(),source:2};
+ const stored=new Map([['xsched.probe.lastScheduled',JSON.stringify(cache)]]);
+ const f=fixture('/home','en','../fixtures/home.html',clock,undefined,undefined,stored);
+ f.location.pathname='/compose/post/unsent/scheduled';f.poll();
+ assert.equal(stored.get('xsched.probe.lastScheduled'),JSON.stringify(cache),'no scope on incoming SPA is not empty');
+ const incoming=parseHTML(readFileSync(new URL('../fixtures/empty.html',import.meta.url),'utf8')).document.querySelector('[role="dialog"]');
+ incoming.setAttribute('aria-busy','true');f.document.body.append(incoming);f.poll();
+ assert.equal(stored.get('xsched.probe.lastScheduled'),JSON.stringify(cache),'explicit loading also preserves source 2');
+ incoming.removeAttribute('aria-busy');f.mutate([{type:'attributes',target:incoming,addedNodes:[],removedNodes:[]}]);
+ assert.equal(stored.has('xsched.probe.lastScheduled'),false,'explicit known empty announcement completes the read');
+});
+test('P1(d) observed success changes filled status even when a later cache already exists',async()=>{
+ const clock=()=>new Date(2027,11,31,21),stored=new Map([['xsched.probe.lastScheduled',JSON.stringify({time:new Date(2028,0,2,20).getTime(),readAt:clock().getTime(),source:1})]]);
+ const prototype=parseHTML('<html></html>').document.defaultView.HTMLSelectElement.prototype,descriptor=Object.getOwnPropertyDescriptor(prototype,'value');
+ Object.defineProperty(prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value ?? this.querySelector('option')?.value ?? '';},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===value);}});
+ try {const f=fixture('/compose/post','en','../fixtures/quick-dialog.html',clock,undefined,undefined,stored);f.click('.shortcut');f.click('[data-xsched-slot="lunch"]');await waitFill(f);f.poll();
+  assert.match(f.shadow().querySelector('.quick-status').textContent,/not scheduled yet/);
+  const button=f.document.getElementById('schedule');button.textContent='Schedule';const event=new f.document.defaultView.Event('click',{bubbles:true});Object.defineProperty(event,'isTrusted',{value:true});button.dispatchEvent(event);f.document.querySelector('[role="dialog"]').remove();f.poll();f.poll();
+  assert.equal(f.shadow().querySelector('.quick-status').textContent,'Scheduling completion observed');
+ } finally {Object.defineProperty(prototype,'value',descriptor);}
+});
+test('P1(f) panel paints above a dragged shortcut without moving either anchor',()=>{
+ const f=fixture(),before=coordinates(f,'section');
+ f.pointer('pointerdown',20,20);f.pointer('pointermove',before.x+10,before.y+10);f.pointer('pointerup',before.x+10,before.y+10);
+ assert.equal(f.shadow().lastElementChild,f.shadow().querySelector('section'));
+ assert.ok(Number(f.shadow().querySelector('section').style.zIndex)>Number(f.shadow().querySelector('.shortcut').style.zIndex));
+ assert.deepEqual(coordinates(f,'section'),before);
+});
+test('P1(g) confirmed empty list enables now-based random in same-page composer; unknown cache stays disabled',()=>{
+ const clock=()=>new Date(2027,11,31,21);
+ const f=fixture(undefined,'en','../fixtures/empty.html',clock);f.location.pathname='/compose/post';
+ const picker=parseHTML(readFileSync(new URL('../fixtures/quick-dialog.html',import.meta.url),'utf8')).document.querySelector('[role="dialog"]');
+ for(const dialog of f.document.querySelectorAll('[role="dialog"]'))dialog.remove();f.document.body.append(picker);f.poll();f.click('.shortcut');
+ const random=f.shadow().querySelector('[data-xsched-slot="random"]');assert.equal(random.disabled,false);assert.match(f.shadow().querySelector('.quick-cache').textContent,/confirmed empty/);
+ const Q=globalThis.XSCHED_QUICK,now=clock();
+ assert.equal(Q.randomSlot(null,{a:10,b:10},now,()=>0),null,'unknown unread list remains unavailable');
+ assert.equal(Q.randomSlot(null,{a:10,b:10},now,()=>0,true).getTime(),now.getTime()+600000);
+});
+test('P1(e) composer full load restores xsched.probe.panelOpen; missing value defaults open',()=>{
+ const stored=new Map();
+ const fresh=fixture('/compose/post','en','../fixtures/quick-composer.html',null,undefined,undefined,stored);
+ assert.equal(fresh.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true');
+ assert.equal(fresh.shadow().querySelector('section').style.display,'flex');
+ assert.equal(stored.has('xsched.probe.panelOpen'),false,'default open does not write a value');
+ fresh.click('[data-xsched-minimize]');
+ assert.equal(stored.get('xsched.probe.panelOpen'),'false');
+ assert.equal(JSON.parse(stored.get('xsched.probe.panelOpen')),false);
+ const closed=fixture('/compose/post','en','../fixtures/quick-composer.html',null,undefined,undefined,stored);
+ assert.equal(closed.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
+ assert.equal(closed.shadow().querySelector('section').style.display,'none');
+ closed.click('.shortcut');
+ assert.equal(stored.get('xsched.probe.panelOpen'),'true');
+ assert.equal(JSON.parse(stored.get('xsched.probe.panelOpen')),true);
+ const opened=fixture('/compose/post','en','../fixtures/quick-composer.html',null,undefined,undefined,stored);
+ assert.equal(opened.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true');
+ assert.equal(opened.shadow().querySelector('section').style.display,'flex');
+ const garbage='{"open":1}';
+ stored.set('xsched.probe.panelOpen',garbage);
+ const invalid=fixture('/compose/post','en','../fixtures/quick-composer.html',null,undefined,undefined,stored);
+ assert.equal(invalid.shadow().querySelector('section').style.display,'flex','invalid switch defaults open');
+ assert.equal(stored.get('xsched.probe.panelOpen'),garbage,'reading does not rewrite an invalid value');
+ const api=invalid.context.XSCHED_POSITION;
+ assert.equal(api.loadOpen(),null);
+ const before=stored.get('xsched.probe.panelOpen');
+ for(const value of [1,0,'true','false',null,undefined,{open:true},{open:1},[],Object(true),Object(false)])assert.equal(api.saveOpen(value),false,String(value));
+ let reads=0;
+ assert.equal(api.saveOpen({valueOf(){return ++reads?true:false;}}),false);
+ assert.equal(stored.get('xsched.probe.panelOpen'),before);
+ stored.set('xsched.probe.panelOpen','false');
+ const scheduled=fixture('/compose/post/unsent/scheduled','en','../fixtures/en.html',null,undefined,undefined,stored);
+ assert.equal(scheduled.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true','pages without a composer keep the Scheduled default');
+ stored.set('xsched.probe.panelOpen','true');
+ const home=fixture('/home','en','../fixtures/home.html',null,undefined,undefined,stored);
+ assert.equal(home.shadow().querySelector('section').style.display,'none','pages without a composer stay closed');
+ const twitterStored=new Map();
+ const twitter=fixture('/compose/post','en','../fixtures/quick-composer.html',null,undefined,undefined,twitterStored,'twitter.com');
+ assert.equal(twitter.shadow().querySelector('section').style.display,'flex');
+ twitter.click('[data-xsched-minimize]');
+ assert.equal(twitterStored.has('xsched.probe.panelOpen'),false,'twitter.com cannot persist the switch');
+ Object.defineProperty(invalid.context.window,'localStorage',{get(){throw new Error('blocked');}});
+ assert.equal(api.loadOpen(),null);
+ assert.equal(api.saveOpen(true),false);
 });

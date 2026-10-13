@@ -1,5 +1,5 @@
 // xsched quick slots — independent draggable UI, native field fill, local diagnostics.
-// All visible UI stays in shadow DOM. No page controls are clicked or scrolled.
+// All visible UI stays in shadow DOM. Only composer.js may open the native picker.
 (() => {
 "use strict";
 if (location.hostname !== "x.com" && location.hostname !== "twitter.com") return;
@@ -28,12 +28,21 @@ let timer = 0;
 let scrolled = 0;
 let accumulated = [];
 let session = "";
-let collapsed = null; // auto until first click; preserve user choice across routes/remounts
+// null = auto (Scheduled open, elsewhere closed) until the first click.
+// A full page load that already has a new composer restores the boolean switch;
+// a missing or invalid value defaults to expanded. The choice then survives SPA/remounts.
+function restoredCollapsed() {
+  if (!document.querySelector('[data-testid="tweetTextarea_0"][role="textbox"]')) return null;
+  return positionStore.loadOpen() === false;
+}
+let collapsed = restoredCollapsed();
 let retired = false;
 let runtimeSignature = "";
 let pollId = 0;
 let lastLocation = "";
 let scopeElement = null;
+let listLoadedScope = null;
+let emptyListConfirmed = false;
 let observer = null;
 let lastRender = "";
 let mounted = 0;
@@ -62,6 +71,14 @@ let panelHeight = 0;
 let panelHeightLimit = Infinity; // available space; never rewrite the saved height preference
 let panelNeedsLayout = true;
 let panelMinimum = 0; // stable within a viewport; status/render may never shrink it
+let panelDisplay = null; // exact left/top last applied; reading CSSOM style strings rounds
+const composer = globalThis.XSCHED_COMPOSER?.create(document,{
+  quick,
+  labels:()=>globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language),
+  slotLabel:(id,at,now)=>globalThis.XSCHED_UI.slotLabel(id,at,now,document.documentElement.lang,navigator.language),
+  settings:()=>({cache:lastCache,range:quickRange,empty:emptyListConfirmed}),
+  changed(result){quickStatus=result;schedule();},
+});
 
 function releaseDragCapture(active) {
   try { active.target.releasePointerCapture(active.id); } catch { /* already released or disconnected */ }
@@ -210,11 +227,12 @@ function ensureHost(explicitOpen = false) {
   panel.className = "panel";
   css(panel, {
     position: "absolute",
+    "z-index": "1",
     right: "0",
     bottom: "56px",
     width: "min(344px, calc(100vw - 32px))",
     "box-sizing": "border-box",
-    "pointer-events": "auto",
+    "pointer-events": "none",
     font: "13px/1.45 ui-sans-serif, system-ui, sans-serif",
     color: "#e7e9ea",
     background: "rgba(22, 24, 28, 0.96)",
@@ -258,6 +276,7 @@ function ensureHost(explicitOpen = false) {
     toggles += 1;
     render(lastReport, lastItems, !collapsed);
     if (!collapsed && deferPanelSave) persistPanel();
+    positionStore.saveOpen(collapsed === false);
   });
   shortcut.addEventListener('pointerdown', event => {
     if (drag || panelDrag || heightDrag || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
@@ -308,7 +327,8 @@ function ensureHost(explicitOpen = false) {
     if (!target?.closest?.('.panel-header') || target.closest('button, a, input, textarea, select, [role="button"]') || drag || panelDrag || heightDrag
       || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY) || !panelAnchor) return;
     suppressPanelClick = false;
-    panelDrag = {id:event.pointerId,target:panel,startX:event.clientX,startY:event.clientY,origin:{...panelAnchor},moved:false};
+    const shown = panelDisplay && Number.isFinite(panelDisplay.x) && Number.isFinite(panelDisplay.y) ? panelDisplay : {x:parseFloat(panel.style.left),y:parseFloat(panel.style.top)};
+    panelDrag = {id:event.pointerId,target:panel,startX:event.clientX,startY:event.clientY,origin:{x:shown.x,y:shown.y},moved:false};
     try { panel.setPointerCapture(event.pointerId); } catch { /* DOM fixtures */ }
   });
   panel.addEventListener('pointermove', event => {
@@ -361,7 +381,8 @@ function ensureHost(explicitOpen = false) {
       suppressPanelClick=false;event.preventDefault();event.stopImmediatePropagation();
     }
   },true);
-  shadow.append(panel, shortcut);
+  css(shortcut,{"z-index":"0"});
+  shadow.append(shortcut, panel);
   (document.body || document.documentElement).append(host);
   applyAnchor(false);
   // A fresh host has no panel content: force the next render to build it.
@@ -526,7 +547,11 @@ function positionUI() {
     panelHeight=Math.min(size.height,panelHeightLimit);
     recoveries += 1;
   }
-  css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${Math.min(size.height,panelHeightLimit)}px`});
+  const detectedPicker=quick.detectControls(document);
+  const picker=detectedPicker.ready ? detectedPicker.dialog.getBoundingClientRect() : null;
+  const displayPoint=globalThis.XSCHED_UI.avoidPicker({left:panelAnchor.x,top:panelAnchor.y,right:panelAnchor.x+size.width,bottom:panelAnchor.y+panelHeight},picker,innerWidth,innerHeight);
+  panelDisplay={x:displayPoint.x,y:displayPoint.y};
+  css(panel,{left:`${displayPoint.x}px`,top:`${displayPoint.y}px`,height:`${panelHeight}px`,'max-height':`${Math.min(size.height,panelHeightLimit)}px`});
   shortcut.setAttribute('aria-expanded','true');
 }
 
@@ -582,7 +607,7 @@ function render(report, items, explicitOpen = false) {
   badge.textContent = String(count);
   css(badge, { display:report.onScheduled ? "block" : "none" });
 
-  const header = css(document.createElement("div"), { "flex-shrink":"0", "touch-action":"none", "user-select":"none", cursor:"grab" });
+  const header = css(document.createElement("div"), { "flex-shrink":"0", "pointer-events":"auto", "touch-action":"none", "user-select":"none", cursor:"grab" });
   header.className = "panel-header";
   const heading = css(document.createElement("div"), { display:"flex", gap:"8px", "align-items":"start" });
   const kicker = textNode("div", versionLine(runtime.manifestVersion, runtime.runtimeInvalidated), { flex:"1", "min-width":"0", color:"#8b98a5", "font-size":"11px", "word-break":"break-word" });
@@ -598,14 +623,15 @@ function render(report, items, explicitOpen = false) {
     collapsed = true;
     toggles += 1;
     render(lastReport, lastItems);
+    positionStore.saveOpen(false);
   });
   heading.append(kicker, minimize);
   const countLine = textNode("div", report.onScheduled ? `讀到 ${count} 則` : "xsched 探針：非 Scheduled 頁", { "font-size":"18px", "font-weight":"760", margin:"4px 0 0" });
   countLine.className = "count";
   header.append(heading, countLine);
-  const body = css(document.createElement("div"), { "min-height":"0", overflow:"auto", "overscroll-behavior":"contain", flex:"1 1 auto" });
+  const body = css(document.createElement("div"), { "min-height":"0", overflow:"auto", "overscroll-behavior":"contain", flex:"1 1 auto", "pointer-events":"auto" });
   body.className = "panel-body";
-  const controls = css(document.createElement("div"), { display:"flex", gap:"6px", "align-items":"center", "flex-wrap":"wrap", "flex-shrink":"0", "border-top":"1px solid #38444d", "padding-top":"8px" });
+  const controls = css(document.createElement("div"), { display:"flex", gap:"6px", "align-items":"center", "flex-wrap":"wrap", "flex-shrink":"0", "pointer-events":"auto", "border-top":"1px solid #38444d", "padding-top":"8px" });
   controls.className = "panel-actions";
   panel.append(header, body, controls);
 
@@ -619,7 +645,7 @@ function render(report, items, explicitOpen = false) {
     status.className = 'quick-status';
     status.setAttribute('role','status');
     quickControls.append(textNode('strong',labels.heading),status,slots);
-    const cacheLine=textNode('p',lastCache ? `${labels.lastTime}: ${formatTime(new Date(lastCache.time))} — ${lastCache.source===2 ? labels.fromSchedule : labels.fromList}. ${lastCache.source===2 ? labels.recordedAt : labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
+    const cacheLine=textNode('p',lastCache ? `${labels.lastTime}: ${formatTime(new Date(lastCache.time))} — ${lastCache.source===2 ? labels.fromSchedule : labels.fromList}. ${lastCache.source===2 ? labels.recordedAt : labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : emptyListConfirmed ? labels.emptyList : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
     cacheLine.className='quick-cache';
     quickControls.append(cacheLine);
     const settings=css(document.createElement('div'),{display:'flex',gap:'6px','align-items':'center','flex-wrap':'wrap',margin:'0 0 8px'});
@@ -647,15 +673,15 @@ function render(report, items, explicitOpen = false) {
       const button = makeButton(label);
       css(button,{'font-size':'12px','line-height':'1.4',padding:'5px 7px'});
       button.dataset.xschedSlot = id;
-      button.disabled = !detected.ready || quick.isFilling(document) || (id==='random' && !lastCache);
-      button.title = id==='random' && !lastCache ? labels.noCache : detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
+      button.disabled = !detected.ready || quick.isFilling(document) || (id==='random' && !lastCache && !emptyListConfirmed);
+      button.title = id==='random' && !lastCache && !emptyListConfirmed ? labels.noCache : detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
       button.setAttribute('aria-label',button.title);
       if (button.disabled) css(button,{opacity:'.55',cursor:'default'});
       button.addEventListener('click',async event => {
         event.preventDefault();event.stopPropagation();
         if (!event.isTrusted) return;
         // Re-detect and preflight at the instant of the user's click, never reuse old controls.
-        const pending = quick.fillSlotResult(document,id,new Date(),{cache:lastCache,range:quickRange});
+        const pending = quick.fillSlotResult(document,id,new Date(),{cache:lastCache,range:quickRange,empty:emptyListConfirmed});
         schedule();
         quickStatus = await pending;
         status.textContent = labels[quickStatus] || labels.missing;
@@ -723,11 +749,18 @@ function render(report, items, explicitOpen = false) {
     controls.append(reset);
     // Use the existing 12px bottom padding, outside flex layout. An extra action
     // row changes the measured minimum and can cover the independent shortcut.
-    const author = css(createAuthorLink(), { position:'absolute', right:'12px', bottom:'1px', margin:'0', font:'10px/1 ui-sans-serif, system-ui, sans-serif', color:'#8b98a5', 'text-decoration':'underline' });
+    const author = css(createAuthorLink(), { position:'absolute', right:'12px', bottom:'1px', margin:'0', 'pointer-events':'auto', font:'10px/1 ui-sans-serif, system-ui, sans-serif', color:'#8b98a5', 'text-decoration':'underline' });
     author.className = 'panel-author';
     panel.append(author);
-    const resizer=css(document.createElement('div'),{height:'12px','flex-shrink':'0',cursor:'ns-resize','touch-action':'none','user-select':'none','text-align':'center',color:'#8b98a5'});
+    // The open panel paints above the shortcut and can cover its resting center.
+    // The section itself does not take hits. Leave the handle's right 36px clear so
+    // that center still reaches the shortcut; the handle midpoint stays draggable.
+    // Action controls and the author link keep pointer-events and stay above the shortcut.
+    const resizer=css(document.createElement('div'),{position:'relative',height:'12px','flex-shrink':'0','pointer-events':'none',cursor:'ns-resize','touch-action':'none','user-select':'none','text-align':'center',color:'#8b98a5'});
     resizer.className='panel-resizer';resizer.textContent='═';resizer.setAttribute('role','separator');resizer.setAttribute('aria-orientation','horizontal');resizer.setAttribute('aria-label',labels.resize);resizer.title=labels.resize;
+    const resizeHit=css(document.createElement('div'),{position:'absolute',left:'0',right:'36px',top:'0',bottom:'0','pointer-events':'auto',cursor:'ns-resize','touch-action':'none'});
+    resizeHit.setAttribute('data-xsched-resize-hit','');
+    resizer.append(resizeHit);
     panel.append(resizer);
     body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
   }
@@ -739,8 +772,10 @@ function render(report, items, explicitOpen = false) {
 function refreshObservedCache() {
   const completed=quick.observeScheduling(document,Date.now());
   if(!completed)return false;
+  quickStatus='scheduled';
+  composer?.completed();
   const previous=positionStore.loadCache() || lastCache;
-  if(previous && previous.time>=completed.time) {lastCache=previous;return false;}
+  if(previous && previous.time>=completed.time) {lastCache=previous;return true;}
   const value={time:completed.time,readAt:Date.now(),source:2};
   if(!positionStore.saveCache(value))return false;
   lastCache=value;
@@ -749,6 +784,16 @@ function refreshObservedCache() {
   return true;
 }
 
+// Zero rows on a newly entered route are not evidence of a loaded empty list.
+// Existing loaded scopes can become empty; a known fixture empty announcement
+// also confirms emptiness. Unknown empty UI stays pending rather than deleting.
+function pendingList(report) {
+  const scope=report.scopeElement;
+  if(!scope || scope.closest('[aria-busy="true"]') || scope.querySelector('[role="progressbar"], [aria-busy="true"]'))return true;
+  if(listLoadedScope===scope)return false;
+  const knownEmpty=report.tab>0 && [...scope.querySelectorAll('div, p, span')].slice(0,64).some(node=>!node.children.length && node.textContent.trim()==='Nothing scheduled yet.');
+  return !knownEmpty;
+}
 function tick() {
   refreshObservedCache();
   const pathname = location.pathname || "";
@@ -758,7 +803,7 @@ function tick() {
   if (detectedSignature !== quickSignature && !quick.isFilling(document) && !quick.fillDiagnostic(document)) quickStatus = "";
   quickSignature = detectedSignature;
   const next = `${pathname}${location.search || ""}|${report.onScheduled}`;
-  if (next !== session || scopeElement !== report.scopeElement) cacheSignature = '';
+  if (next !== session || scopeElement !== report.scopeElement) {cacheSignature = '';listLoadedScope=null;if(report.onScheduled)emptyListConfirmed=false;}
   if (next !== session || scopeElement !== report.scopeElement || (report.empty && report.items.length === 0)) {
     session = next;
     scopeElement = report.scopeElement || null;
@@ -766,22 +811,25 @@ function tick() {
     scrolled = 0;
   }
   if (report.onScheduled) {
+    if(report.items.length || (report.tab>0 && report.cell>0))listLoadedScope=report.scopeElement;
+    const pending=pendingList(report);
     const replace = report.needsScroll === 0 && report.virtualized === 0;
     accumulated = mergeItems(accumulated, report.items, { replace });
     const times=accumulated.map(item=>item.at?.getTime()).filter(value=>Number.isSafeInteger(value) && value>0);
-    const signature=JSON.stringify([times,report.timeFail,report.empty]);
+    const signature=JSON.stringify([times,report.timeFail,report.empty,pending]);
     if(signature!==cacheSignature) {
       cacheSignature=signature;
-      if(times.length && report.timeFail===0) {
+      if(times.length && report.timeFail===0 && !pending) {
         const value={time:Math.max(...times),readAt:Date.now(),source:1};
-        if(positionStore.saveCache(value))lastCache=value;
-      } else if(report.empty && !times.length) {if(positionStore.clearCache())lastCache=null;}
+        if(positionStore.saveCache(value)){lastCache=value;emptyListConfirmed=false;}
+      } else if(report.empty && !times.length && !pending) {if(positionStore.clearCache()){lastCache=null;emptyListConfirmed=true;}}
     }
   } else {
     accumulated = [];
     cacheSignature='';
   }
   render(report, accumulated);
+  composer?.refresh();
 }
 
 function schedule() {
@@ -801,6 +849,7 @@ function onScroll(event) {
 }
 
 function pollLocation() {
+  composer?.refresh();
   if(refreshObservedCache())schedule();
   const detected = quick.detectControls(document);
   if (JSON.stringify([detected.counts,detected.ready,detected.reason]) !== quickSignature) schedule();
@@ -853,7 +902,7 @@ function start() {
     subtree: true,
     characterData: true,
     attributes: true,
-    attributeFilter: ["aria-selected", "aria-current", "aria-controls", "aria-label", "hidden", "aria-hidden", "data-testid"],
+    attributeFilter: ["aria-selected", "aria-current", "aria-controls", "aria-label", "hidden", "aria-hidden", "aria-busy", "data-testid"],
   });
   window.addEventListener("popstate", schedule);
   window.addEventListener("resize", onResize);
@@ -864,6 +913,7 @@ function start() {
 }
 
 function stop() {
+  composer?.dispose();
   quick.stopSchedulingWatch(document);
   if(heightDrag)cancelHeightDrag();
   if (drag) { cancelDrag(); applyAnchor(false); }

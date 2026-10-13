@@ -14,9 +14,9 @@
 //   npm run e2e
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:https";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
@@ -28,6 +28,35 @@ const DOCS = join(ROOT, "docs");
 const PROBE = join(ROOT, "probe");
 const FIXTURES = join(ROOT, "fixtures");
 
+// puppeteer-core does not install Chrome. Prefer an explicit executable, then
+// installed Chrome for Testing caches; never download or use a regular profile.
+function executable(path) {
+  try {accessSync(path,constants.X_OK);return statSync(path).isFile();} catch {return false;}
+}
+function resolveChromePath() {
+  if(process.env.CHROME_PATH) {
+    if(!executable(process.env.CHROME_PATH))throw new Error(`CHROME_PATH is not an executable file: ${process.env.CHROME_PATH}`);
+    return process.env.CHROME_PATH;
+  }
+  const caches=[join(tmpdir(),'cft'),process.env.PUPPETEER_CACHE_DIR || join(homedir(),'.cache','puppeteer')];
+  for(const cache of caches) {
+    const unpacked=join(cache,'chrome-linux64','chrome');
+    if(executable(unpacked))return unpacked;
+    let builds=[];
+    try {builds=readdirSync(join(cache,'chrome'),{withFileTypes:true}).filter(entry=>entry.isDirectory() && /^linux-\d/.test(entry.name)).map(entry=>entry.name).sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));} catch {continue;}
+    for(const build of builds) {
+      const path=join(cache,'chrome',build,'chrome-linux64','chrome');
+      if(executable(path))return path;
+    }
+  }
+  throw new Error('Chrome for Testing not installed. Install it with: npx @puppeteer/browsers install chrome@stable --path /tmp/cft ; or set CHROME_PATH to its executable.');
+}
+let CHROME_PATH;
+try {CHROME_PATH=resolveChromePath();} catch(error) {
+  console.error('e2e: FAILED — '+error.message);
+  process.exit(1);
+}
+
 // Chrome needs an X server; there is none by default in this box.
 if (!process.env.DISPLAY && !process.env.XSCHED_E2E_REEXEC) {
   const result = spawnSync("xvfb-run", ["-a", process.execPath, SELF], {
@@ -38,7 +67,7 @@ if (!process.env.DISPLAY && !process.env.XSCHED_E2E_REEXEC) {
   process.exit(result.status == null ? 1 : result.status);
 }
 
-const CHROME_PATH = process.env.CHROME_PATH || "/tmp/cft/chrome/linux-155.0.8059.39/chrome-linux64/chrome";
+
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -328,7 +357,7 @@ async function main() {
       return s.count === 2 && s.expanded === 'true' ? s : null;
     }, 'shortcut Scheduled defaults open');
     assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
-    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.1.4 (manifest 0.1.4)', 'diagnostic first line includes both versions');
+    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.1.5 (manifest 0.1.5)', 'diagnostic first line includes both versions');
     await checkAuthorLink('Scheduled author');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-author-link-scheduled.png') });
     await checkNative('desktop scheduled open');
@@ -404,14 +433,14 @@ async function main() {
       chrome.runtime.getManifest = () => ({version: '0.0.2'});
     ` });
     await until(async () => (await probeState(page)).version.includes('⚠ 版本不符'), 'manifest mismatch warning');
-    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.1.4 / manifest 0.0.2'), 'diagnostic mismatch warning');
+    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.1.5 / manifest 0.0.2'), 'diagnostic mismatch warning');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-version-mismatch.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: `chrome.runtime.getManifest = () => { throw new Error('Extension context invalidated. private account'); };` });
     await until(async () => (await probeState(page)).version.includes('擴充已重新載入'), 'context invalidated warning');
     assert(!(await probeState(page)).diag.includes('private account'), 'runtime exception is never copied into diagnostic');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-runtime-invalidated.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: 'chrome.runtime.getManifest = globalThis.__originalManifest;' });
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.4 (manifest 0.1.4)'), 'runtime warning clears');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.5 (manifest 0.1.5)'), 'runtime warning clears');
 
     // Reproduce an actual 0.0.2 reader/content session in another isolated world.
     // Historical sources are read from the task's base commit, never downloaded.
@@ -426,7 +455,7 @@ async function main() {
     await until(async () => (await probeState(page)).diag.startsWith('xsched-gate0 v0.0.2'), 'actual old host visible');
     const takeover = await network.send('Runtime.evaluate', { contextId: versionContext, expression: readFileSync(join(PROBE, 'content.js'), 'utf8') });
     assert(!takeover.exceptionDetails, 'new script reinjection avoids top-level const collisions');
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.4'), 'new script takes over old UI');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.5'), 'new script takes over old UI');
     await sleep(1200); // legacy poll has run repeatedly
     assert(await page.evaluate(() => document.querySelectorAll('#xsched-probe-root').length === 1 && [...document.querySelectorAll('[data-xsched-retired]')].every((el) => el.getBoundingClientRect().height === 0)), 'one active UI; legacy stays connected and hidden');
     await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
@@ -720,7 +749,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched probe v0\.1\.4 \(manifest 0\.1\.4\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.1\.5 \(manifest 0\.1\.5\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
@@ -816,7 +845,7 @@ async function main() {
     const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
     const skeleton = skeletonCopies.result.value[0];
-    assert(/^xsched-skeleton v0\.1\.4 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(/^xsched-skeleton v0\.1\.5 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
     for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture", "punkcan", "https://x.com/punkcan"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
@@ -834,7 +863,7 @@ async function main() {
       const s = await probeState(page);
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
-    assert(/^xsched-skeleton v0\.1\.4 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    assert(/^xsched-skeleton v0\.1\.5 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
     const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
     await select.asElement().click();
     await select.dispose();
@@ -1193,7 +1222,7 @@ async function main() {
       const initial=await until(async()=>{
         const state=await probeState(page);
         return state.present && state.mounted==='1' && state.mode==='other'
-          && state.diag.startsWith('xsched probe v0.1.4 (manifest 0.1.4)\n') ? state : null;
+          && state.diag.startsWith('xsched probe v0.1.5 (manifest 0.1.5)\n') ? state : null;
       },'quick picker first diagnostic rendered: '+name);
       assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
       await installQuickClock(contextId);
@@ -1229,7 +1258,7 @@ async function main() {
       assert(filled.status==='Fields filled; not scheduled yet','fill is not reported as scheduled');
       if(id==='lunch')await page.screenshot({path:join(DOCS,'v1.0-quick014-slot-filled.png')});
     }
-    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.1.4'),'new diagnostic available');
+    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.1.5'),'new diagnostic available');
     await network.send('Runtime.evaluate',{contextId:quickContext,expression:`globalThis.__quickCopies=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText(text){globalThis.__quickCopies.push(text);return Promise.resolve();}}});`});
     await clickShadow('[data-xsched-copy]');await clickShadow('[data-xsched-skeleton]');
     const exported=await network.send('Runtime.evaluate',{contextId:quickContext,expression:'globalThis.__quickCopies',returnByValue:true});
@@ -1628,6 +1657,163 @@ async function main() {
     assert(toggleCount(endCounts)===toggleCount(startCounts)+40,'P0 twenty open/close cycles count exactly forty Dagaz toggles');
     assert(recoveryCount(endCounts)>=recoveryCount(startCounts)+4,'P0 missing/hidden/offscreen/SPA-host recovery counted');
     console.log('  ✓ P0: twenty open/close cycles with SPA/resize, shadow recovery and in-viewport panels');
+
+    // ── 0.1.5: composer entry, only native picker icon activation ──────────────
+    await page.setViewport({width:320,height:820});
+    await open('quick-composer','/compose/post');
+    const composerContext=await until(findExtensionContext,'015 composer isolated world');
+    await installQuickClock(composerContext);
+    await until(()=>page.evaluate(()=>document.querySelector('.xsched-composer-root')?.shadowRoot.querySelector('[data-xsched-composer-slot="morning"]')?.textContent.includes('2028')),'015 actual future slot labels');
+    assert((await probeState(page)).expanded==='false','015 composer works without opening Dagaz panel');
+    async function composerClick(id) {
+      const handle=await page.evaluateHandle(id=>document.querySelector('.xsched-composer-root').shadowRoot.querySelector('[data-xsched-composer-slot="'+id+'"]'),id);
+      try {await handle.asElement().click();} finally {await handle.dispose();}
+    }
+    const inlineGeometry=await page.evaluate(()=>{
+      const host=document.querySelector('.xsched-composer-root'),buttons=[...host.shadowRoot.querySelectorAll('button')];
+      const native=[...document.querySelectorAll('.fixture-toolbar button')].map(el=>el.getBoundingClientRect());
+      return buttons.length===5 && buttons.every(button=>{const r=button.getBoundingClientRect();return r.width>0 && r.left>=0 && r.right<=innerWidth && button.title===button.getAttribute('aria-label') && !native.some(n=>r.left<n.right && r.right>n.left && r.top<n.bottom && r.bottom>n.top);});
+    });
+    assert(inlineGeometry,'015 five localized wrapped slots fit 320px without covering native toolbar');
+    await page.screenshot({path:join(DOCS,'v1.0-quick015-composer.png')});
+    for(const [index,id,hour,minute,period] of [[0,'morning','9','0','AM'],[1,'lunch','12','30','PM'],[2,'evening','8','0','PM']]) {
+      await composerClick(id);
+      await until(()=>page.evaluate(()=>{
+        const notice=document.querySelector('.xsched-composer-notice')?.shadowRoot.querySelector('[role="status"]');
+        return notice?.textContent.includes('Fields filled') && document.getElementById('xsched-probe-root').dataset.xschedDiag.includes('fill=ok');
+      }),'015 '+id+' fill completed');
+      const filled=await page.evaluate(()=>({values:Object.fromEntries(['month','day','year','hour','minute','period'].map(key=>[key,document.getElementById('fake-select-'+key).value]))}));
+      assert(filled.values.year==='2028' && filled.values.month==='1' && filled.values.day==='1' && filled.values.hour===hour && filled.values.minute===minute && filled.values.period===period,'015 '+id+' complete native readback');
+      assert(await page.evaluate(index=>window.fixtureSend.icon===index+1 && window.fixtureSend.input>0 && window.fixtureSend.change>0 && ['confirm','schedule','post','calendar','submit'].every(key=>window.fixtureSend[key]===0),index),'015 one icon activation per use; input/change and zero confirm/schedule/post/submit');
+      assert((await probeState(page)).expanded==='false','015 Dagaz panel remains closed');
+      await page.screenshot({path:join(DOCS,'v1.0-quick015-filled-'+id+'.png')});
+      // Test teardown only: extension cannot click Close or mutate the X dialog.
+      await page.evaluate(()=>document.querySelector('[role="dialog"]').remove());
+      await until(()=>page.evaluate(()=>!document.querySelector('.xsched-composer-root').shadowRoot.querySelector('button').disabled),'015 next composer use available');
+    }
+    // Same entry failures: stale icon, no new picker and writer rollback.
+    await page.evaluate(()=>document.querySelector('[data-testid="scheduleOption"]').remove());
+    await until(()=>page.evaluate(()=>{const root=document.querySelector('.xsched-composer-root')?.shadowRoot;return root && [...root.querySelectorAll('button')].every(button=>button.disabled) && root.querySelector('[role="status"]').textContent.includes('not found');}),'015 missing icon is clearly disabled');
+    for(const mode of ['no-dialog','reject']) {
+      await open('quick-composer','/compose/post');
+      const ctx=await until(findExtensionContext,'015 failure world');await installQuickClock(ctx);
+      await until(()=>page.evaluate(()=>document.querySelector('.xsched-composer-root')?.shadowRoot.querySelector('button')),'015 failure entry mounted');
+      await page.evaluate(mode=>window.fixtureMode=mode,mode);
+      await composerClick('evening');
+      await until(()=>page.evaluate(()=>{const notice=document.querySelector('.xsched-composer-notice')?.shadowRoot.querySelector('[role="status"]');return notice && !notice.textContent.includes('Opening');}),'015 '+mode+' clear failure');
+      assert(await page.evaluate(()=>window.fixtureSend.icon===1 && ['confirm','schedule','post','calendar','submit'].every(key=>window.fixtureSend[key]===0)),'015 failure does not send or close controls');
+      if(mode==='no-dialog')assert(await page.evaluate(()=>window.fixtureSend.input===0 && window.fixtureSend.change===0),'015 missing dialog has zero writes');
+      else assert(await page.evaluate(()=>['year','month','day','hour','minute'].every(key=>document.getElementById('fake-select-'+key).value==='') && document.getElementById('fake-select-period').value==='AM'),'015 rejection restores whole original form');
+      await page.screenshot({path:join(DOCS,'v1.0-quick015-'+mode+'.png')});
+    }
+
+    async function reviewDragPanelTo(x,y) {
+      const start=await page.evaluate(()=>{const root=document.getElementById('xsched-probe-root').shadowRoot,p=root.querySelector('section').getBoundingClientRect(),h=root.querySelector('.panel-header').getBoundingClientRect();return {x:h.left+20,y:h.top+14,left:p.left,top:p.top};});
+      await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(start.x+x-start.left,start.y+y-start.top,{steps:14});await page.mouse.up();
+    }
+    async function reviewDragButtonTo(x,y) {
+      const start=await buttonRect();await page.mouse.move(start.x+22,start.y+22);await page.mouse.down();await page.mouse.move(x+22,y+22,{steps:14});await page.mouse.up();
+    }
+    // P1(c): entering Scheduled before a list exists is not an empty-list read.
+    await page.setViewport({width:1280,height:820});
+    await open('quick-composer','/compose/post');
+    await page.evaluate(()=>{
+      window.localStorage.removeItem('xsched.probe.pos');window.localStorage.removeItem('xsched.probe.panelPos');
+      window.localStorage.setItem('xsched.probe.lastScheduled',JSON.stringify({time:new Date(2028,0,2,20).getTime(),readAt:new Date(2028,0,1).getTime(),source:2}));
+    });
+    await page.reload({waitUntil:'domcontentloaded'});
+    const reviewContext=await until(findExtensionContext,'015 P1 context');await installQuickClock(reviewContext);
+    const observedBefore=await page.evaluate(()=>window.localStorage.getItem('xsched.probe.lastScheduled'));
+    await page.evaluate(()=>{
+      history.pushState({},'','/compose/post/unsent/scheduled?fixture=quick-composer');
+      const scope=document.createElement('div');scope.id='fixture-incoming-list';scope.setAttribute('role','dialog');scope.setAttribute('aria-busy','true');
+      const tab=document.createElement('div');tab.setAttribute('role','tab');tab.setAttribute('aria-selected','true');tab.textContent='Scheduled';scope.append(tab);
+      const empty=document.createElement('div');empty.textContent='Nothing scheduled yet.';scope.append(empty);document.body.append(scope);
+    });
+    await until(async()=> (await probeState(page)).mode==='scheduled','015 incoming Scheduled');await sleep(650);
+    assert(await page.evaluate(value=>window.localStorage.getItem('xsched.probe.lastScheduled')===value,observedBefore),'P1(c) loading Scheduled must preserve observed source-2 cache');
+
+    // P1(g): confirmed empty is distinct from the old unread-cache disabled case.
+    await page.evaluate(()=>document.getElementById('fixture-incoming-list').removeAttribute('aria-busy'));
+    await until(()=>page.evaluate(()=>window.localStorage.getItem('xsched.probe.lastScheduled')===null),'015 confirmed empty read');
+    await page.evaluate(()=>{history.pushState({},'','/compose/post?fixture=quick-composer');document.getElementById('fixture-incoming-list').remove();});
+    await until(()=>page.evaluate(()=>{const button=document.querySelector('.xsched-composer-root')?.shadowRoot.querySelector('[data-xsched-composer-slot="random"]');return button && !button.disabled;}),'015 empty-list random enabled');
+    await composerClick('random');
+    await until(()=>page.evaluate(()=>document.querySelector('.xsched-composer-notice')?.shadowRoot.querySelector('[role="status"]')?.textContent.includes('Fields filled')),'015 empty-list random filled');
+    assert(await page.evaluate(()=>{
+      const val=key=>document.getElementById('fake-select-'+key).value;
+      const hour=Number(val('hour'))%12+(val('period')==='PM'?12:0);
+      const at=new Date(Number(val('year')),Number(val('month'))-1,Number(val('day')),hour,Number(val('minute')));
+      const range=JSON.parse(window.localStorage.getItem('xsched.probe.quickRange')) || {a:10,b:30};
+      const delta=at.getTime()-Date.now();
+      return window.localStorage.getItem('xsched.probe.lastScheduled')===null && delta>=Math.max(5,range.a)*60000 && delta<=Math.max(5,range.b)*60000 && window.fixtureSend.icon===1 && window.fixtureSend.schedule===0 && window.fixtureSend.submit===0;
+    }),'P1(g) confirmed zero schedules fill now plus A-B with no last-time cache or sends');
+
+    // P1(d): this is a test-user Schedule click, never extension activation.
+    if((await probeState(page)).expanded==='false')await toggle(true);
+    await page.evaluate(()=>{const button=document.getElementById('schedule');button.textContent='Schedule';button.addEventListener('click',()=>document.querySelector('[role="dialog"]').remove(),{once:true});});
+    await page.click('#schedule');
+    await until(()=>page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled') || 'null')?.source===2),'015 observed scheduling completion');
+    assert(await page.evaluate(()=>{
+      const text=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-status').textContent;
+      return text==='Scheduling completion observed' && !text.includes('not scheduled yet') && window.fixtureSend.schedule===1 && window.fixtureSend.submit===0;
+    }),'P1(d) successful user scheduling clears not-scheduled status');
+
+    // P1(b): only a proven picker that actually overlaps moves the panel.
+    await composerClick('morning');
+    await until(()=>page.evaluate(()=>document.getElementById('fake-select-year')?.value==='2028'),'015 next proven picker');
+    await page.evaluate(()=>Object.assign(document.querySelector('[aria-modal="true"]').style,{left:'900px',top:'16px',width:'100px',height:'100px',maxHeight:'100px',overflow:'auto'}));
+    await sleep(650);await reviewDragPanelTo(100,80);await sleep(650);
+    const clearPickerPanel=await panelRect();
+    const savedDraggedPoint=await page.evaluate(()=>window.localStorage.getItem('xsched.probe.panelPos'));
+    await page.evaluate(point=>Object.assign(document.querySelector('[aria-modal="true"]').style,{left:(point.x+point.width-30)+'px',top:(point.y+20)+'px'}),clearPickerPanel);
+    await until(async()=> (await panelRect()).x===clearPickerPanel.x-38,'015 minimal picker avoidance');
+    assert(await page.evaluate(({point,saved})=>{
+      const r=document.getElementById('xsched-probe-root').shadowRoot.querySelector('section').getBoundingClientRect(),native=document.querySelector('[aria-modal="true"]').getBoundingClientRect();
+      return point.x===100 && point.y===80 && r.left===point.x-38 && r.top===point.y && !(r.left<native.right && r.right>native.left && r.top<native.bottom && r.bottom>native.top) && window.localStorage.getItem('xsched.probe.panelPos')===saved;
+    },{point:clearPickerPanel,saved:savedDraggedPoint}),'P1(b) retain a clear dragged point; overlapping picker takes shortest 38px escape without saving it');
+    await page.evaluate(()=>document.querySelector('[role="dialog"]').remove());
+    await until(async()=> (await panelRect()).x===100 && (await panelRect()).y===80,'015 dragged point restored after picker');
+
+    // P1(f): physically drag behind each action, then verify the target still hits.
+    const hits=[];
+    for(const selector of ['[data-xsched-copy]','.panel-author']) {
+      const target=await page.evaluate(selector=>{const r=document.getElementById('xsched-probe-root').shadowRoot.querySelector(selector).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};},selector);
+      if(hits.length){await clickShadow('[data-xsched-minimize]');await until(async()=> (await probeState(page)).expanded==='false','015 minimize for next shortcut drag');}
+      await reviewDragButtonTo(target.x-22,target.y-22);
+      if(hits.length)await toggle(true);
+      hits.push(await page.evaluate(({selector,target})=>{
+        const host=document.getElementById('xsched-probe-root'),root=host.shadowRoot,element=root.querySelector(selector);
+        return document.elementFromPoint(target.x,target.y)===host && root.elementFromPoint(target.x,target.y)?.closest(selector)===element;
+      },{selector,target}));
+    }
+    assert(hits.length===2 && hits.every(Boolean),'P1(f) dragged Dagaz cannot cover Copy diagnostics or author link');
+
+    // P1(e): full page reload of this composer restores the last JSON boolean switch.
+    // The shortcut may sit under the open panel after P1(f); collapse with minimize.
+    await until(async () => {
+      const state = await probeState(page);
+      return state.expanded === 'true' && state.panelVisible === true ? state : null;
+    }, '015 panel open before reload');
+    assert(await page.evaluate(() => window.localStorage.getItem('xsched.probe.panelOpen') === 'true'), '015 open switch is stored as JSON true');
+    await page.reload({waitUntil:'domcontentloaded'});
+    await until(async () => {
+      const state = await probeState(page);
+      return state.expanded === 'true' && state.panelVisible === true ? state : null;
+    }, '015 open panel survives full reload');
+    await clickShadow('[data-xsched-minimize]');
+    await until(async () => {
+      const state = await probeState(page);
+      return state.expanded === 'false' && state.panelVisible === false ? state : null;
+    }, '015 minimize before collapsed reload');
+    assert(await page.evaluate(() => window.localStorage.getItem('xsched.probe.panelOpen') === 'false'), '015 collapsed switch is stored as JSON false');
+    await page.reload({waitUntil:'domcontentloaded'});
+    await until(async () => {
+      const state = await probeState(page);
+      return state.expanded === 'false' && state.panelVisible === false ? state : null;
+    }, '015 collapsed panel survives full reload');
+
+    console.log('  ✓ 015: three composer uses, 320px toolbar, sole icon click, native readback, failure rollback and zero sends');
 
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);
