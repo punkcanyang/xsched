@@ -231,7 +231,7 @@ function ensureHost(explicitOpen = false) {
     bottom: "56px",
     width: "min(344px, calc(100vw - 32px))",
     "box-sizing": "border-box",
-    "pointer-events": "auto",
+    "pointer-events": "none",
     font: "13px/1.45 ui-sans-serif, system-ui, sans-serif",
     color: "#e7e9ea",
     background: "rgba(22, 24, 28, 0.96)",
@@ -604,7 +604,7 @@ function render(report, items, explicitOpen = false) {
   badge.textContent = String(count);
   css(badge, { display:report.onScheduled ? "block" : "none" });
 
-  const header = css(document.createElement("div"), { "flex-shrink":"0", "touch-action":"none", "user-select":"none", cursor:"grab" });
+  const header = css(document.createElement("div"), { "flex-shrink":"0", "pointer-events":"auto", "touch-action":"none", "user-select":"none", cursor:"grab" });
   header.className = "panel-header";
   const heading = css(document.createElement("div"), { display:"flex", gap:"8px", "align-items":"start" });
   const kicker = textNode("div", versionLine(runtime.manifestVersion, runtime.runtimeInvalidated), { flex:"1", "min-width":"0", color:"#8b98a5", "font-size":"11px", "word-break":"break-word" });
@@ -626,9 +626,9 @@ function render(report, items, explicitOpen = false) {
   const countLine = textNode("div", report.onScheduled ? `讀到 ${count} 則` : "xsched 探針：非 Scheduled 頁", { "font-size":"18px", "font-weight":"760", margin:"4px 0 0" });
   countLine.className = "count";
   header.append(heading, countLine);
-  const body = css(document.createElement("div"), { "min-height":"0", overflow:"auto", "overscroll-behavior":"contain", flex:"1 1 auto" });
+  const body = css(document.createElement("div"), { "min-height":"0", overflow:"auto", "overscroll-behavior":"contain", flex:"1 1 auto", "pointer-events":"auto" });
   body.className = "panel-body";
-  const controls = css(document.createElement("div"), { display:"flex", gap:"6px", "align-items":"center", "flex-wrap":"wrap", "flex-shrink":"0", "border-top":"1px solid #38444d", "padding-top":"8px" });
+  const controls = css(document.createElement("div"), { display:"flex", gap:"6px", "align-items":"center", "flex-wrap":"wrap", "flex-shrink":"0", "pointer-events":"auto", "border-top":"1px solid #38444d", "padding-top":"8px" });
   controls.className = "panel-actions";
   panel.append(header, body, controls);
 
@@ -746,11 +746,18 @@ function render(report, items, explicitOpen = false) {
     controls.append(reset);
     // Use the existing 12px bottom padding, outside flex layout. An extra action
     // row changes the measured minimum and can cover the independent shortcut.
-    const author = css(createAuthorLink(), { position:'absolute', right:'12px', bottom:'1px', margin:'0', font:'10px/1 ui-sans-serif, system-ui, sans-serif', color:'#8b98a5', 'text-decoration':'underline' });
+    const author = css(createAuthorLink(), { position:'absolute', right:'12px', bottom:'1px', margin:'0', 'pointer-events':'auto', font:'10px/1 ui-sans-serif, system-ui, sans-serif', color:'#8b98a5', 'text-decoration':'underline' });
     author.className = 'panel-author';
     panel.append(author);
-    const resizer=css(document.createElement('div'),{height:'12px','flex-shrink':'0',cursor:'ns-resize','touch-action':'none','user-select':'none','text-align':'center',color:'#8b98a5'});
+    // The open panel paints above the shortcut and can cover its resting center.
+    // The section itself does not take hits. Leave the handle's right 36px clear so
+    // that center still reaches the shortcut; the handle midpoint stays draggable.
+    // Action controls and the author link keep pointer-events and stay above the shortcut.
+    const resizer=css(document.createElement('div'),{position:'relative',height:'12px','flex-shrink':'0','pointer-events':'none',cursor:'ns-resize','touch-action':'none','user-select':'none','text-align':'center',color:'#8b98a5'});
     resizer.className='panel-resizer';resizer.textContent='═';resizer.setAttribute('role','separator');resizer.setAttribute('aria-orientation','horizontal');resizer.setAttribute('aria-label',labels.resize);resizer.title=labels.resize;
+    const resizeHit=css(document.createElement('div'),{position:'absolute',left:'0',right:'36px',top:'0',bottom:'0','pointer-events':'auto',cursor:'ns-resize','touch-action':'none'});
+    resizeHit.setAttribute('data-xsched-resize-hit','');
+    resizer.append(resizeHit);
     panel.append(resizer);
     body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
   }
