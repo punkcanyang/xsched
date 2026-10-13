@@ -25,17 +25,17 @@ const DOCS = join(ROOT, "docs");
 const POSITION_SOURCE_SHA256 = "4aacb059d7c4995156b5b808fbcc74aff48b2874fdc934466116cc9a346a74c7";
 
 // Exact-source exception only for the sole native select input/change writer.
-const COMPOSER_SOURCE_SHA256 = "d8e82e094668865ec613d8ccdce1875f3dbdf8d02a02e1a9f0f804c94d951e8e";
+const COMPOSER_SOURCE_SHA256 = "785f7cf451f1e81fc9d00db622c8b19e52bb024f18c7928fef99317549bbfb98";
 const COMPOSER_CLICK_STATEMENT = "  icon.click();";
 // All other activation, network, storage and markup rules still scan this file.
-const QUICK_SOURCE_SHA256 = "89d46a6617da3dab6827011d6cd5eeffba767be344cb8fec80ca201d7ce59506";
+const QUICK_SOURCE_SHA256 = "a35fb5c6b8480cf4b1dde3916443befa8e201d9dd980d446fa7f9b6c1c3772f8";
 
 // Owner-authorized exception: one exact DOM factory in root probe/ui.js only.
 // Pin both definition and sole call site to full reviewed sources. This prevents
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
-const AUTHOR_UI_SHA256 = "0f1ccfd4e6d659fa496388a07c529fadd2399ae3c71c59afa31c0b87ef490fed";
-const AUTHOR_CONTENT_SHA256 = "ee384a67fb1cca2f6e92ffc8f6348c6ff8a44459b25783baf7f9d7a0c038e674";
+const AUTHOR_UI_SHA256 = "5eb978a06ed129bbb4345d3218fb108ce3fcf81cf3b5bbd219dadc66795736b0";
+const AUTHOR_CONTENT_SHA256 = "bab754bdfe186d788af9678bb48ad8aa8e99fde98d24885b2282be636dfb3f96";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');

@@ -1706,6 +1706,89 @@ async function main() {
       else assert(await page.evaluate(()=>['year','month','day','hour','minute'].every(key=>document.getElementById('fake-select-'+key).value==='') && document.getElementById('fake-select-period').value==='AM'),'015 rejection restores whole original form');
       await page.screenshot({path:join(DOCS,'v1.0-quick015-'+mode+'.png')});
     }
+
+    async function reviewDragPanelTo(x,y) {
+      const start=await page.evaluate(()=>{const root=document.getElementById('xsched-probe-root').shadowRoot,p=root.querySelector('section').getBoundingClientRect(),h=root.querySelector('.panel-header').getBoundingClientRect();return {x:h.left+20,y:h.top+14,left:p.left,top:p.top};});
+      await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(start.x+x-start.left,start.y+y-start.top,{steps:14});await page.mouse.up();
+    }
+    async function reviewDragButtonTo(x,y) {
+      const start=await buttonRect();await page.mouse.move(start.x+22,start.y+22);await page.mouse.down();await page.mouse.move(x+22,y+22,{steps:14});await page.mouse.up();
+    }
+    // P1(c): entering Scheduled before a list exists is not an empty-list read.
+    await page.setViewport({width:1280,height:820});
+    await open('quick-composer','/compose/post');
+    await page.evaluate(()=>{
+      window.localStorage.removeItem('xsched.probe.pos');window.localStorage.removeItem('xsched.probe.panelPos');
+      window.localStorage.setItem('xsched.probe.lastScheduled',JSON.stringify({time:new Date(2028,0,2,20).getTime(),readAt:new Date(2028,0,1).getTime(),source:2}));
+    });
+    await page.reload({waitUntil:'domcontentloaded'});
+    const reviewContext=await until(findExtensionContext,'015 P1 context');await installQuickClock(reviewContext);
+    const observedBefore=await page.evaluate(()=>window.localStorage.getItem('xsched.probe.lastScheduled'));
+    await page.evaluate(()=>{
+      history.pushState({},'','/compose/post/unsent/scheduled?fixture=quick-composer');
+      const scope=document.createElement('div');scope.id='fixture-incoming-list';scope.setAttribute('role','dialog');scope.setAttribute('aria-busy','true');
+      const tab=document.createElement('div');tab.setAttribute('role','tab');tab.setAttribute('aria-selected','true');tab.textContent='Scheduled';scope.append(tab);
+      const empty=document.createElement('div');empty.textContent='Nothing scheduled yet.';scope.append(empty);document.body.append(scope);
+    });
+    await until(async()=> (await probeState(page)).mode==='scheduled','015 incoming Scheduled');await sleep(650);
+    assert(await page.evaluate(value=>window.localStorage.getItem('xsched.probe.lastScheduled')===value,observedBefore),'P1(c) loading Scheduled must preserve observed source-2 cache');
+
+    // P1(g): confirmed empty is distinct from the old unread-cache disabled case.
+    await page.evaluate(()=>document.getElementById('fixture-incoming-list').removeAttribute('aria-busy'));
+    await until(()=>page.evaluate(()=>window.localStorage.getItem('xsched.probe.lastScheduled')===null),'015 confirmed empty read');
+    await page.evaluate(()=>{history.pushState({},'','/compose/post?fixture=quick-composer');document.getElementById('fixture-incoming-list').remove();});
+    await until(()=>page.evaluate(()=>{const button=document.querySelector('.xsched-composer-root')?.shadowRoot.querySelector('[data-xsched-composer-slot="random"]');return button && !button.disabled;}),'015 empty-list random enabled');
+    await composerClick('random');
+    await until(()=>page.evaluate(()=>document.querySelector('.xsched-composer-notice')?.shadowRoot.querySelector('[role="status"]')?.textContent.includes('Fields filled')),'015 empty-list random filled');
+    assert(await page.evaluate(()=>{
+      const val=key=>document.getElementById('fake-select-'+key).value;
+      const hour=Number(val('hour'))%12+(val('period')==='PM'?12:0);
+      const at=new Date(Number(val('year')),Number(val('month'))-1,Number(val('day')),hour,Number(val('minute')));
+      const range=JSON.parse(window.localStorage.getItem('xsched.probe.quickRange')) || {a:10,b:30};
+      const delta=at.getTime()-Date.now();
+      return window.localStorage.getItem('xsched.probe.lastScheduled')===null && delta>=Math.max(5,range.a)*60000 && delta<=Math.max(5,range.b)*60000 && window.fixtureSend.icon===1 && window.fixtureSend.schedule===0 && window.fixtureSend.submit===0;
+    }),'P1(g) confirmed zero schedules fill now plus A-B with no last-time cache or sends');
+
+    // P1(d): this is a test-user Schedule click, never extension activation.
+    if((await probeState(page)).expanded==='false')await toggle(true);
+    await page.evaluate(()=>{const button=document.getElementById('schedule');button.textContent='Schedule';button.addEventListener('click',()=>document.querySelector('[role="dialog"]').remove(),{once:true});});
+    await page.click('#schedule');
+    await until(()=>page.evaluate(()=>JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled') || 'null')?.source===2),'015 observed scheduling completion');
+    assert(await page.evaluate(()=>{
+      const text=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-status').textContent;
+      return text==='Scheduling completion observed' && !text.includes('not scheduled yet') && window.fixtureSend.schedule===1 && window.fixtureSend.submit===0;
+    }),'P1(d) successful user scheduling clears not-scheduled status');
+
+    // P1(b): only a proven picker that actually overlaps moves the panel.
+    await composerClick('morning');
+    await until(()=>page.evaluate(()=>document.getElementById('fake-select-year')?.value==='2028'),'015 next proven picker');
+    await page.evaluate(()=>Object.assign(document.querySelector('[aria-modal="true"]').style,{left:'900px',top:'16px',width:'100px',height:'100px',maxHeight:'100px',overflow:'auto'}));
+    await sleep(650);await reviewDragPanelTo(100,80);await sleep(650);
+    const clearPickerPanel=await panelRect();
+    const savedDraggedPoint=await page.evaluate(()=>window.localStorage.getItem('xsched.probe.panelPos'));
+    await page.evaluate(point=>Object.assign(document.querySelector('[aria-modal="true"]').style,{left:(point.x+point.width-30)+'px',top:(point.y+20)+'px'}),clearPickerPanel);
+    await until(async()=> (await panelRect()).x===clearPickerPanel.x-38,'015 minimal picker avoidance');
+    assert(await page.evaluate(({point,saved})=>{
+      const r=document.getElementById('xsched-probe-root').shadowRoot.querySelector('section').getBoundingClientRect(),native=document.querySelector('[aria-modal="true"]').getBoundingClientRect();
+      return point.x===100 && point.y===80 && r.left===point.x-38 && r.top===point.y && !(r.left<native.right && r.right>native.left && r.top<native.bottom && r.bottom>native.top) && window.localStorage.getItem('xsched.probe.panelPos')===saved;
+    },{point:clearPickerPanel,saved:savedDraggedPoint}),'P1(b) retain a clear dragged point; overlapping picker takes shortest 38px escape without saving it');
+    await page.evaluate(()=>document.querySelector('[role="dialog"]').remove());
+    await until(async()=> (await panelRect()).x===100 && (await panelRect()).y===80,'015 dragged point restored after picker');
+
+    // P1(f): physically drag behind each action, then verify the target still hits.
+    const hits=[];
+    for(const selector of ['[data-xsched-copy]','.panel-author']) {
+      const target=await page.evaluate(selector=>{const r=document.getElementById('xsched-probe-root').shadowRoot.querySelector(selector).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};},selector);
+      if(hits.length){await clickShadow('[data-xsched-minimize]');await until(async()=> (await probeState(page)).expanded==='false','015 minimize for next shortcut drag');}
+      await reviewDragButtonTo(target.x-22,target.y-22);
+      if(hits.length)await toggle(true);
+      hits.push(await page.evaluate(({selector,target})=>{
+        const host=document.getElementById('xsched-probe-root'),root=host.shadowRoot,element=root.querySelector(selector);
+        return document.elementFromPoint(target.x,target.y)===host && root.elementFromPoint(target.x,target.y)?.closest(selector)===element;
+      },{selector,target}));
+    }
+    assert(hits.length===2 && hits.every(Boolean),'P1(f) dragged Dagaz cannot cover Copy diagnostics or author link');
+
     console.log('  ✓ 015: three composer uses, 320px toolbar, sole icon click, native readback, failure rollback and zero sends');
 
     // ── network discipline ─────────────────────────────────────────────────────

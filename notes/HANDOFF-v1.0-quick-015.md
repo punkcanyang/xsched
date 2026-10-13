@@ -93,3 +93,21 @@ Chrome 路徑修正收尾（接續外部 WIP `ac79ea8`）：本機 Node 26.10.0 
 本輪已實際嘗試專案內安裝器（不經 npx 再安裝套件）：`node node_modules/@puppeteer/browsers/lib/cjs/main-cli.js install chrome@stable --path /tmp/cft`，在解析 `googlechromelabs.github.io` 時遭 DNS `EAI_AGAIN`，下載未開始。程式的路徑搜尋不能憑空補上瀏覽器；沒有需要修的來源邏輯，僅補此環境證據與指令。沒有修改 test／verify／e2e／probe，沒有刪斷言或放寬守門。
 
 外部必須在能下載的環境執行上述安裝器（或安裝既有 Chrome for Testing 並設定 CHROME_PATH），再跑 `npm run e2e`。若外部也遇 DNS 錯誤，需先恢復該開發環境的 DNS／下載連線；安裝未成功前，重跑 e2e 會得到同一個缺瀏覽器訊息。本輪不宣稱 e2e 通過、不 commit／push／merge。
+
+## 複審第 1 輪 P1（b）–（g）續作
+
+基準 `21513bf`，本輪先核對 log／diff，尚無這六項修正的 WIP。原斷言與守門保留；先補不衝突的 b/c/d/f，每項追加直接相關單元與 015 e2e。e 的 optional open 數字 schema、g 的未知／已確認空列表界線已向使用者詢問；不在未確認時偷偷放寬位置 schema 或無快取停用斷言。外部 Chrome 走查及第二輪 P0/P1 複審仍須由外部做，不 commit／push／merge。
+
+### 已完成 b/c/d/f/g，e 待儲存授權
+
+- b：不改 generic collectObstacles 的 dialog 排除規則。只把 quick 已辨識且完整的原生 picker 傳給新的 pure `avoidPicker`；不重疊保留拖曳點，重疊時在視窗內四個方向選最短平移，留 8px。不寫回這個臨時位置，picker 關閉會回原拖曳點；在臨時避讓位置開始拖動時，以實際顯示的 CSS 座標為起點。物理上沒有可分離空位時維持原點，不假稱能避開全螢幕 dialog。
+- c：新 Scheduled route／scope 尚未讀到列表時，零列不清最後時間。busy／progressbar 節點仍保守視為待載入；已有排程列的同一 scope 後續變空，或已選 Scheduled tab 的已知空列表公告，才可確認空。頁面背景時間軸的 cell 不當成已載入 Scheduled。reader 讀法本身不改。已知公告目前只取原 empty fixture 的精確「Nothing scheduled yet.」；未知真頁空提示保守保留快取，不能把未知空 DOM 當成載完。
+- d：親按排程後通過既有成功觀察，浮層和 composer 提示改為九語「已觀察到排程完成」。即使快取已有更晚的排程，也要更新狀態，不能因 max 不變而留著「尚未排程」。診斷 fill=ok 仍是最後一次填值記錄，不改既有觀察／送出守門。
+- f：自家 panel 明確畫在 shortcut 上層；shortcut 拖進固定操作鈕／作者連結區域，命中仍落在 panel 控制項。沒有移動任一錨點來避讓自己。鈕被 panel 覆蓋時，可用 panel 的縮小鈕讓鈕再露出。
+- g：區分「未知／沒讀過」與「已確認空列表」。前者仍停用，保留舊的無快取斷言；後者可從現在＋隨機 A/B 分鐘填值，不製造假的最後排程快取。沿用整分鐘向上取整及 5 分鐘安全餘量。空列表確認目前限本次頁面 session；整頁重載後沒有證據就回到未知，需再讀列表。浮層與 composer 共用這個布林狀態，沒有新增 storage。
+
+每項已有直接相關單元測試，015 區塊各有一個新增 assert：b 同時驗原拖曳點與最短 38px 平移、c source-2 快取在 SPA busy 時逐字不變、d 親按後狀態離開未排程、f 物理拖到診斷／作者兩處仍命中、g 零快取的已確認空列表從現在＋A/B 填。d 的排程是 Puppeteer 模擬使用者親點，不是擴充代按；其餘既有 click/submit 與網路斷言全保留。舊 e2e 語句／斷言與 `21513bf` 完全保留（僅新增一段及一個空行）。verify 只同步 ui/content/quick/composer 四個 SHA，原規則／全部自測逐字未動，position.js 與 storage schema 未改。
+
+本機實跑 `npm test` 14/14 檔通過、0 失敗、0 跳過；content 42/42、ui 9/9。`npm run verify` OK，仍為 30 API／14 icon／9 SVG／66 leak／37 storage／64 writer／22 author-link／160 URL／28 author boundary／158 解構／514 資源／308 CSS。語法與 diff 空白檢查通過；依本任務不在沙箱跑 Chrome e2e，外部需重跑。版本仍 0.1.5，不增加權限／網路或送出操作。
+
+**e 未完成，不能宣稱六項已全過。** AGENTS 限定五個固定數字 key，panelPos 必須恰好 `{x,y}`；舊單元與 e2e 又逐字核對這個 schema。把 open 加在 panelPos 會破壞舊斷言，不能擅改。已詢問使用者是否授權 position.js 新增唯一 `xsched.probe.panelOpen`，schema 恰好 `{open:0/1}`，拒絕額外欄位／其他值；保留原五個 schema 與所有舊斷言，不增加擴充權限。收到明確授權後才實作對應 reload 接線、單元與第六個 015 assert，目前未寫這個 key。沒有用位置數字偷編碼狀態，也沒有用 history／其他儲存繞過守門。等待中的問題不是合併批准，而是必要儲存規格的授權。

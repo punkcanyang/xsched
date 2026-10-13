@@ -122,3 +122,11 @@ test('all package and script versions are 0.1.5', async () => {
   assert.equal(R.PROBE_VERSION, '0.1.5');
   assert.equal(globalThis.XSCHED_SKELETON.SKELETON_VERSION, '0.1.5');
 });
+
+test('P1(b) picker overlap takes the shortest clear escape; clear dragged point never moves',()=>{
+ const U=globalThis.XSCHED_UI;
+ const rect={left:500,top:80,right:844,bottom:580},picker={left:700,top:100,right:1000,bottom:500};
+ assert.deepEqual(U.avoidPicker(rect,picker,1280,820),{x:348,y:80});
+ assert.deepEqual(U.avoidPicker(rect,{left:900,top:600,right:1200,bottom:800},1280,820),{x:500,y:80});
+ for(const lang of Object.keys(U.STRINGS)){const labels=U.quickStringsFor(lang,lang);assert.ok(labels.scheduled);assert.ok(labels.emptyList);}
+});

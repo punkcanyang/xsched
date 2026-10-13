@@ -791,3 +791,43 @@ test('P0 twenty open/close cycles survive SPA, viewport resize and remount witho
  }
  assert.match(f.host().dataset.xschedDiag,/toggles=41 recoveries=\d+ samples=/);
 });
+
+test('P1(c) SPA loading preserves observed cache; confirmed loaded list may replace it',()=>{
+ const clock=()=>new Date(2028,0,1),cache={time:new Date(2028,0,2,20).getTime(),readAt:clock().getTime(),source:2};
+ const stored=new Map([['xsched.probe.lastScheduled',JSON.stringify(cache)]]);
+ const f=fixture('/home','en','../fixtures/home.html',clock,undefined,undefined,stored);
+ f.location.pathname='/compose/post/unsent/scheduled';f.poll();
+ assert.equal(stored.get('xsched.probe.lastScheduled'),JSON.stringify(cache),'no scope on incoming SPA is not empty');
+ const incoming=parseHTML(readFileSync(new URL('../fixtures/empty.html',import.meta.url),'utf8')).document.querySelector('[role="dialog"]');
+ incoming.setAttribute('aria-busy','true');f.document.body.append(incoming);f.poll();
+ assert.equal(stored.get('xsched.probe.lastScheduled'),JSON.stringify(cache),'explicit loading also preserves source 2');
+ incoming.removeAttribute('aria-busy');f.mutate([{type:'attributes',target:incoming,addedNodes:[],removedNodes:[]}]);
+ assert.equal(stored.has('xsched.probe.lastScheduled'),false,'explicit known empty announcement completes the read');
+});
+test('P1(d) observed success changes filled status even when a later cache already exists',async()=>{
+ const clock=()=>new Date(2027,11,31,21),stored=new Map([['xsched.probe.lastScheduled',JSON.stringify({time:new Date(2028,0,2,20).getTime(),readAt:clock().getTime(),source:1})]]);
+ const prototype=parseHTML('<html></html>').document.defaultView.HTMLSelectElement.prototype,descriptor=Object.getOwnPropertyDescriptor(prototype,'value');
+ Object.defineProperty(prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value ?? this.querySelector('option')?.value ?? '';},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===value);}});
+ try {const f=fixture('/compose/post','en','../fixtures/quick-dialog.html',clock,undefined,undefined,stored);f.click('.shortcut');f.click('[data-xsched-slot="lunch"]');await waitFill(f);f.poll();
+  assert.match(f.shadow().querySelector('.quick-status').textContent,/not scheduled yet/);
+  const button=f.document.getElementById('schedule');button.textContent='Schedule';const event=new f.document.defaultView.Event('click',{bubbles:true});Object.defineProperty(event,'isTrusted',{value:true});button.dispatchEvent(event);f.document.querySelector('[role="dialog"]').remove();f.poll();f.poll();
+  assert.equal(f.shadow().querySelector('.quick-status').textContent,'Scheduling completion observed');
+ } finally {Object.defineProperty(prototype,'value',descriptor);}
+});
+test('P1(f) panel paints above a dragged shortcut without moving either anchor',()=>{
+ const f=fixture(),before=coordinates(f,'section');
+ f.pointer('pointerdown',20,20);f.pointer('pointermove',before.x+10,before.y+10);f.pointer('pointerup',before.x+10,before.y+10);
+ assert.equal(f.shadow().lastElementChild,f.shadow().querySelector('section'));
+ assert.ok(Number(f.shadow().querySelector('section').style.zIndex)>Number(f.shadow().querySelector('.shortcut').style.zIndex));
+ assert.deepEqual(coordinates(f,'section'),before);
+});
+test('P1(g) confirmed empty list enables now-based random in same-page composer; unknown cache stays disabled',()=>{
+ const clock=()=>new Date(2027,11,31,21);
+ const f=fixture(undefined,'en','../fixtures/empty.html',clock);f.location.pathname='/compose/post';
+ const picker=parseHTML(readFileSync(new URL('../fixtures/quick-dialog.html',import.meta.url),'utf8')).document.querySelector('[role="dialog"]');
+ for(const dialog of f.document.querySelectorAll('[role="dialog"]'))dialog.remove();f.document.body.append(picker);f.poll();f.click('.shortcut');
+ const random=f.shadow().querySelector('[data-xsched-slot="random"]');assert.equal(random.disabled,false);assert.match(f.shadow().querySelector('.quick-cache').textContent,/confirmed empty/);
+ const Q=globalThis.XSCHED_QUICK,now=clock();
+ assert.equal(Q.randomSlot(null,{a:10,b:10},now,()=>0),null,'unknown unread list remains unavailable');
+ assert.equal(Q.randomSlot(null,{a:10,b:10},now,()=>0,true).getTime(),now.getTime()+600000);
+});

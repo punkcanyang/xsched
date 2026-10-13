@@ -34,6 +34,8 @@ let runtimeSignature = "";
 let pollId = 0;
 let lastLocation = "";
 let scopeElement = null;
+let listLoadedScope = null;
+let emptyListConfirmed = false;
 let observer = null;
 let lastRender = "";
 let mounted = 0;
@@ -66,7 +68,7 @@ const composer = globalThis.XSCHED_COMPOSER?.create(document,{
   quick,
   labels:()=>globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language),
   slotLabel:(id,at,now)=>globalThis.XSCHED_UI.slotLabel(id,at,now,document.documentElement.lang,navigator.language),
-  settings:()=>({cache:lastCache,range:quickRange}),
+  settings:()=>({cache:lastCache,range:quickRange,empty:emptyListConfirmed}),
   changed(result){quickStatus=result;schedule();},
 });
 
@@ -217,6 +219,7 @@ function ensureHost(explicitOpen = false) {
   panel.className = "panel";
   css(panel, {
     position: "absolute",
+    "z-index": "1",
     right: "0",
     bottom: "56px",
     width: "min(344px, calc(100vw - 32px))",
@@ -315,7 +318,7 @@ function ensureHost(explicitOpen = false) {
     if (!target?.closest?.('.panel-header') || target.closest('button, a, input, textarea, select, [role="button"]') || drag || panelDrag || heightDrag
       || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY) || !panelAnchor) return;
     suppressPanelClick = false;
-    panelDrag = {id:event.pointerId,target:panel,startX:event.clientX,startY:event.clientY,origin:{...panelAnchor},moved:false};
+    panelDrag = {id:event.pointerId,target:panel,startX:event.clientX,startY:event.clientY,origin:{x:parseFloat(panel.style.left),y:parseFloat(panel.style.top)},moved:false};
     try { panel.setPointerCapture(event.pointerId); } catch { /* DOM fixtures */ }
   });
   panel.addEventListener('pointermove', event => {
@@ -368,7 +371,8 @@ function ensureHost(explicitOpen = false) {
       suppressPanelClick=false;event.preventDefault();event.stopImmediatePropagation();
     }
   },true);
-  shadow.append(panel, shortcut);
+  css(shortcut,{"z-index":"0"});
+  shadow.append(shortcut, panel);
   (document.body || document.documentElement).append(host);
   applyAnchor(false);
   // A fresh host has no panel content: force the next render to build it.
@@ -533,7 +537,10 @@ function positionUI() {
     panelHeight=Math.min(size.height,panelHeightLimit);
     recoveries += 1;
   }
-  css(panel,{left:`${panelAnchor.x}px`,top:`${panelAnchor.y}px`,height:`${panelHeight}px`,'max-height':`${Math.min(size.height,panelHeightLimit)}px`});
+  const detectedPicker=quick.detectControls(document);
+  const picker=detectedPicker.ready ? detectedPicker.dialog.getBoundingClientRect() : null;
+  const displayPoint=globalThis.XSCHED_UI.avoidPicker({left:panelAnchor.x,top:panelAnchor.y,right:panelAnchor.x+size.width,bottom:panelAnchor.y+panelHeight},picker,innerWidth,innerHeight);
+  css(panel,{left:`${displayPoint.x}px`,top:`${displayPoint.y}px`,height:`${panelHeight}px`,'max-height':`${Math.min(size.height,panelHeightLimit)}px`});
   shortcut.setAttribute('aria-expanded','true');
 }
 
@@ -626,7 +633,7 @@ function render(report, items, explicitOpen = false) {
     status.className = 'quick-status';
     status.setAttribute('role','status');
     quickControls.append(textNode('strong',labels.heading),status,slots);
-    const cacheLine=textNode('p',lastCache ? `${labels.lastTime}: ${formatTime(new Date(lastCache.time))} — ${lastCache.source===2 ? labels.fromSchedule : labels.fromList}. ${lastCache.source===2 ? labels.recordedAt : labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
+    const cacheLine=textNode('p',lastCache ? `${labels.lastTime}: ${formatTime(new Date(lastCache.time))} — ${lastCache.source===2 ? labels.fromSchedule : labels.fromList}. ${lastCache.source===2 ? labels.recordedAt : labels.readAt}: ${formatTime(new Date(lastCache.readAt))}. ${labels.partialCache}` : emptyListConfirmed ? labels.emptyList : labels.noCache,{color:'#8b98a5','font-size':'12px',margin:'0 0 8px'});
     cacheLine.className='quick-cache';
     quickControls.append(cacheLine);
     const settings=css(document.createElement('div'),{display:'flex',gap:'6px','align-items':'center','flex-wrap':'wrap',margin:'0 0 8px'});
@@ -654,15 +661,15 @@ function render(report, items, explicitOpen = false) {
       const button = makeButton(label);
       css(button,{'font-size':'12px','line-height':'1.4',padding:'5px 7px'});
       button.dataset.xschedSlot = id;
-      button.disabled = !detected.ready || quick.isFilling(document) || (id==='random' && !lastCache);
-      button.title = id==='random' && !lastCache ? labels.noCache : detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
+      button.disabled = !detected.ready || quick.isFilling(document) || (id==='random' && !lastCache && !emptyListConfirmed);
+      button.title = id==='random' && !lastCache && !emptyListConfirmed ? labels.noCache : detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
       button.setAttribute('aria-label',button.title);
       if (button.disabled) css(button,{opacity:'.55',cursor:'default'});
       button.addEventListener('click',async event => {
         event.preventDefault();event.stopPropagation();
         if (!event.isTrusted) return;
         // Re-detect and preflight at the instant of the user's click, never reuse old controls.
-        const pending = quick.fillSlotResult(document,id,new Date(),{cache:lastCache,range:quickRange});
+        const pending = quick.fillSlotResult(document,id,new Date(),{cache:lastCache,range:quickRange,empty:emptyListConfirmed});
         schedule();
         quickStatus = await pending;
         status.textContent = labels[quickStatus] || labels.missing;
@@ -746,8 +753,10 @@ function render(report, items, explicitOpen = false) {
 function refreshObservedCache() {
   const completed=quick.observeScheduling(document,Date.now());
   if(!completed)return false;
+  quickStatus='scheduled';
+  composer?.completed();
   const previous=positionStore.loadCache() || lastCache;
-  if(previous && previous.time>=completed.time) {lastCache=previous;return false;}
+  if(previous && previous.time>=completed.time) {lastCache=previous;return true;}
   const value={time:completed.time,readAt:Date.now(),source:2};
   if(!positionStore.saveCache(value))return false;
   lastCache=value;
@@ -756,6 +765,16 @@ function refreshObservedCache() {
   return true;
 }
 
+// Zero rows on a newly entered route are not evidence of a loaded empty list.
+// Existing loaded scopes can become empty; a known fixture empty announcement
+// also confirms emptiness. Unknown empty UI stays pending rather than deleting.
+function pendingList(report) {
+  const scope=report.scopeElement;
+  if(!scope || scope.closest('[aria-busy="true"]') || scope.querySelector('[role="progressbar"], [aria-busy="true"]'))return true;
+  if(listLoadedScope===scope)return false;
+  const knownEmpty=report.tab>0 && [...scope.querySelectorAll('div, p, span')].slice(0,64).some(node=>!node.children.length && node.textContent.trim()==='Nothing scheduled yet.');
+  return !knownEmpty;
+}
 function tick() {
   refreshObservedCache();
   const pathname = location.pathname || "";
@@ -765,7 +784,7 @@ function tick() {
   if (detectedSignature !== quickSignature && !quick.isFilling(document) && !quick.fillDiagnostic(document)) quickStatus = "";
   quickSignature = detectedSignature;
   const next = `${pathname}${location.search || ""}|${report.onScheduled}`;
-  if (next !== session || scopeElement !== report.scopeElement) cacheSignature = '';
+  if (next !== session || scopeElement !== report.scopeElement) {cacheSignature = '';listLoadedScope=null;if(report.onScheduled)emptyListConfirmed=false;}
   if (next !== session || scopeElement !== report.scopeElement || (report.empty && report.items.length === 0)) {
     session = next;
     scopeElement = report.scopeElement || null;
@@ -773,16 +792,18 @@ function tick() {
     scrolled = 0;
   }
   if (report.onScheduled) {
+    if(report.items.length || (report.tab>0 && report.cell>0))listLoadedScope=report.scopeElement;
+    const pending=pendingList(report);
     const replace = report.needsScroll === 0 && report.virtualized === 0;
     accumulated = mergeItems(accumulated, report.items, { replace });
     const times=accumulated.map(item=>item.at?.getTime()).filter(value=>Number.isSafeInteger(value) && value>0);
-    const signature=JSON.stringify([times,report.timeFail,report.empty]);
+    const signature=JSON.stringify([times,report.timeFail,report.empty,pending]);
     if(signature!==cacheSignature) {
       cacheSignature=signature;
-      if(times.length && report.timeFail===0) {
+      if(times.length && report.timeFail===0 && !pending) {
         const value={time:Math.max(...times),readAt:Date.now(),source:1};
-        if(positionStore.saveCache(value))lastCache=value;
-      } else if(report.empty && !times.length) {if(positionStore.clearCache())lastCache=null;}
+        if(positionStore.saveCache(value)){lastCache=value;emptyListConfirmed=false;}
+      } else if(report.empty && !times.length && !pending) {if(positionStore.clearCache()){lastCache=null;emptyListConfirmed=true;}}
     }
   } else {
     accumulated = [];
@@ -862,7 +883,7 @@ function start() {
     subtree: true,
     characterData: true,
     attributes: true,
-    attributeFilter: ["aria-selected", "aria-current", "aria-controls", "aria-label", "hidden", "aria-hidden", "data-testid"],
+    attributeFilter: ["aria-selected", "aria-current", "aria-controls", "aria-label", "hidden", "aria-hidden", "aria-busy", "data-testid"],
   });
   window.addEventListener("popstate", schedule);
   window.addEventListener("resize", onResize);

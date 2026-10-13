@@ -77,7 +77,7 @@ function create(doc,options) {
     if(!event?.isTrusted || active || options.quick.isFilling(doc))return;
     if(![...options.quick.SLOT_IDS,'random'].includes(id))return;
     const settings=options.settings();
-    if(id==='random' && (!settings.cache || !options.quick.validRange(settings.range))){report('noCache');return;}
+    if(id==='random' && ((!settings.cache && !settings.empty) || !options.quick.validRange(settings.range))){report('noCache');return;}
     if(options.quick.detectControls(doc).counts.selects>0){report('dialogMissing');return;}
     const existing=new Set(doc.querySelectorAll(options.quick.QUICK_CONFIG.dialog));
     const generation=epoch;active=true;
@@ -118,7 +118,7 @@ function create(doc,options) {
       const labels=options.labels(),now=new Date(),settings=options.settings();
       const slots=options.quick.SLOT_IDS.map(id=>({id,label:options.slotLabel(id,options.quick.nextSlot(id,now),now)}));
       slots.push({id:'random',label:`${labels.random} ${settings.range.a}–${settings.range.b}`});
-      const signature=JSON.stringify([slots,status,active,Boolean(settings.cache),Boolean(entry.icon),options.quick.isFilling(doc),labels.heading]);
+      const signature=JSON.stringify([slots,status,active,Boolean(settings.cache),Boolean(settings.empty),Boolean(entry.icon),options.quick.isFilling(doc),labels.heading]);
       if(row.signature===signature && row.host.shadowRoot.childNodes.length)continue;
       row.signature=signature;const root=row.host.shadowRoot;root.replaceChildren();
       const bar=style(doc.createElement('div'),{display:'flex','flex-wrap':'wrap',gap:'4px','max-width':'100%'});
@@ -126,7 +126,7 @@ function create(doc,options) {
         if(!slot.label)continue;
         const button=doc.createElement('button');button.type='button';button.dataset.xschedComposerSlot=slot.id;
         button.textContent=slot.label;button.title=slot.label;button.setAttribute('aria-label',slot.label);
-        button.disabled=!entry.icon || active || options.quick.isFilling(doc) || (slot.id==='random' && !settings.cache);
+        button.disabled=!entry.icon || active || options.quick.isFilling(doc) || (slot.id==='random' && !settings.cache && !settings.empty);
         style(button,{'max-width':'100%','min-width':'0','box-sizing':'border-box','white-space':'normal','overflow-wrap':'anywhere',font:'11px system-ui',padding:'4px 6px',background:'#15202b',color:'#1d9bf0',border:'1px solid #536471','border-radius':'12px',cursor:'pointer'});
         button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void run(entry,event,slot.id);});bar.append(button);
       }
@@ -136,7 +136,7 @@ function create(doc,options) {
     }
   }
   function dispose(){epoch++;for(const row of rows.values())row.host.remove();rows.clear();notice?.remove();notice=null;status='';}
-  return {refresh,dispose};
+  return {refresh,dispose,completed(){report('scheduled');}};
 }
 globalThis.XSCHED_COMPOSER={COMPOSER_CONFIG,OPEN_STRINGS,strings,findEntries,create};
 })();

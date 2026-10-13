@@ -25,12 +25,12 @@ const SLOT_IDS = Object.freeze(['morning','lunch','evening','workday']);
 function validRange(range) {
   return range && Number.isSafeInteger(range.a) && Number.isSafeInteger(range.b) && range.a>0 && range.a<=range.b;
 }
-function randomSlot(cache,range,now=new Date(),random=Math.random) {
-  if(!cache || !Number.isSafeInteger(cache.time) || cache.time<=0 || !validRange(range) || !Number.isFinite(now.getTime()))return null;
+function randomSlot(cache,range,now=new Date(),random=Math.random,empty=false) {
+  if((!cache && !empty) || (cache && (!Number.isSafeInteger(cache.time) || cache.time<=0)) || !validRange(range) || !Number.isFinite(now.getTime()))return null;
   const sample=random();
   if(!Number.isFinite(sample) || sample<0 || sample>=1)return null;
   const minutes=range.a+Math.floor(sample*(range.b-range.a+1));
-  let time=cache.time+minutes*60000;
+  let time=(cache ? cache.time : now.getTime())+minutes*60000;
   if(time<now.getTime()+QUICK_CONFIG.marginMs)time=now.getTime()+minutes*60000;
   // Native selects have minute precision. Round UP and preserve the safety margin.
   const at=new Date(Math.ceil(Math.max(time,now.getTime()+QUICK_CONFIG.marginMs)/60000)*60000);
@@ -536,7 +536,7 @@ async function fillSlotResult(doc,id,now = new Date(),options={}) {
   stopSchedulingWatch(doc);
   transactions.add(doc);
   try {
-    const detected = detectControls(doc), at = id==='random' ? randomSlot(options.cache,options.range,now,options.random || Math.random) : nextSlot(id,now);
+    const detected = detectControls(doc), at = id==='random' ? randomSlot(options.cache,options.range,now,options.random || Math.random,options.empty===true) : nextSlot(id,now);
     if (!detected.ready || !at) {
       const reason=detected.reason || 'missing';
       // Without proven controls, do not sample unrelated DOM. Report unknown
