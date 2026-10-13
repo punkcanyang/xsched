@@ -81,3 +81,7 @@ npm run e2e
 ```
 
 若已安裝在其他路徑，直接 `CHROME_PATH=/完整路徑/chrome npm run e2e`。仍需 Xvfb；Chrome 找到後才會跑原來的完整情境與 0 擴充請求斷言，不能把找到瀏覽器當成 e2e 通過。
+
+Chrome 路徑修正收尾（接續外部 WIP `ac79ea8`）：本機 Node 26.10.0 實跑 `npm test` 14/14 檔通過，0 失敗、0 跳過；`npm run verify` OK，64 writer 與全部其他自測數量原樣。另在 /tmp 以假安裝目錄驗證五個尋路案例：缺瀏覽器、數字版本排序、明確 CHROME_PATH、錯誤明確路徑不 fallback、不可執行檔不採用，5/5 通過，沒有新增 repo 測試或守門。
+
+完整比對確認 e2e 從 `const sleep` 到結尾（全部情境／斷言）與修前逐字相同，probe／verify／network-policy／test 檔未動；JS 語法與 diff 空白檢查通過。本環境仍沒有 Chrome for Testing，實跑 e2e 以明確「Chrome for Testing not installed」及安裝／CHROME_PATH 指令退出 1，未跑情境。外部需要先安裝瀏覽器或指定有效路徑，再重跑完整 e2e；不能宣稱這次已通過 Chrome。只改 e2e 路徑設定與本交接，沒有 commit／push／merge。
