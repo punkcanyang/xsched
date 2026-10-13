@@ -1,4 +1,4 @@
-xsched-skeleton v0.1.4 path=scheduled nodes=33
+xsched-skeleton v0.1.5 path=scheduled nodes=33
 p c=1 class=[x]
   #text(31)
 div c=5 aria-label=x role=dialog

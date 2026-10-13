@@ -85,3 +85,11 @@ npm run e2e
 Chrome 路徑修正收尾（接續外部 WIP `ac79ea8`）：本機 Node 26.10.0 實跑 `npm test` 14/14 檔通過，0 失敗、0 跳過；`npm run verify` OK，64 writer 與全部其他自測數量原樣。另在 /tmp 以假安裝目錄驗證五個尋路案例：缺瀏覽器、數字版本排序、明確 CHROME_PATH、錯誤明確路徑不 fallback、不可執行檔不採用，5/5 通過，沒有新增 repo 測試或守門。
 
 完整比對確認 e2e 從 `const sleep` 到結尾（全部情境／斷言）與修前逐字相同，probe／verify／network-policy／test 檔未動；JS 語法與 diff 空白檢查通過。本環境仍沒有 Chrome for Testing，實跑 e2e 以明確「Chrome for Testing not installed」及安裝／CHROME_PATH 指令退出 1，未跑情境。外部需要先安裝瀏覽器或指定有效路徑，再重跑完整 e2e；不能宣稱這次已通過 Chrome。只改 e2e 路徑設定與本交接，沒有 commit／push／merge。
+
+## testfix-2：外部仍缺 Chrome for Testing
+
+外部 235/235 test、verify OK，但直接跑 e2e 仍回報「Chrome for Testing not installed」。這代表 testfix-1 的初始化檢查正確辨識缺安裝，不是新的情境斷言失敗。檢查現有 cache 沒有 Chrome for Testing，只有 `/opt/google/chrome` 的一般 Google Chrome 154；不修改擴充或 e2e 斷言來繞過安裝需求。
+
+本輪已實際嘗試專案內安裝器（不經 npx 再安裝套件）：`node node_modules/@puppeteer/browsers/lib/cjs/main-cli.js install chrome@stable --path /tmp/cft`，在解析 `googlechromelabs.github.io` 時遭 DNS `EAI_AGAIN`，下載未開始。程式的路徑搜尋不能憑空補上瀏覽器；沒有需要修的來源邏輯，僅補此環境證據與指令。沒有修改 test／verify／e2e／probe，沒有刪斷言或放寬守門。
+
+外部必須在能下載的環境執行上述安裝器（或安裝既有 Chrome for Testing 並設定 CHROME_PATH），再跑 `npm run e2e`。若外部也遇 DNS 錯誤，需先恢復該開發環境的 DNS／下載連線；安裝未成功前，重跑 e2e 會得到同一個缺瀏覽器訊息。本輪不宣稱 e2e 通過、不 commit／push／merge。
