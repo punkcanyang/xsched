@@ -25,7 +25,7 @@ const DOCS = join(ROOT, "docs");
 const POSITION_SOURCE_SHA256 = "4aacb059d7c4995156b5b808fbcc74aff48b2874fdc934466116cc9a346a74c7";
 
 // Exact-source exception only for the sole native select input/change writer.
-const COMPOSER_SOURCE_SHA256 = "c8b001ed1ef0923012a97c260aeed987d507d5fc3ba58889a76af4b1d84ed091";
+const COMPOSER_SOURCE_SHA256 = "d8e82e094668865ec613d8ccdce1875f3dbdf8d02a02e1a9f0f804c94d951e8e";
 const COMPOSER_CLICK_STATEMENT = "  icon.click();";
 // All other activation, network, storage and markup rules still scan this file.
 const QUICK_SOURCE_SHA256 = "89d46a6617da3dab6827011d6cd5eeffba767be344cb8fec80ca201d7ce59506";
