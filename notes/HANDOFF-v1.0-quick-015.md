@@ -64,3 +64,20 @@ npm run e2e
 本輪不交 STATUS READY：需要外部最終 test／verify／e2e、Chrome 連用三次走查、合成截圖及指定 `01a12013` 獨立複審（最多兩輪，只看 P0/P1；P2 記 BACKLOG）。沒有代替另一 session 複審，也沒有開 PR、commit、push 或 merge。
 
 本輪最終補記：`npm run verify` 也因 `ERR_MODULE_NOT_FOUND: linkedom` 在載入階段退出 1，尚未跑到守門自測，不能說 verify OK。離線／一般安裝都未成功，沒有可用的本機 linkedom／esprima 副本。無依賴檢查通過：JS 語法、版本 0.1.5、manifest 權限／matches 與基準相同、四份來源 SHA 逐一吻合、唯一 icon.click statement、自家 quick／ui／position／network-policy 與基準逐字未改，以及 git diff --check。需外部安裝依賴後重跑三測試；本輪不宣稱 READY。
+
+
+## 外部 e2e 啟動紅燈：Chrome 路徑
+
+外部 Node 26 已實跑 test 235/235、verify OK（64 writer，其他自測原樣）。e2e 在啟動瀏覽器前找不到舊預設 `/tmp/cft/chrome/linux-155.0.8059.39/chrome-linux64/chrome`，尚未跑到情境斷言。puppeteer-core 不會隨 npm ci 安裝 Chrome；缺少該檔案是測試環境問題，不是時段／填值紅燈。
+
+本輪只改 e2e 的執行檔尋找與本交接，既有情境、斷言、網路政策、probe、版本及來源 SHA 全不動。CHROME_PATH 明確指定時必須存在且可執行，錯誤不偷偷 fallback。未指定時只找 tmpdir/cft 與 PUPPETEER_CACHE_DIR（預設 ~/.cache/puppeteer）的 Chrome for Testing Linux 安裝，優先較新數字版本；不再綁一個暫存版本號、不改用個人 Chrome profile、不自動下載。啟動前找不到便明示安裝指令。
+
+外部若尚未安裝，先在開發環境執行（不是擴充的網路請求）：
+
+```bash
+export PATH=/home/box/.local/bin:$PATH
+npx @puppeteer/browsers install chrome@stable --path /tmp/cft
+npm run e2e
+```
+
+若已安裝在其他路徑，直接 `CHROME_PATH=/完整路徑/chrome npm run e2e`。仍需 Xvfb；Chrome 找到後才會跑原來的完整情境與 0 擴充請求斷言，不能把找到瀏覽器當成 e2e 通過。

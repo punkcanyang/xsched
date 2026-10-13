@@ -14,9 +14,9 @@
 //   npm run e2e
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:https";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
@@ -28,6 +28,35 @@ const DOCS = join(ROOT, "docs");
 const PROBE = join(ROOT, "probe");
 const FIXTURES = join(ROOT, "fixtures");
 
+// puppeteer-core does not install Chrome. Prefer an explicit executable, then
+// installed Chrome for Testing caches; never download or use a regular profile.
+function executable(path) {
+  try {accessSync(path,constants.X_OK);return statSync(path).isFile();} catch {return false;}
+}
+function resolveChromePath() {
+  if(process.env.CHROME_PATH) {
+    if(!executable(process.env.CHROME_PATH))throw new Error(`CHROME_PATH is not an executable file: ${process.env.CHROME_PATH}`);
+    return process.env.CHROME_PATH;
+  }
+  const caches=[join(tmpdir(),'cft'),process.env.PUPPETEER_CACHE_DIR || join(homedir(),'.cache','puppeteer')];
+  for(const cache of caches) {
+    const unpacked=join(cache,'chrome-linux64','chrome');
+    if(executable(unpacked))return unpacked;
+    let builds=[];
+    try {builds=readdirSync(join(cache,'chrome'),{withFileTypes:true}).filter(entry=>entry.isDirectory() && /^linux-\d/.test(entry.name)).map(entry=>entry.name).sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));} catch {continue;}
+    for(const build of builds) {
+      const path=join(cache,'chrome',build,'chrome-linux64','chrome');
+      if(executable(path))return path;
+    }
+  }
+  throw new Error('Chrome for Testing not installed. Install it with: npx @puppeteer/browsers install chrome@stable --path /tmp/cft ; or set CHROME_PATH to its executable.');
+}
+let CHROME_PATH;
+try {CHROME_PATH=resolveChromePath();} catch(error) {
+  console.error('e2e: FAILED — '+error.message);
+  process.exit(1);
+}
+
 // Chrome needs an X server; there is none by default in this box.
 if (!process.env.DISPLAY && !process.env.XSCHED_E2E_REEXEC) {
   const result = spawnSync("xvfb-run", ["-a", process.execPath, SELF], {
@@ -38,7 +67,7 @@ if (!process.env.DISPLAY && !process.env.XSCHED_E2E_REEXEC) {
   process.exit(result.status == null ? 1 : result.status);
 }
 
-const CHROME_PATH = process.env.CHROME_PATH || "/tmp/cft/chrome/linux-155.0.8059.39/chrome-linux64/chrome";
+
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
