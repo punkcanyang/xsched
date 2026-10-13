@@ -71,6 +71,7 @@ let panelHeight = 0;
 let panelHeightLimit = Infinity; // available space; never rewrite the saved height preference
 let panelNeedsLayout = true;
 let panelMinimum = 0; // stable within a viewport; status/render may never shrink it
+let panelDisplay = null; // exact left/top last applied; reading CSSOM style strings rounds
 const composer = globalThis.XSCHED_COMPOSER?.create(document,{
   quick,
   labels:()=>globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language),
@@ -326,7 +327,8 @@ function ensureHost(explicitOpen = false) {
     if (!target?.closest?.('.panel-header') || target.closest('button, a, input, textarea, select, [role="button"]') || drag || panelDrag || heightDrag
       || event.button !== 0 || event.isPrimary === false || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY) || !panelAnchor) return;
     suppressPanelClick = false;
-    panelDrag = {id:event.pointerId,target:panel,startX:event.clientX,startY:event.clientY,origin:{x:parseFloat(panel.style.left),y:parseFloat(panel.style.top)},moved:false};
+    const shown = panelDisplay && Number.isFinite(panelDisplay.x) && Number.isFinite(panelDisplay.y) ? panelDisplay : {x:parseFloat(panel.style.left),y:parseFloat(panel.style.top)};
+    panelDrag = {id:event.pointerId,target:panel,startX:event.clientX,startY:event.clientY,origin:{x:shown.x,y:shown.y},moved:false};
     try { panel.setPointerCapture(event.pointerId); } catch { /* DOM fixtures */ }
   });
   panel.addEventListener('pointermove', event => {
@@ -548,6 +550,7 @@ function positionUI() {
   const detectedPicker=quick.detectControls(document);
   const picker=detectedPicker.ready ? detectedPicker.dialog.getBoundingClientRect() : null;
   const displayPoint=globalThis.XSCHED_UI.avoidPicker({left:panelAnchor.x,top:panelAnchor.y,right:panelAnchor.x+size.width,bottom:panelAnchor.y+panelHeight},picker,innerWidth,innerHeight);
+  panelDisplay={x:displayPoint.x,y:displayPoint.y};
   css(panel,{left:`${displayPoint.x}px`,top:`${displayPoint.y}px`,height:`${panelHeight}px`,'max-height':`${Math.min(size.height,panelHeightLimit)}px`});
   shortcut.setAttribute('aria-expanded','true');
 }
