@@ -245,7 +245,9 @@ function ensureHost(explicitOpen = false) {
     padding: "10px 12px 12px",
     "max-height": "calc(100vh - 32px)",
     "max-width": "344px",
-    overflow: "auto",
+    // Overview rows live in .panel-body. A section scrollbar would shrink
+    // the quick area, wrap slots, and grow panelMinimum across a session.
+    overflow: "hidden",
     "flex-direction": "column",
     gap: "8px",
   });
