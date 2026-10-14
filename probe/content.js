@@ -244,8 +244,7 @@ function ensureHost(explicitOpen = false) {
     padding: "10px 12px 12px",
     "max-height": "calc(100vh - 32px)",
     "max-width": "344px",
-    overflow: "auto",
-    "scrollbar-gutter": "stable",
+    overflow: "hidden",
     "flex-direction": "column",
     gap: "8px",
   });
@@ -650,7 +649,7 @@ function render(report, items, explicitOpen = false) {
 
   if (!effectiveCollapsed) {
     const labels = globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language);
-    const quickControls=css(document.createElement('div'),{'font-size':'12px','line-height':'1.4'});
+    const quickControls=css(document.createElement('div'),{'font-size':'12px','line-height':'1.4','flex-shrink':'0'});
     quickControls.className='quick-controls';body.append(quickControls);
     const slots = css(document.createElement('div'),{display:'flex',gap:'6px','flex-wrap':'wrap',margin:'0 0 8px'});
     slots.className = 'quick-slots';
@@ -677,10 +676,12 @@ function render(report, items, explicitOpen = false) {
       if(!quick.validRange(value))quickStatus='rangeInvalid';
       else if(!positionStore.saveRange(value))quickStatus='storageFailed';
       else {quickRange=value;quickStatus='';}
-      schedule();
+      if (timer) { window.clearTimeout(timer); timer = 0; }
+      if (lastReport) render(lastReport, lastItems);
+      else schedule();
     });
     settings.append(saveRange);quickControls.append(settings);
-    const overviewRoot=css(document.createElement('div'),{'margin':'0 0 10px','padding':'8px 0 0','border-top':'1px solid #2f3336'});
+    const overviewRoot=css(document.createElement('div'),{'margin':'0 0 8px','padding':'6px 0 0','border-top':'1px solid #2f3336'});
     overviewRoot.className='overview-root';
     const pendingRead=report.onScheduled ? pendingList(report) : false;
     const displaySnap=report.onScheduled && items.some(item=>item.at) ? overview.fromItems(items,Date.now()) : lastOverview;
@@ -698,7 +699,7 @@ function render(report, items, explicitOpen = false) {
       const label = id==='random' ? `${labels.random} ${quickRange.a}–${quickRange.b}` : slotLabels[index];
       if(!label)return;
       const button = makeButton(label);
-      css(button,{'font-size':'12px','line-height':'1.4',padding:'5px 7px'});
+      css(button,{'font-size':'12px','line-height':'1.4',padding:'5px 7px','white-space':'nowrap'});
       button.dataset.xschedSlot = id;
       button.disabled = !detected.ready || quick.isFilling(document) || (id==='random' && !lastCache && !emptyListConfirmed);
       button.title = id==='random' && !lastCache && !emptyListConfirmed ? labels.noCache : detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;

@@ -195,9 +195,12 @@ function render(container, snapshot, options) {
   container.className = "overview-root";
   container.dataset.xschedOverviewStatus = view.status;
   container.dataset.xschedOverviewCount = String(view.total);
+  css(container, { margin: "0", padding: "0" });
   const heading = make(doc, "strong", labels.title, "overview-title");
   container.append(heading);
-  container.append(make(doc, "p", labels.hint, "overview-hint"));
+  const hint = make(doc, "p", labels.hint, "overview-hint");
+  css(hint, { margin: "4px 0", font: "11px/1.35 ui-sans-serif, system-ui, sans-serif", color: "#8b98a5" });
+  container.append(hint);
   if (opts.pending === true && snapshot) container.append(make(doc, "p", labels.pending, "overview-pending"));
   let statusText = labels.missing;
   if (view.status === "empty") statusText = labels.empty;
@@ -206,13 +209,18 @@ function render(container, snapshot, options) {
   else if (view.status === "ready") statusText = fill(labels.total, { n: view.total });
   const status = make(doc, "p", statusText, "overview-status");
   status.setAttribute("role", "status");
+  css(status, { margin: "4px 0" });
   container.append(status);
   if (view.status === "ready" || view.status === "expired") {
     const wait = view.pastOnly ? labels.past : formatUntil(view.until, labels);
-    container.append(make(doc, "p", fill(labels.next, { wait }), "overview-next"));
+    const next = make(doc, "p", fill(labels.next, { wait }), "overview-next");
+    css(next, { margin: "4px 0" });
+    container.append(next);
   }
   const syncText = opts.onScheduled ? labels.syncNow : (view.sync ? fill(labels.sync, { when: formatWhen(view.sync) }) : labels.missing);
-  container.append(make(doc, "p", syncText, "overview-sync"));
+  const sync = make(doc, "p", syncText, "overview-sync");
+  css(sync, { margin: "4px 0", color: "#8b98a5" });
+  container.append(sync);
   if (typeof opts.onGo === "function" && !opts.onScheduled) {
     const go = css(make(doc, "button", labels.goto, "overview-sync-go"), {
       display: "inline-block", margin: "0 0 8px", padding: "5px 8px", color: "#0f1419",
