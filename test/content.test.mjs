@@ -17,7 +17,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.1.5';
+  let manifest = '0.1.6';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -330,10 +330,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.5 (manifest 0.1.5)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.6 (manifest 0.1.6)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.5 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.6 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -342,7 +342,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.5/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.6/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -540,7 +540,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.5/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.6/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -699,6 +699,21 @@ test('short viewport caps saved full-height panel above native drawer without lo
  }
  drawer=null;f.resize(1100,820);
  assert.equal(f.shadow().querySelector('section').style.height,'568px','larger unobstructed viewport restores the preference');
+});
+test('0.1.6 a stored panel point stays when a compose shell crushes the scroll slice',()=>{
+ const shell={left:24,right:744,top:24,bottom:664};
+ const geometry={...globalThis.XSCHED_UI,collectObstacles(){return [shell];}};
+ const stored=new Map([['xsched.probe.panelPos','{"x":84,"y":64}']]);
+ const f=fixture('/compose/post','en','../fixtures/quick-composer.html',null,geometry,undefined,stored);
+ assert.deepEqual({x:coordinates(f,'section').x,y:coordinates(f,'section').y},{x:84,y:64});
+ assert.equal(stored.get('xsched.probe.panelPos'),'{"x":84,"y":64}');
+ f.pointer('pointerdown',100,80,{selector:'.panel-header'});
+ f.pointer('pointermove',180,140,{selector:'section'});
+ f.pointer('pointerup',180,140,{selector:'section'});
+ assert.deepEqual({x:coordinates(f,'section').x,y:coordinates(f,'section').y},{x:164,y:124});
+ assert.equal(stored.get('xsched.probe.panelPos'),'{"x":164,"y":124}');
+ f.poll();
+ assert.deepEqual({x:coordinates(f,'section').x,y:coordinates(f,'section').y},{x:164,y:124});
 });
 test('0.1.4 observed completion updates max only, persists numeric source, and next list read replaces it',async()=>{
  const clock=()=>new Date(2027,11,31,21),target=new Date(2028,0,1,12,30).getTime();
