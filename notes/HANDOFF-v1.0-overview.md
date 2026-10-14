@@ -18,12 +18,13 @@
 
 ## 測試
 
-- `npm test`：既有檔案加上 `test/overview.test.mjs` 與 content VM 總覽回歸／連續三次走查。
-- `npm run verify`：原自測數量不減。
-- `npm run e2e`：舊情境只改 0.2.0 版本期望；新增空快取、現場列表、SPA 快取、AM/PM／跨年排序，連續走查 3 次。截圖 `docs/v1.0-overview-{empty,scheduled,cached-home}.png`。
+- `npm test`：254/254 過（含 `test/overview.test.mjs` 與 content VM 總覽回歸／連續三次走查）。
+- `npm run verify`：OK。原自測數量不減（30 API／14 icon／9 SVG／66 leak／37 storage／64 writer／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS）。
+- `npm run e2e`：OK，1536 斷言。Chrome for Testing 155.0.8059.79，`env -u DISPLAY` 交給 xvfb-run。0 擴充資源／背景請求，恰好 1 次使用者點擊的 Scheduled 頂層導覽。連續走查 3 次 empty → Scheduled 同步 → SPA 回首頁均過。截圖 `docs/v1.0-overview-{empty,scheduled,cached-home}.png`（合成 2027+ 假資料）。
 
 ## 已知限制
 
 - 快取不是完整即時列表：未捲到底、刪除／編輯、跨分頁或整頁重新整理後會過期或清空。
 - 本版不做周視圖，也不點擊跳到 X 上那則編輯。
 - 診斷仍只含命中數，不含推文內容。
+- 快捷區仍在浮層內容頂部（0.1.4 要完整可見）；總覽在其下方，列多時需在浮層內捲一下。
