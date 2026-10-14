@@ -453,6 +453,7 @@ function showFallbackText(text) {
     event.stopPropagation();
     try { area.focus(); area.select(); } catch { /* ignore */ }
   });
+  css(area, { "pointer-events": "auto" });
   shadow.querySelector(".panel-body").append(area);
   css(select, { "margin-top": "0" });
   shadow.querySelector(".panel-actions").append(select);
@@ -641,8 +642,9 @@ function render(report, items, explicitOpen = false) {
   const countLine = textNode("div", report.onScheduled ? `讀到 ${count} 則` : "xsched 探針：非 Scheduled 頁", { "font-size":"18px", "font-weight":"760", margin:"4px 0 0" });
   countLine.className = "count";
   header.append(heading, countLine);
-  const body = css(document.createElement("div"), { "min-height":"0", overflow:"auto", "overscroll-behavior":"contain", flex:"1 1 auto", "pointer-events":"auto" });
+  const body = css(document.createElement("div"), { "min-height":"0", overflow:"auto", "overscroll-behavior":"contain", flex:"1 1 auto", "pointer-events":"none" });
   body.className = "panel-body";
+  const appendHit = node => { css(node, { "pointer-events": "auto" }); body.append(node); return node; };
   const controls = css(document.createElement("div"), { display:"flex", gap:"6px", "align-items":"center", "flex-wrap":"wrap", "flex-shrink":"0", "pointer-events":"auto", "border-top":"1px solid #38444d", "padding-top":"8px" });
   controls.className = "panel-actions";
   panel.append(header, body, controls);
@@ -650,7 +652,7 @@ function render(report, items, explicitOpen = false) {
   if (!effectiveCollapsed) {
     const labels = globalThis.XSCHED_UI.quickStringsFor(document.documentElement.lang,navigator.language);
     const quickControls=css(document.createElement('div'),{'font-size':'12px','line-height':'1.4','flex-shrink':'0'});
-    quickControls.className='quick-controls';body.append(quickControls);
+    quickControls.className='quick-controls';appendHit(quickControls);
     const slots = css(document.createElement('div'),{display:'flex',gap:'6px','flex-wrap':'wrap',margin:'0 0 8px'});
     slots.className = 'quick-slots';
     const status = textNode('p',labels[quickStatus || detected.reason] || (!detected.ready ? labels.missing : labels.ready),{color:'#ffd400',margin:'0 0 8px','min-height':'2.8em'});
@@ -694,12 +696,12 @@ function render(report, items, explicitOpen = false) {
       navlang:navigator.language,
       onGo(){ location.assign("https://x.com/compose/post/unsent/scheduled"); }
     });
-    body.append(overviewRoot);
+    appendHit(overviewRoot);
     [...quick.SLOT_IDS,'random'].forEach((id,index) => {
       const label = id==='random' ? `${labels.random} ${quickRange.a}–${quickRange.b}` : slotLabels[index];
       if(!label)return;
       const button = makeButton(label);
-      css(button,{'font-size':'12px','line-height':'1.4',padding:'5px 7px','white-space':'nowrap'});
+      css(button,{'font-size':'12px','line-height':'1.4',padding:'5px 7px'});
       button.dataset.xschedSlot = id;
       button.disabled = !detected.ready || quick.isFilling(document) || (id==='random' && !lastCache && !emptyListConfirmed);
       button.title = id==='random' && !lastCache && !emptyListConfirmed ? labels.noCache : detected.ready ? label + ' — ' + labels.ready : labels[detected.reason] || labels.missing;
@@ -720,8 +722,8 @@ function render(report, items, explicitOpen = false) {
     if (report.onScheduled) {
       const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" });
       hint.className = "hint";
-      body.append(hint);
-      if (count === 0) body.append(textNode("p", report.timeFail > 0 ? "看到疑似排程列，但時間格式解析不出來（格式可能改版）。" : "這一頁目前沒有解析到排程時間。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" }));
+      appendHit(hint);
+      if (count === 0) appendHit(textNode("p", report.timeFail > 0 ? "看到疑似排程列，但時間格式解析不出來（格式可能改版）。" : "這一頁目前沒有解析到排程時間。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" }));
       const ordered=items.slice().sort((a,b)=>{
         const ta=a.at && typeof a.at.getTime==="function" && Number.isFinite(a.at.getTime()) ? a.at.getTime() : Number.POSITIVE_INFINITY;
         const tb=b.at && typeof b.at.getTime==="function" && Number.isFinite(b.at.getTime()) ? b.at.getTime() : Number.POSITIVE_INFINITY;
@@ -741,7 +743,7 @@ function render(report, items, explicitOpen = false) {
         const preview = textNode("div", overview.previewFrom(item) || item.preview || "（沒有文字）", { "word-break":"break-word" });
         preview.className = "preview";
         row.append(preview);
-        body.append(row);
+        appendHit(row);
       }
     } else {
       const go = makeButton(strings.goto, "xschedGoto");
@@ -753,7 +755,7 @@ function render(report, items, explicitOpen = false) {
         if (event.isTrusted) location.assign("https://x.com/compose/post/unsent/scheduled");
       });
       controls.append(go);
-      body.append(textNode("p", "非 Scheduled 頁面：此頁不讀取列表，僅保留診斷與頁面結構工具。", { color:"#8b98a5", "font-size":"12px", margin:"0 0 8px" }));
+      appendHit(textNode("p", "非 Scheduled 頁面：此頁不讀取列表，僅保留診斷與頁面結構工具。", { color:"#8b98a5", "font-size":"12px", margin:"0 0 8px" }));
     }
     const copy = makeButton("複製診斷", "xschedCopy");
     copy.addEventListener("click", event => {
@@ -795,7 +797,7 @@ function render(report, items, explicitOpen = false) {
     resizeHit.setAttribute('data-xsched-resize-hit','');
     resizer.append(resizeHit);
     panel.append(resizer);
-    body.append(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
+    appendHit(textNode("code", diag, { display:"block", "margin-top":"8px", color:"#8b98a5", font:"11px/1.4 ui-monospace, monospace", "white-space":"pre-wrap", "word-break":"break-all" }));
   }
 
   writeDataset(node, report, count, diag);
