@@ -506,6 +506,9 @@ function positionUI() {
   if(nextMinimum>panelMinimum) {panelMinimum=nextMinimum;panelNeedsLayout=true;}
   size=panelSize(innerWidth,innerHeight,savedPanelHeight,panelMinimum);
   const minimum=size.height;
+  // Read before automatic placement persists, so a drag that already saved
+  // its drop is distinct from a first layout that may still move.
+  const storedPoint=savedPanelPosition?{x:savedPanelPosition.x,y:savedPanelPosition.y}:null;
   if (!panelAnchor) {
     const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
     // Initial height is 2/3 viewport, or the independent saved numeric height.
@@ -516,10 +519,9 @@ function positionUI() {
       : clampPanelPosition({x:anchor.x+44-size.width,y:anchor.y-12-size.height},innerWidth,innerHeight,savedPanelHeight,panelMinimum);
     if (!chosen.clear) recoveries += 1;
     panelNeedsLayout=true;
-    if (!deferPanelSave) persistPanel();
   }
   if (panelNeedsLayout) {
-    panelAnchor=clampPanelPosition(savedPanelPosition || panelAnchor,innerWidth,innerHeight,savedPanelHeight,panelMinimum);
+    panelAnchor=clampPanelPosition(storedPoint || panelAnchor,innerWidth,innerHeight,savedPanelHeight,panelMinimum);
     panelHeight=size.height;
     const obstacles=collectObstacles(document,element=>getComputedStyle(element),innerWidth,innerHeight);
     panelHeightLimit=innerHeight-16-panelAnchor.y;
@@ -532,14 +534,22 @@ function positionUI() {
     // it cannot fit: keep fixed actions plus a scrollable slice of the body.
     const scrollMinimum=Math.min(size.height,chromeHeight+80);
     if (panelHeightLimit < scrollMinimum) {
-      const full=panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,size.height);
-      const chosen=full.clear ? full : panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,scrollMinimum);
-      if (chosen.clear) {
-        panelAnchor={x:chosen.left,y:chosen.top};
-        panelHeightLimit=chosen.maxHeight;
-      } else panelHeightLimit=size.height; // preserve the existing visible fallback if no rectangle fits
+      if (storedPoint) {
+        // A compose shell is not the schedule picker, but it still crushes
+        // this slice. Stored drops and reloads stay put instead of jumping
+        // back to the automatic corner.
+        panelHeightLimit=size.height;
+      } else {
+        const full=panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,size.height);
+        const chosen=full.clear ? full : panelPlacement(innerWidth,innerHeight,anchor,obstacles,size.height,scrollMinimum);
+        if (chosen.clear) {
+          panelAnchor={x:chosen.left,y:chosen.top};
+          panelHeightLimit=chosen.maxHeight;
+        } else panelHeightLimit=size.height; // preserve the existing visible fallback if no rectangle fits
+      }
     }
     panelNeedsLayout=false;
+    if (!storedPoint && panelAnchor && !deferPanelSave) persistPanel();
   }
   panelHeight=Math.min(panelHeightLimit,Math.max(minimum,panelHeight));
   if (panelAnchor.x < 0 || panelAnchor.y < 0 || panelAnchor.x+size.width > innerWidth || panelAnchor.y+panelHeight > innerHeight-16) {

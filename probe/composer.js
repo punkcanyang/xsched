@@ -30,6 +30,19 @@ function visible(node,doc) {
   }
   return true;
 }
+// Quick slots belong only on a new-post editor. Reply modals and quote
+// composers carry the parent post in the same surface; an inline reply on a
+// status permalink often does not, so the path is the other signal.
+function isPlainPost(doc, editor) {
+  if(!editor)return false;
+  const surface=editor.closest('[role="dialog"], [role="alertdialog"]') || editor.closest('[data-testid="cellInnerDiv"]') || editor.parentElement;
+  if(surface?.querySelector('article, [data-testid="tweet"], [data-testid="tweetText"], [data-testid="quoteTweet"]'))return false;
+  if(!editor.closest('[role="dialog"], [role="alertdialog"]')) {
+    const path=doc.defaultView.location?.pathname || '';
+    if(/^\/(?:i\/status\/\d+|[^/]+\/status\/\d+)(?:\/|$)/.test(path))return false;
+  }
+  return true;
+}
 function findEntries(doc) {
   if(doc.defaultView.location?.hostname!=='x.com')return [];
   const icons=[...doc.querySelectorAll(COMPOSER_CONFIG.icon)].slice(0,COMPOSER_CONFIG.maxIcons);
@@ -41,7 +54,7 @@ function findEntries(doc) {
       const editors=[...scope.querySelectorAll(COMPOSER_CONFIG.editor)].filter(editor=>!editor.closest(COMPOSER_CONFIG.excluded) && visible(editor,doc));
       if(editors.length>1)break;
       if(editors.length!==1)continue;
-      if(scope.querySelectorAll(COMPOSER_CONFIG.icon).length===1)entries.push({scope,editor:editors[0],icon});
+      if(scope.querySelectorAll(COMPOSER_CONFIG.icon).length===1 && isPlainPost(doc,editors[0]))entries.push({scope,editor:editors[0],icon});
       break;
     }
   }
@@ -104,7 +117,7 @@ function create(doc,options) {
     const entries=findEntries(doc);
     // A missing icon still gets an inert explanatory row near a proven editor.
     if(!entries.length)for(const editor of [...doc.querySelectorAll(COMPOSER_CONFIG.editor)].slice(0,COMPOSER_CONFIG.maxIcons)) {
-      if(editor.parentElement && !editor.closest(COMPOSER_CONFIG.excluded) && visible(editor,doc))entries.push({scope:editor.parentElement,editor,icon:null});
+      if(editor.parentElement && !editor.closest(COMPOSER_CONFIG.excluded) && visible(editor,doc) && isPlainPost(doc,editor))entries.push({scope:editor.parentElement,editor,icon:null});
     }
     const scopes=new Set(entries.map(entry=>entry.scope));
     for(const [scope,row] of rows)if(!scopes.has(scope) && !active){row.host.remove();rows.delete(scope);}
