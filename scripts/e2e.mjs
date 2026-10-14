@@ -1943,7 +1943,9 @@ async function main() {
       await page.evaluate(() => {
         const body = document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');
         const overview = body && body.querySelector('.overview');
-        if (body && overview) body.scrollTop = Math.max(0, overview.offsetTop - 8);
+        if (!body || !overview) return;
+        const delta = overview.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
+        body.scrollTop = Math.max(0, body.scrollTop + delta);
       });
     }
     async function overviewWalk(index) {
