@@ -13,7 +13,7 @@
 ## 完成內容
 
 - 新增 `probe/overview.js`：純資料（排序、格式、snapshot、九語）。snapshot 只留 time／preview／at／unparsed／sample，不含 body／key。
-- `probe/content.js`：成功讀完 Scheduled（含未解析列）時寫入記憶體快取；已確認空列表才清空；忙碌／載入中不清。非 Scheduled 頁用 `.overview-time`／`.overview-preview` 顯示快取，不重用 `.time`，以免更動既有則數／時間斷言。浮層外殼 `overflow: hidden`，只讓 `.panel-body` 捲動，避免總覽把快捷區擠出換行、改變已存矩形。
+- `probe/content.js`：成功讀完 Scheduled（含未解析列）時寫入記憶體快取；已確認空列表才清空；忙碌／載入中不清。非 Scheduled 頁用 `.overview-time`／`.overview-preview` 顯示快取，不重用 `.time`，以免更動既有則數／時間斷言。
 - 守門：overview.js 由既有規則全掃，不豁免 click／scroll／storage。AUTHOR_CONTENT_SHA256 因接線更新；ui／quick／position／composer 未改。
 
 ## 測試

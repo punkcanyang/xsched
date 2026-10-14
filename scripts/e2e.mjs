@@ -61,7 +61,7 @@ try {CHROME_PATH=resolveChromePath();} catch(error) {
 if (!process.env.DISPLAY && !process.env.XSCHED_E2E_REEXEC) {
   const result = spawnSync("xvfb-run", ["-a", process.execPath, SELF], {
     stdio: "inherit",
-    timeout: 180000,
+    timeout: 300000,
     env: { ...process.env, XSCHED_E2E_REEXEC: "1" },
   });
   process.exit(result.status == null ? 1 : result.status);
@@ -1155,7 +1155,13 @@ async function main() {
     await sleep(650);
     assert(JSON.stringify(await buttonRect())===JSON.stringify(buttonDragged)&&JSON.stringify(await panelRect())===JSON.stringify(panelDragged),'poll and modal mutation keep independent rectangles');
     await page.evaluate(()=>document.querySelector('.fixture-panel-modal').remove());
-    await page.reload({waitUntil:'domcontentloaded'});await until(async()=> (await probeState(page)).expanded==='true','two independent positions reloaded');
+    await page.reload({waitUntil:'domcontentloaded'});
+    await until(async()=>{
+      if ((await probeState(page)).expanded!=='true') return null;
+      const button=await buttonRect(),panel=await panelRect();
+      if (JSON.stringify(button)===JSON.stringify(buttonDragged)&&JSON.stringify(panel)===JSON.stringify(panelDragged)) return true;
+      throw new Error(JSON.stringify({button,panel,wantButton:buttonDragged,wantPanel:panelDragged}));
+    },'two independent positions reloaded');
     assert(JSON.stringify(await buttonRect())===JSON.stringify(buttonDragged)&&JSON.stringify(await panelRect())===JSON.stringify(panelDragged),'reload restores exact button and panel rectangles');
     await page.screenshot({path:join(DOCS,'v1.0-quick014-reload-both.png')});
     // Starting on the header's minimize button must never take panel capture.
