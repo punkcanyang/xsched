@@ -1911,6 +1911,14 @@ async function main() {
       }, '020 overlay diagnostic ready');
       if ((await probeState(page)).expanded !== 'true') await toggle(true);
     }
+    async function ensureOverviewClosed() {
+      if ((await probeState(page)).expanded !== 'true') return;
+      await clickShadow('[data-xsched-minimize]');
+      await until(async () => {
+        const s = await probeState(page);
+        return s.expanded === 'false' && s.panelVisible === false ? s : null;
+      }, '020 panel minimized');
+    }
     await page.evaluate(() => window.localStorage.removeItem('xsched.probe.overview'));
     await open('home', '/home');
     await ensureOverviewOpen();
@@ -1944,7 +1952,7 @@ async function main() {
     assert(spa.countText === 'xsched 探針：非 Scheduled 頁' && spa.liveTimes.length === 0, '020 off-Scheduled rows do not reuse live .time nodes');
     await page.screenshot({ path: join(DOCS, 'v1.0-overview020-spa.png') });
     const beforeDrag = { button: await buttonRect(), panel: await panelRect() };
-    await toggle(false);
+    await ensureOverviewClosed();
     await toggle(true);
     const afterToggle = await overviewState();
     assert(afterToggle.status === 'ready' && afterToggle.rows === 3, '020 closing and opening the panel keeps the overview');
@@ -1969,7 +1977,7 @@ async function main() {
     const walkTimes = ['2028-01-01 09:00 (Sat)', '2028-02-06 12:30 (Sun)', '2028-03-01 21:00 (Wed)'];
     for (let round = 1; round <= 3; round++) {
       await ensureOverviewOpen();
-      if ((await probeState(page)).expanded === 'true') await toggle(false);
+      await ensureOverviewClosed();
       await toggle(true);
       const walked = await overviewState();
       assert(walked.status === 'ready' && walked.rows === 3, `020 walk ${round} toggle keeps overview`);
