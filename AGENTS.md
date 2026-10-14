@@ -114,6 +114,6 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 ## 排程總覽 0.2.0
 
 - 只做總覽。老闆在任何 x.com 頁面打開 Dagaz，就能看到上次讀 Scheduled 列表留下的記憶體快取：依時間排序的日期、時分、上下午、跨年與前 20 字摘要，以及最後同步時間。快取是空的時候顯示「去 Scheduled 頁同步一次」的提示，並沿用既有固定 `location.assign` 按鈕。整頁重新整理後快取清空，需再同步。不把本文、帳號或網址寫進 localStorage；不新增 storage key 或權限。
-- `npm test` 保留閘 0／快速時段全套，另測 `probe/overview.js` 的排序、12h 上下午、跨年、20 字預覽、九語、空輸入、snapshot 不含 body／key，以及 `probe/overview.js` 通過既有 verify 掃描。真 content VM 另測首頁空快取提示／goto、Scheduled 讀入後 SPA 到首頁仍顯示排序後的總覽、忙碌空列表不清快取、已確認空列表才清空，以及連續三次 empty→sync→SPA 走查。版本號 0.2.0。
+- `npm test` 保留閘 0／快速時段全套，另測 `probe/overview.js` 的排序、12h 上下午、跨年、20 字預覽、九語、空輸入、snapshot 不含 body／key，以及 `probe/overview.js` 通過既有 verify 掃描。真 content VM 另測首頁空快取提示／goto、Scheduled 讀入後 SPA 到首頁仍顯示排序後的總覽、忙碌空列表不清快取、已確認空列表才清空，以及連續三次 empty→sync→SPA 走查。版本號 0.2.0。本環境 Node 22 不能把 `test/` 目錄當測試入口，`package.json` 的 test script 改為 `node --test test/*.mjs`（不斷言放寬）。
 - `npm run verify` 不放寬既有斷言與守門。新增 `probe/overview.js` 由原規則全掃，不豁免 click／scroll／storage／dispatchEvent。AUTHOR_CONTENT_SHA256 因 content 接線更新；ui／quick／position／composer 摘要不變。原 30 API／14 icon／9 SVG／66 leak／37 storage／64 writer／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測數量不減。
 - `npm run e2e` 保留全部舊情境與 0 擴充資源／背景請求；只把版本期望改成 0.2.0。新增總覽情境：空首頁提示＋goto、合成 2027+ 未排序列表的現場讀取、SPA 到 `/home` 後快取仍依時間排序且含 AM/PM／跨年／20 字前綴、診斷不含本文、連續走查 3 次。不點作者連結、不增加第二次 Scheduled 頂層導覽。截圖 `docs/v1.0-overview-*.png`；既有截圖不覆寫。fixture 一律示例資料。
