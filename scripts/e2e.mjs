@@ -158,6 +158,12 @@ async function probeState(page) {
       target: shadow?.querySelector('[data-xsched-goto]')?.dataset.xschedTarget,
       panelVisible: shadow?.querySelector('section')?.getBoundingClientRect().height > 0,
       times: shadow ? [...shadow.querySelectorAll(".time")].map((el) => el.textContent) : [],
+      overview: Number(host.dataset.xschedOverview || "0"),
+      overviewHeading: pick(".overview-heading"),
+      overviewSync: pick(".overview-sync"),
+      overviewEmpty: pick(".overview-empty"),
+      overviewTimes: shadow ? [...shadow.querySelectorAll(".overview-time")].map((el) => el.textContent) : [],
+      overviewPreviews: shadow ? [...shadow.querySelectorAll(".overview-preview")].map((el) => el.textContent) : [],
       hint: pick(".hint"),
       fallback: shadow && shadow.querySelector("textarea.fallback") ? shadow.querySelector("textarea.fallback").value : "",
     };
@@ -357,7 +363,7 @@ async function main() {
       return s.count === 2 && s.expanded === 'true' ? s : null;
     }, 'shortcut Scheduled defaults open');
     assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
-    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.1.6 (manifest 0.1.6)', 'diagnostic first line includes both versions');
+    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.2.0 (manifest 0.2.0)', 'diagnostic first line includes both versions');
     await checkAuthorLink('Scheduled author');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-author-link-scheduled.png') });
     await checkNative('desktop scheduled open');
@@ -433,14 +439,14 @@ async function main() {
       chrome.runtime.getManifest = () => ({version: '0.0.2'});
     ` });
     await until(async () => (await probeState(page)).version.includes('⚠ 版本不符'), 'manifest mismatch warning');
-    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.1.6 / manifest 0.0.2'), 'diagnostic mismatch warning');
+    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.2.0 / manifest 0.0.2'), 'diagnostic mismatch warning');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-version-mismatch.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: `chrome.runtime.getManifest = () => { throw new Error('Extension context invalidated. private account'); };` });
     await until(async () => (await probeState(page)).version.includes('擴充已重新載入'), 'context invalidated warning');
     assert(!(await probeState(page)).diag.includes('private account'), 'runtime exception is never copied into diagnostic');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-runtime-invalidated.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: 'chrome.runtime.getManifest = globalThis.__originalManifest;' });
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.6 (manifest 0.1.6)'), 'runtime warning clears');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.2.0 (manifest 0.2.0)'), 'runtime warning clears');
 
     // Reproduce an actual 0.0.2 reader/content session in another isolated world.
     // Historical sources are read from the task's base commit, never downloaded.
@@ -455,7 +461,7 @@ async function main() {
     await until(async () => (await probeState(page)).diag.startsWith('xsched-gate0 v0.0.2'), 'actual old host visible');
     const takeover = await network.send('Runtime.evaluate', { contextId: versionContext, expression: readFileSync(join(PROBE, 'content.js'), 'utf8') });
     assert(!takeover.exceptionDetails, 'new script reinjection avoids top-level const collisions');
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.1.6'), 'new script takes over old UI');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.2.0'), 'new script takes over old UI');
     await sleep(1200); // legacy poll has run repeatedly
     assert(await page.evaluate(() => document.querySelectorAll('#xsched-probe-root').length === 1 && [...document.querySelectorAll('[data-xsched-retired]')].every((el) => el.getBoundingClientRect().height === 0)), 'one active UI; legacy stays connected and hidden');
     await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
@@ -749,7 +755,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched probe v0\.1\.6 \(manifest 0\.1\.6\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.2\.0 \(manifest 0\.2\.0\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
@@ -845,7 +851,7 @@ async function main() {
     const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
     const skeleton = skeletonCopies.result.value[0];
-    assert(/^xsched-skeleton v0\.1\.6 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(/^xsched-skeleton v0\.2\.0 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
     for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture", "punkcan", "https://x.com/punkcan"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
@@ -863,7 +869,7 @@ async function main() {
       const s = await probeState(page);
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
-    assert(/^xsched-skeleton v0\.1\.6 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    assert(/^xsched-skeleton v0\.2\.0 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
     const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
     await select.asElement().click();
     await select.dispose();
@@ -1222,7 +1228,7 @@ async function main() {
       const initial=await until(async()=>{
         const state=await probeState(page);
         return state.present && state.mounted==='1' && state.mode==='other'
-          && state.diag.startsWith('xsched probe v0.1.6 (manifest 0.1.6)\n') ? state : null;
+          && state.diag.startsWith('xsched probe v0.2.0 (manifest 0.2.0)\n') ? state : null;
       },'quick picker first diagnostic rendered: '+name);
       assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
       await installQuickClock(contextId);
@@ -1258,7 +1264,7 @@ async function main() {
       assert(filled.status==='Fields filled; not scheduled yet','fill is not reported as scheduled');
       if(id==='lunch')await page.screenshot({path:join(DOCS,'v1.0-quick014-slot-filled.png')});
     }
-    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.1.6'),'new diagnostic available');
+    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.2.0'),'new diagnostic available');
     await network.send('Runtime.evaluate',{contextId:quickContext,expression:`globalThis.__quickCopies=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText(text){globalThis.__quickCopies.push(text);return Promise.resolve();}}});`});
     await clickShadow('[data-xsched-copy]');await clickShadow('[data-xsched-skeleton]');
     const exported=await network.send('Runtime.evaluate',{contextId:quickContext,expression:'globalThis.__quickCopies',returnByValue:true});
@@ -1884,6 +1890,73 @@ async function main() {
     },'016 dropped panel survives reload over the compose modal');
     assert(await page.evaluate(saved=>window.localStorage.getItem('xsched.probe.panelPos')===saved && document.getElementById('fixture-compose-modal')?.getAttribute('role')==='dialog',droppedPos),'016 reload keeps the dropped panelPos while the compose dialog is open');
     console.log('  ✓ 016: reply/quote have no slots; drag over compose modal stays after release and reload');
+
+    // ── 0.2.0 schedule overview: cache, last sync, empty prompt, SPA, walk 3× ─
+    const overviewTimes = [
+      '2027-02-28 08:00 (Sun) AM',
+      '2027-03-01 12:30 (Mon) PM',
+      '2027-03-05 20:00 (Fri) PM',
+      '2027-12-31 23:59 (Fri) PM',
+      '2028-01-01 00:00 (Sat) AM',
+    ];
+    const overviewPreviews = [
+      'Synthetic morning pr',
+      'Synthetic lunchtime ',
+      'Synthetic evening re',
+      'Synthetic year-end f',
+      'Synthetic new year m',
+    ];
+    const liveTimes = [
+      '2027-03-05 20:00 (Fri)',
+      '2027-02-28 08:00 (Sun)',
+      '2028-01-01 00:00 (Sat)',
+      '2027-03-01 12:30 (Mon)',
+      '2027-12-31 23:59 (Fri)',
+    ];
+    async function overviewWalk(index) {
+      await open('home', '/home');
+      const empty = await until(async () => {
+        const state = await probeState(page);
+        return state.present && state.mode === 'other' ? state : null;
+      }, '020 empty home mounted '+index);
+      if (empty.expanded !== 'true') await toggle(true);
+      const emptyOpen = await probeState(page);
+      assert(emptyOpen.count === 0 && emptyOpen.countText === 'xsched 探針：非 Scheduled 頁', '020 home count stays the live Scheduled read');
+      assert(emptyOpen.overview === 0 && emptyOpen.overviewTimes.length === 0 && emptyOpen.times.length === 0, '020 empty cache has no overview rows');
+      assert(emptyOpen.overviewEmpty.includes('Open Scheduled to sync once'), '020 empty prompt asks to sync once');
+      assert(emptyOpen.target === 'https://x.com/compose/post/unsent/scheduled', '020 empty state keeps the existing goto button');
+      if (index === 1) await page.screenshot({ path: join(DOCS, 'v1.0-overview-empty.png') });
+
+      await open('overview');
+      const live = await until(async () => {
+        const state = await probeState(page);
+        return state.count === 5 && state.mode === 'scheduled' && state.expanded === 'true' ? state : null;
+      }, '020 overview fixture live list '+index);
+      assert(JSON.stringify(live.times) === JSON.stringify(liveTimes), '020 live list keeps DOM order');
+      assert(live.overview === 5, '020 live read fills the in-memory overview cache');
+      assert(live.overviewHeading === 'Scheduled overview', '020 heading is present on Scheduled');
+      assert(live.overviewSync.startsWith('Last synced: 202'), '020 last sync time is a formatted date');
+      if (index === 1) await page.screenshot({ path: join(DOCS, 'v1.0-overview-scheduled.png') });
+
+      await page.evaluate(() => history.replaceState({}, '', '/home'));
+      const cached = await until(async () => {
+        const state = await probeState(page);
+        return state.mode === 'other' && state.count === 0 ? state : null;
+      }, '020 SPA home keeps cache '+index);
+      if (cached.expanded !== 'true') await toggle(true);
+      const cachedOpen = await probeState(page);
+      assert(cachedOpen.countText === 'xsched 探針：非 Scheduled 頁', '020 SPA home heading unchanged');
+      assert(cachedOpen.times.length === 0, '020 cached overview does not reuse live .time nodes');
+      assert(JSON.stringify(cachedOpen.overviewTimes) === JSON.stringify(overviewTimes), '020 cache is sorted with AM/PM and cross-year');
+      assert(JSON.stringify(cachedOpen.overviewPreviews) === JSON.stringify(overviewPreviews), '020 previews are 20-character synthetic prefixes');
+      assert(cachedOpen.overviewEmpty === '', '020 populated cache hides the empty prompt');
+      assert(cachedOpen.overviewSync.startsWith('Last synced:'), '020 last sync remains after leaving Scheduled');
+      assert(cachedOpen.target === 'https://x.com/compose/post/unsent/scheduled', '020 goto remains for a later resync');
+      assert(!cachedOpen.diag.includes('Synthetic') && !cachedOpen.diag.includes('product note'), '020 diagnostics stay counts-only');
+      if (index === 1) await page.screenshot({ path: join(DOCS, 'v1.0-overview-cached-home.png') });
+    }
+    for (let n = 1; n <= 3; n++) await overviewWalk(n);
+    console.log('  ✓ 020: empty prompt, live list, SPA cache, AM/PM/cross-year sort, three consecutive walkthroughs');
 
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);

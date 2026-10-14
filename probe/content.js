@@ -9,8 +9,11 @@ const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 const { stringsFor, createAuthorLink, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition } = globalThis.XSCHED_UI;
 const positionStore = globalThis.XSCHED_POSITION;
 const quick = globalThis.XSCHED_QUICK;
+const overview = globalThis.XSCHED_OVERVIEW;
 let quickRange = positionStore.loadRange() || {a:10,b:30};
 let lastCache = positionStore.loadCache();
+let overviewCache = [];
+let overviewSyncedAt = 0;
 let cacheSignature = '';
 let quickSignature = "";
 let quickStatus = "";
@@ -395,6 +398,7 @@ function writeDataset(node, report, count, diag) {
   node.dataset.xschedOn = report.onScheduled ? "1" : "0";
   node.dataset.xschedMode = report.onScheduled ? "scheduled" : "other";
   node.dataset.xschedCount = String(count);
+  node.dataset.xschedOverview = String(overviewCache.length);
   node.dataset.xschedMounted = mounted ? "1" : "0";
   node.dataset.xschedRemounts = String(remounts);
   node.dataset.xschedScrolled = scrolled ? "1" : "0";
@@ -595,7 +599,7 @@ function render(report, items, explicitOpen = false) {
   const strings = stringsFor(document.documentElement.lang, navigator.language);
   const now=new Date();
   const slotLabels=quick.SLOT_IDS.map(id=>globalThis.XSCHED_UI.slotLabel(id,quick.nextSlot(id,now),now,document.documentElement.lang,navigator.language));
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,slotLabels,items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,slotLabels,overviewSyncedAt,overviewCache.map((item) => [item.time, item.preview, overview.formatItemTime(item, document.documentElement.lang, navigator.language)]),items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
     positionUI();
@@ -699,6 +703,43 @@ function render(report, items, explicitOpen = false) {
       });
       slots.append(button);
     });
+    const overviewLabels = overview.stringsFor(document.documentElement.lang, navigator.language);
+    const overviewBox = css(document.createElement('div'), {margin:'0 0 8px'});
+    overviewBox.className = 'overview';
+    const overviewHeading = textNode('strong', overviewLabels.heading);
+    overviewHeading.className = 'overview-heading';
+    overviewBox.append(overviewHeading);
+    const syncedAt = overviewSyncedAt || (lastCache && lastCache.source !== 2 ? lastCache.readAt : 0);
+    if (syncedAt) {
+      const sync = textNode('p', `${overviewLabels.synced}: ${formatTime(new Date(syncedAt))}`, {color:'#8b98a5','font-size':'12px',margin:'4px 0 8px'});
+      sync.className = 'overview-sync';
+      overviewBox.append(sync);
+    }
+    if (!report.onScheduled) {
+      if (!overviewCache.length) {
+        const empty = textNode('p', overviewLabels.empty, {color:'#ffd400','font-size':'12px',margin:'4px 0 8px'});
+        empty.className = 'overview-empty';
+        overviewBox.append(empty);
+      } else {
+        for (const item of overviewCache) {
+          const row = css(document.createElement('div'), {padding:'6px 0','border-top':'1px solid #2f3336'});
+          row.className = 'overview-row';
+          const time = textNode('div', overview.formatItemTime(item, document.documentElement.lang, navigator.language), {color:'#1d9bf0','font-weight':'680','word-break':'break-word'});
+          time.className = 'overview-time';
+          row.append(time);
+          if (item.unparsed) {
+            const sample = textNode('div', `時間樣本：${item.sample ? maskSample(item.sample) : "無可安全匯出的樣本"}`, {color:'#ffd400','font-size':'12px','word-break':'break-word'});
+            sample.className = 'overview-sample';
+            row.append(sample);
+          }
+          const preview = textNode('div', item.preview || overviewLabels.none, {'word-break':'break-word'});
+          preview.className = 'overview-preview';
+          row.append(preview);
+          overviewBox.append(row);
+        }
+      }
+    }
+    body.append(overviewBox);
     if (report.onScheduled) {
       const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" });
       hint.className = "hint";
@@ -730,7 +771,6 @@ function render(report, items, explicitOpen = false) {
         if (event.isTrusted) location.assign("https://x.com/compose/post/unsent/scheduled");
       });
       controls.append(go);
-      body.append(textNode("p", "非 Scheduled 頁面：此頁不讀取列表，僅保留診斷與頁面結構工具。", { color:"#8b98a5", "font-size":"12px", margin:"0 0 8px" }));
     }
     const copy = makeButton("複製診斷", "xschedCopy");
     copy.addEventListener("click", event => {
@@ -832,7 +872,16 @@ function tick() {
       if(times.length && report.timeFail===0 && !pending) {
         const value={time:Math.max(...times),readAt:Date.now(),source:1};
         if(positionStore.saveCache(value)){lastCache=value;emptyListConfirmed=false;}
-      } else if(report.empty && !times.length && !pending) {if(positionStore.clearCache()){lastCache=null;emptyListConfirmed=true;}}
+        overviewCache=overview.snapshot(accumulated);
+        overviewSyncedAt=Date.now();
+      } else if(report.empty && !times.length && !pending) {
+        if(positionStore.clearCache()){lastCache=null;emptyListConfirmed=true;}
+        overviewCache=[];
+        overviewSyncedAt=Date.now();
+      } else if(!pending && times.length) {
+        overviewCache=overview.snapshot(accumulated);
+        overviewSyncedAt=Date.now();
+      }
     }
   } else {
     accumulated = [];
