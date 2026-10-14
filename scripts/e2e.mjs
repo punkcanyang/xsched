@@ -1982,7 +1982,7 @@ async function main() {
       const walked = await overviewState();
       assert(walked.status === 'ready' && walked.rows === 3, `020 walk ${round} toggle keeps overview`);
       assert(JSON.stringify(walked.times) === JSON.stringify(walkTimes), `020 walk ${round} order after toggle`);
-      await page.evaluate(() => history.pushState({}, '', round % 2 ? '/compose/post?fixture=home' : '/home?fixture=home'));
+      await page.evaluate(round => history.pushState({}, '', round % 2 ? '/compose/post?fixture=home' : '/home?fixture=home'), round);
       await until(async () => (await probeState(page)).mode === 'other', `020 walk ${round} SPA stays off Scheduled`);
       await ensureOverviewOpen();
       assert((await overviewState()).rows === 3, `020 walk ${round} SPA does not clear overview`);
