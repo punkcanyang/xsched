@@ -1990,7 +1990,7 @@ async function main() {
       await reviewDragPanelTo(128, 88);
       assert(JSON.stringify(await buttonRect()) === JSON.stringify(walkButton), `020 walk ${round} drag leaves the shortcut`);
       assert((await overviewState()).rows === 3, `020 walk ${round} drag keeps overview`);
-      await page.reload({ waitUntil: 'domcontentloaded' });
+      await open('home', '/home');
       await ensureOverviewOpen();
       const walkReload = await overviewState();
       assert(walkReload.status === 'ready' && walkReload.rows === 3, `020 walk ${round} reload keeps overview`);
