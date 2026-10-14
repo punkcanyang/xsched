@@ -1904,10 +1904,16 @@ async function main() {
         };
       });
     }
+    async function ensureOverviewOpen() {
+      await until(async () => {
+        const s = await probeState(page);
+        return s.present && s.mounted === '1' && typeof s.diag === 'string' && s.diag.startsWith('xsched probe v0.2.0') ? s : null;
+      }, '020 overlay diagnostic ready');
+      if ((await probeState(page)).expanded !== 'true') await toggle(true);
+    }
     await page.evaluate(() => window.localStorage.removeItem('xsched.probe.overview'));
     await open('home', '/home');
-    await sleep(500);
-    if ((await probeState(page)).expanded !== 'true') await toggle(true);
+    await ensureOverviewOpen();
     const missing = await overviewState();
     assert(missing.status === 'missing', '020 missing cache is an explicit unsynced state');
     assert(/not synced|尚未同步/i.test(missing.statusText), '020 missing copy must not say the list is empty');
@@ -1917,8 +1923,7 @@ async function main() {
     const stale = { s: Date.now() - 86400000 - 1000, n: 1, i: [{ t: Date.now() + 3600000, p: 'Synthetic stale overview row' }] };
     await page.evaluate(value => window.localStorage.setItem('xsched.probe.overview', JSON.stringify(value)), stale);
     await open('home', '/home');
-    await sleep(500);
-    if ((await probeState(page)).expanded !== 'true') await toggle(true);
+    await ensureOverviewOpen();
     const expired = await overviewState();
     assert(expired.status === 'expired', '020 expired cache is marked expired, not empty');
     assert(/expired|過期|过期/i.test(expired.statusText), '020 expired prompt is visible');
@@ -1932,7 +1937,7 @@ async function main() {
     await page.screenshot({ path: join(DOCS, 'v1.0-overview020-sorted.png') });
     await page.evaluate(() => history.pushState({}, '', '/home?fixture=overview-multi'));
     await until(async () => (await probeState(page)).mode === 'other', '020 SPA leaves Scheduled without a document navigation');
-    if ((await probeState(page)).expanded !== 'true') await toggle(true);
+    await ensureOverviewOpen();
     const spa = await overviewState();
     assert(spa.status === 'ready' && spa.rows === 3, '020 SPA does not clear the overview snapshot');
     assert(JSON.stringify(spa.times) === JSON.stringify(['2028-01-01 09:00 (Sat)', '2028-02-06 12:30 (Sun)', '2028-03-01 21:00 (Wed)']), '020 cached rows stay chronological after SPA');
@@ -1952,19 +1957,18 @@ async function main() {
     assert(afterDrag.status === 'ready' && afterDrag.rows === 3, '020 dragging the panel does not drop overview rows');
     await page.screenshot({ path: join(DOCS, 'v1.0-overview020-toggle-drag.png') });
     await open('home', '/home');
-    await sleep(500);
-    if ((await probeState(page)).expanded !== 'true') await toggle(true);
+    await ensureOverviewOpen();
     const beforeReload = await overviewState();
     assert(beforeReload.rows === 3, '020 home still shows the cached list before reload');
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await until(async () => (await probeState(page)).present, '020 overlay remounts after reload');
-    if ((await probeState(page)).expanded !== 'true') await toggle(true);
+    await ensureOverviewOpen();
     const reloaded = await overviewState();
     assert(reloaded.status === 'ready' && reloaded.rows === 3, '020 full reload still shows the overview snapshot');
     assert(JSON.stringify(reloaded.times) === JSON.stringify(['2028-01-01 09:00 (Sat)', '2028-02-06 12:30 (Sun)', '2028-03-01 21:00 (Wed)']), '020 reload keeps chronological previews');
     await page.screenshot({ path: join(DOCS, 'v1.0-overview020-reload.png') });
     const walkTimes = ['2028-01-01 09:00 (Sat)', '2028-02-06 12:30 (Sun)', '2028-03-01 21:00 (Wed)'];
     for (let round = 1; round <= 3; round++) {
+      await ensureOverviewOpen();
       if ((await probeState(page)).expanded === 'true') await toggle(false);
       await toggle(true);
       const walked = await overviewState();
@@ -1972,15 +1976,14 @@ async function main() {
       assert(JSON.stringify(walked.times) === JSON.stringify(walkTimes), `020 walk ${round} order after toggle`);
       await page.evaluate(() => history.pushState({}, '', round % 2 ? '/compose/post?fixture=home' : '/home?fixture=home'));
       await until(async () => (await probeState(page)).mode === 'other', `020 walk ${round} SPA stays off Scheduled`);
-      if ((await probeState(page)).expanded !== 'true') await toggle(true);
+      await ensureOverviewOpen();
       assert((await overviewState()).rows === 3, `020 walk ${round} SPA does not clear overview`);
       const walkButton = await buttonRect();
       await reviewDragPanelTo(128, 88);
       assert(JSON.stringify(await buttonRect()) === JSON.stringify(walkButton), `020 walk ${round} drag leaves the shortcut`);
       assert((await overviewState()).rows === 3, `020 walk ${round} drag keeps overview`);
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await until(async () => (await probeState(page)).present, `020 walk ${round} overlay remounts`);
-      if ((await probeState(page)).expanded !== 'true') await toggle(true);
+      await ensureOverviewOpen();
       const walkReload = await overviewState();
       assert(walkReload.status === 'ready' && walkReload.rows === 3, `020 walk ${round} reload keeps overview`);
       assert(JSON.stringify(walkReload.times) === JSON.stringify(walkTimes), `020 walk ${round} reload order`);
