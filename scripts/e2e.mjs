@@ -283,8 +283,26 @@ async function main() {
     let sawOverlay = false;
 
     async function clickShadow(selector) {
-      const handle = await page.evaluateHandle((sel) => document.getElementById('xsched-probe-root').shadowRoot.querySelector(sel), selector);
-      try { await handle.asElement().click(); } finally { await handle.dispose(); }
+      const point = await page.evaluate((sel) => {
+        const host = document.getElementById('xsched-probe-root');
+        const el = host.shadowRoot.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        const samples = [
+          [r.left + r.width / 2, r.top + r.height / 2],
+          [r.right - 4, r.top + r.height / 2],
+          [r.left + 4, r.top + r.height / 2],
+          [r.left + r.width / 2, r.top + 4],
+          [r.left + r.width / 2, r.bottom - 4],
+        ];
+        for (const [x, y] of samples) {
+          if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
+          if (host.shadowRoot.elementFromPoint(x, y) === el) return { x, y };
+        }
+        return null;
+      }, selector);
+      if (!point) throw new Error('clickShadow missing or covered ' + selector);
+      await page.mouse.click(point.x, point.y);
     }
     async function toggle(expected) {
       await clickShadow('.shortcut');
