@@ -245,6 +245,7 @@ function ensureHost(explicitOpen = false) {
     "max-height": "calc(100vh - 32px)",
     "max-width": "344px",
     overflow: "auto",
+    "scrollbar-gutter": "stable",
     "flex-direction": "column",
     gap: "8px",
   });

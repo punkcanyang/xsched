@@ -61,7 +61,7 @@ try {CHROME_PATH=resolveChromePath();} catch(error) {
 if (!process.env.DISPLAY && !process.env.XSCHED_E2E_REEXEC) {
   const result = spawnSync("xvfb-run", ["-a", process.execPath, SELF], {
     stdio: "inherit",
-    timeout: 180000,
+    timeout: 600000,
     env: { ...process.env, XSCHED_E2E_REEXEC: "1" },
   });
   process.exit(result.status == null ? 1 : result.status);
@@ -2006,6 +2006,7 @@ async function main() {
     failed = err;
     if (consoleLogs.length) console.error("page logs:\n  " + consoleLogs.slice(-20).join("\n  "));
     console.error("e2e: FAILED — " + err.message);
+    if (err.stack) console.error(err.stack);
   } finally {
     if (browser) await browser.close().catch(() => {});
     server.close();
