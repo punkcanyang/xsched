@@ -1939,6 +1939,13 @@ async function main() {
       '2027-03-01 12:30 (Mon)',
       '2027-12-31 23:59 (Fri)',
     ];
+    async function showOverview() {
+      await page.evaluate(() => {
+        const body = document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');
+        const overview = body && body.querySelector('.overview');
+        if (body && overview) body.scrollTop = Math.max(0, overview.offsetTop - 8);
+      });
+    }
     async function overviewWalk(index) {
       await open('home', '/home');
       const empty = await until(async () => {
@@ -1951,7 +1958,7 @@ async function main() {
       assert(emptyOpen.overview === 0 && emptyOpen.overviewTimes.length === 0 && emptyOpen.times.length === 0, '020 empty cache has no overview rows');
       assert(emptyOpen.overviewEmpty.includes('Open Scheduled to sync once'), '020 empty prompt asks to sync once');
       assert(emptyOpen.target === 'https://x.com/compose/post/unsent/scheduled', '020 empty state keeps the existing goto button');
-      if (index === 1) await page.screenshot({ path: join(DOCS, 'v1.0-overview-empty.png') });
+      if (index === 1) { await showOverview(); await page.screenshot({ path: join(DOCS, 'v1.0-overview-empty.png') }); }
 
       await open('overview');
       const live = await until(async () => {
@@ -1962,7 +1969,7 @@ async function main() {
       assert(live.overview === 5, '020 live read fills the in-memory overview cache');
       assert(live.overviewHeading === 'Scheduled overview', '020 heading is present on Scheduled');
       assert(live.overviewSync.startsWith('Last synced: 202'), '020 last sync time is a formatted date');
-      if (index === 1) await page.screenshot({ path: join(DOCS, 'v1.0-overview-scheduled.png') });
+      if (index === 1) { await showOverview(); await page.screenshot({ path: join(DOCS, 'v1.0-overview-scheduled.png') }); }
 
       await page.evaluate(() => history.replaceState({}, '', '/home'));
       const cached = await until(async () => {
@@ -1979,7 +1986,7 @@ async function main() {
       assert(cachedOpen.overviewSync.startsWith('Last synced:'), '020 last sync remains after leaving Scheduled');
       assert(cachedOpen.target === 'https://x.com/compose/post/unsent/scheduled', '020 goto remains for a later resync');
       assert(!cachedOpen.diag.includes('Synthetic') && !cachedOpen.diag.includes('product note'), '020 diagnostics stay counts-only');
-      if (index === 1) await page.screenshot({ path: join(DOCS, 'v1.0-overview-cached-home.png') });
+      if (index === 1) { await showOverview(); await page.screenshot({ path: join(DOCS, 'v1.0-overview-cached-home.png') }); }
     }
     for (let n = 1; n <= 3; n++) await overviewWalk(n);
     console.log('  ✓ 020: empty prompt, live list, SPA cache, AM/PM/cross-year sort, three consecutive walkthroughs');
