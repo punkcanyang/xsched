@@ -1,5 +1,5 @@
 // Sole audited persistence boundary: fixed keys, numeric positions/settings/times,
-// and one JSON boolean for the panel switch.
+// one JSON boolean for the panel switch, and one overview snapshot key.
 (() => {
 "use strict";
 const POSITION_KEY = "xsched.probe.pos";
@@ -8,6 +8,7 @@ const RANGE_KEY = "xsched.probe.quickRange";
 const CACHE_KEY = "xsched.probe.lastScheduled";
 const HEIGHT_KEY = "xsched.probe.panelHeight";
 const OPEN_KEY = "xsched.probe.panelOpen";
+const OVERVIEW_KEY = "xsched.probe.overview";
 const allowedKey = key => key === POSITION_KEY || key === PANEL_KEY;
 function valid(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -111,5 +112,74 @@ function saveOpen(value) {
     return true;
   } catch { return false; }
 }
-globalThis.XSCHED_POSITION = Object.freeze({ load, save, loadPanel, savePanel, reset, loadRange, saveRange, loadCache, saveCache, clearCache, loadHeight, saveHeight, loadOpen, saveOpen });
+// Overview snapshot: truncated list previews from a prior Scheduled read only.
+function overviewPreviewOk(text) {
+  return typeof text === "string" && Array.from(text).length <= 100 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text);
+}
+function overviewItemValid(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+  const keys = Object.keys(item);
+  return keys.length === 2 && keys.includes("t") && keys.includes("p")
+    && Number.isSafeInteger(item.t) && item.t > 0 && item.t <= 8640000000000000
+    && overviewPreviewOk(item.p);
+}
+function overviewValid(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  if (!keys.includes("s") || !keys.includes("n")) return false;
+  if (!Number.isSafeInteger(value.s) || value.s <= 0 || value.s > 8640000000000000) return false;
+  if (!Number.isSafeInteger(value.n) || value.n < 0 || value.n > 80) return false;
+  if (value.n === 0) return keys.length === 2;
+  if (keys.length !== 3 || !keys.includes("i") || !Array.isArray(value.i) || value.i.length !== value.n) return false;
+  for (const item of value.i) if (!overviewItemValid(item)) return false;
+  return true;
+}
+function overviewSnapshot(value) {
+  if (value.n === 0) return { s: value.s, n: 0 };
+  const i = [];
+  for (const item of value.i) i.push({ t: item.t, p: item.p });
+  return { s: value.s, n: value.n, i };
+}
+function overviewMatches(left, right) {
+  if (!left || !right || left.s !== right.s || left.n !== right.n) return false;
+  if (right.n === 0) return true;
+  if (!Array.isArray(left.i) || !Array.isArray(right.i) || left.i.length !== right.n || right.i.length !== right.n) return false;
+  let index = 0;
+  while (index < right.n) {
+    const a = left.i[index];
+    const b = right.i[index];
+    if (!a || !b || a.t !== b.t || a.p !== b.p) return false;
+    index += 1;
+  }
+  return true;
+}
+function loadOverview() {
+  try {
+    if (window.location.hostname !== "x.com") return null;
+    const raw = window.localStorage.getItem(OVERVIEW_KEY);
+    if (!raw || raw.length > 24576) return null;
+    const value = JSON.parse(raw);
+    const overview = overviewValid(value) ? overviewSnapshot(value) : null;
+    return overview && overviewMatches(value, overview) ? overview : null;
+  } catch { return null; }
+}
+function saveOverview(value) {
+  try {
+    if (window.location.hostname !== "x.com" || !overviewValid(value)) return false;
+    const overview = overviewSnapshot(value);
+    if (!overviewValid(overview) || !overviewMatches(value, overview)) return false;
+    const raw = JSON.stringify(overview);
+    if (raw.length > 24576) return false;
+    window.localStorage.setItem(OVERVIEW_KEY, raw);
+    return true;
+  } catch { return false; }
+}
+function clearOverview() {
+  try {
+    if (window.location.hostname !== "x.com") return false;
+    window.localStorage.removeItem(OVERVIEW_KEY);
+    return true;
+  } catch { return false; }
+}
+globalThis.XSCHED_POSITION = Object.freeze({ load, save, loadPanel, savePanel, reset, loadRange, saveRange, loadCache, saveCache, clearCache, loadHeight, saveHeight, loadOpen, saveOpen, loadOverview, saveOverview, clearOverview });
 })();

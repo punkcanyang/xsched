@@ -21,9 +21,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROBE = join(ROOT, "probe");
 const DOCS = join(ROOT, "docs");
 // Fail closed: only this exact audited position module may persist.
-// Fixed numeric keys, plus the authorized JSON boolean xsched.probe.panelOpen.
+// Fixed numeric keys, the authorized JSON boolean xsched.probe.panelOpen,
+// and the authorized overview snapshot key xsched.probe.overview.
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
-const POSITION_SOURCE_SHA256 = "49cde823f66f1adb67c305ffb522c9a83115a006e730c9f201cfee564bd38170";
+const POSITION_SOURCE_SHA256 = "0e1a62aabfe4e081cb4795c3236bdf6520c6d8a5e8c396e6ad18a9365bf1c430";
 
 // Exact-source exception only for the sole native select input/change writer.
 const COMPOSER_SOURCE_SHA256 = "cc29463b5d20b4cc40bbb73dcded8447b168588b75213d2271f8734133e65fa4";
@@ -36,7 +37,7 @@ const QUICK_SOURCE_SHA256 = "a35fb5c6b8480cf4b1dde3916443befa8e201d9dd980d446fa7
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
 const AUTHOR_UI_SHA256 = "5eb978a06ed129bbb4345d3218fb108ce3fcf81cf3b5bbd219dadc66795736b0";
-const AUTHOR_CONTENT_SHA256 = "e59ef6f608a21c72b30f3af9b3d5b7a2478f84fd23f56c8fc35ac6c88801c8c9";
+const AUTHOR_CONTENT_SHA256 = "d7a3e801209b7a44379736a6fa876f5b12eb3de9602dff144d101f95ec447da5";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');
@@ -753,6 +754,7 @@ export function positionStorageSelfTest() {
     'window.localStorage.setItem("xsched.probe.quickRange", "{a:1,b:2}");',
     'window.localStorage.setItem("xsched.probe.lastScheduled", "private");',
     'window.localStorage.setItem("xsched.probe.panelHeight", "private");',
+    'window.localStorage.setItem("xsched.probe.overview", "private");',
 
   ];
   for (const attack of forbidden) if (!scanSource(attack,'probe/elsewhere.js').length) throw new Error('storage self-test: storage allowed outside boundary');
@@ -782,6 +784,15 @@ export function positionStorageSelfTest() {
     source.replace('value.source===1 || value.source===2','true'),
     source.replace('snapshot.source=value.source','snapshot.source="private"'),
     source.replace("keys.includes('source')",'true'),
+    source.replace('"xsched.probe.overview"','"other.overview"'),
+    source.replace('"xsched.probe.overview"','"xsched.probe.list"'),
+    source.replace('JSON.stringify(overview)','JSON.stringify({body:"private"})'),
+    source.replace('!overviewValid(value)','false'),
+    source.replace('!overviewValid(overview)','false'),
+    source.replace('Number.isSafeInteger(value.s)','true'),
+    source.replace('value.i.length !== value.n','false'),
+    source.replace('Array.from(text).length <= 100','true'),
+    source.replace('raw.length > 24576','false'),
 
   ];
   for (const attack of mutations) if (attack===source || !scanSource(attack,'probe/position.js',{positionModule:true}).length) throw new Error('storage self-test: edited boundary allowed');

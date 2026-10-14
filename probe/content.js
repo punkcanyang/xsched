@@ -9,8 +9,10 @@ const { buildSkeleton, SKELETON_VERSION } = globalThis.XSCHED_SKELETON;
 const { stringsFor, createAuthorLink, placement, collectObstacles, clampPosition, panelPlacement, panelSize, clampPanelPosition } = globalThis.XSCHED_UI;
 const positionStore = globalThis.XSCHED_POSITION;
 const quick = globalThis.XSCHED_QUICK;
+const overview = globalThis.XSCHED_OVERVIEW;
 let quickRange = positionStore.loadRange() || {a:10,b:30};
 let lastCache = positionStore.loadCache();
+let lastOverview = positionStore.loadOverview();
 let cacheSignature = '';
 let quickSignature = "";
 let quickStatus = "";
@@ -595,7 +597,7 @@ function render(report, items, explicitOpen = false) {
   const strings = stringsFor(document.documentElement.lang, navigator.language);
   const now=new Date();
   const slotLabels=quick.SLOT_IDS.map(id=>globalThis.XSCHED_UI.slotLabel(id,quick.nextSlot(id,now),now,document.documentElement.lang,navigator.language));
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,slotLabels,items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,lastOverview,Math.floor(Date.now()/60000),slotLabels,items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
     positionUI();
@@ -677,6 +679,20 @@ function render(report, items, explicitOpen = false) {
       schedule();
     });
     settings.append(saveRange);quickControls.append(settings);
+    const overviewRoot=css(document.createElement('div'),{'margin':'0 0 10px','padding':'8px 0 0','border-top':'1px solid #2f3336'});
+    overviewRoot.className='overview-root';
+    const pendingRead=report.onScheduled ? pendingList(report) : false;
+    const displaySnap=report.onScheduled && items.some(item=>item.at) ? overview.fromItems(items,Date.now()) : lastOverview;
+    overview.render(overviewRoot,displaySnap,{
+      now:Date.now(),
+      pending:pendingRead,
+      onScheduled:!!report.onScheduled,
+      showRows:!report.onScheduled,
+      doclang:document.documentElement.lang,
+      navlang:navigator.language,
+      onGo(){ location.assign("https://x.com/compose/post/unsent/scheduled"); }
+    });
+    body.append(overviewRoot);
     [...quick.SLOT_IDS,'random'].forEach((id,index) => {
       const label = id==='random' ? `${labels.random} ${quickRange.a}–${quickRange.b}` : slotLabels[index];
       if(!label)return;
@@ -704,7 +720,12 @@ function render(report, items, explicitOpen = false) {
       hint.className = "hint";
       body.append(hint);
       if (count === 0) body.append(textNode("p", report.timeFail > 0 ? "看到疑似排程列，但時間格式解析不出來（格式可能改版）。" : "這一頁目前沒有解析到排程時間。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" }));
-      for (const item of items) {
+      const ordered=items.slice().sort((a,b)=>{
+        const ta=a.at && typeof a.at.getTime==="function" && Number.isFinite(a.at.getTime()) ? a.at.getTime() : Number.POSITIVE_INFINITY;
+        const tb=b.at && typeof b.at.getTime==="function" && Number.isFinite(b.at.getTime()) ? b.at.getTime() : Number.POSITIVE_INFINITY;
+        return ta-tb;
+      });
+      for (const item of ordered) {
         const row = css(document.createElement("div"), { padding:"6px 0", "border-top":"1px solid #2f3336" });
         const time = textNode("div", formatTime(item.at), { color:"#1d9bf0", "font-weight":"680", "word-break":"break-word" });
         time.className = "time";
@@ -715,7 +736,7 @@ function render(report, items, explicitOpen = false) {
           sample.className = "sample";
           row.append(sample);
         }
-        const preview = textNode("div", item.preview || "（沒有文字）", { "word-break":"break-word" });
+        const preview = textNode("div", overview.previewFrom(item) || item.preview || "（沒有文字）", { "word-break":"break-word" });
         preview.className = "preview";
         row.append(preview);
         body.append(row);
@@ -832,7 +853,13 @@ function tick() {
       if(times.length && report.timeFail===0 && !pending) {
         const value={time:Math.max(...times),readAt:Date.now(),source:1};
         if(positionStore.saveCache(value)){lastCache=value;emptyListConfirmed=false;}
-      } else if(report.empty && !times.length && !pending) {if(positionStore.clearCache()){lastCache=null;emptyListConfirmed=true;}}
+        const snap=overview.fromItems(accumulated,Date.now());
+        if(positionStore.saveOverview(snap))lastOverview=snap;
+      } else if(report.empty && !times.length && !pending) {
+        if(positionStore.clearCache()){lastCache=null;emptyListConfirmed=true;}
+        const emptySnap={s:Date.now(),n:0};
+        if(positionStore.saveOverview(emptySnap))lastOverview=emptySnap;
+      }
     }
   } else {
     accumulated = [];

@@ -68,7 +68,7 @@ test('panel avoids native controls without moving the button; placement ignores 
   assert.ok(panel.clear && !U.overlaps(panel,obstacle));
   assert.deepEqual(anchor,{x:1040,y:664});
 });
-test('actual verify scanner locks storage to the exact audited root module, including 37 bypass self-tests',()=>{
+test('actual verify scanner locks storage to the exact audited root module, including 47 bypass self-tests',()=>{
   // Execute the actual static guard functions without its DOM leak-test imports.
   // This leaves the full npm verify path and all its existing checks unchanged.
   const url=new URL('../scripts/verify.mjs',import.meta.url);
@@ -78,7 +78,7 @@ test('actual verify scanner locks storage to the exact audited root module, incl
   const context=vm.createContext({...fs,dirname,join,relative,fileURLToPath,inflateSync,createHash,esprima,Buffer,console});
   vm.runInContext(code+'\nglobalThis.guard={scanSource,checkProbeDir,positionStorageSelfTest};',context);
   const guard=context.guard;
-  assert.equal(guard.positionStorageSelfTest(),37);
+  assert.equal(guard.positionStorageSelfTest(),47);
   assert.equal(guard.scanSource(source,'probe/position.js',{positionModule:true}).length,0);
   assert.ok(guard.scanSource(source,'probe/other.js').length>0);
   const result=guard.checkProbeDir(fileURLToPath(new URL('../probe',import.meta.url)));

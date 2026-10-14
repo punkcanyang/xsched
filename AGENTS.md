@@ -35,7 +35,7 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 
 ## 本機位置儲存（閘 0.4／0.5 授權範圍）
 
-只允許 `probe/position.js` 存取 x.com 的 `window.localStorage`。原兩個固定 key：`xsched.probe.pos`（鈕）與 `xsched.probe.panelPos`（浮層），值只能是經有限數字驗證的 `{x,y}`。0.1.3 明確授權另三個固定 key：`xsched.probe.quickRange` 的正整數 `{a,b}`（a ≤ b）、`xsched.probe.lastScheduled` 的有效毫秒時間 `{time,readAt}`（0.1.4 可另含數字 source：1＝列表、2＝觀察到使用者排程完成；拒絕其他列舉與額外欄位）、`xsched.probe.panelHeight` 的有限正數 `{height}`；每個 schema 拒絕多餘欄位。0.1.5 明確授權第六個固定 key：`xsched.probe.panelOpen`，值只能是 JSON 布林 `true` 或 `false`；整頁載入新編輯框時浮層依此恢復上次開關，沒有值時預設展開。不存本文、帳號、網址或診斷；不加 storage 權限。其他模組的 localStorage，以及所有 sessionStorage／indexedDB／chrome.storage 仍由 verify 禁止；修改位置模組須重審來源摘要與 storage 攻擊自測。
+只允許 `probe/position.js` 存取 x.com 的 `window.localStorage`。原兩個固定 key：`xsched.probe.pos`（鈕）與 `xsched.probe.panelPos`（浮層），值只能是經有限數字驗證的 `{x,y}`。0.1.3 明確授權另三個固定 key：`xsched.probe.quickRange` 的正整數 `{a,b}`（a ≤ b）、`xsched.probe.lastScheduled` 的有效毫秒時間 `{time,readAt}`（0.1.4 可另含數字 source：1＝列表、2＝觀察到使用者排程完成；拒絕其他列舉與額外欄位）、`xsched.probe.panelHeight` 的有限正數 `{height}`；每個 schema 拒絕多餘欄位。0.1.5 明確授權第六個固定 key：`xsched.probe.panelOpen`，值只能是 JSON 布林 `true` 或 `false`；整頁載入新編輯框時浮層依此恢復上次開關，沒有值時預設展開。0.2.0 明確授權第七個固定 key：`xsched.probe.overview`，值只能是確認空的 `{s,n}`（n 必須為 0）或最多 80 則的 `{s,n,i}`，每則恰好 `{t,p}`（t 為有效毫秒、p 為最多 100 個 code point 的已讀列表前段）；拒絕多餘欄位、控制字元與過長 JSON。`s` 是最後同步毫秒，TTL 24 小時；過期仍可讀但 UI 必須標過期。不把總覽本文寫進診斷或骨架；不加 storage 權限。其他模組的 localStorage，以及所有 sessionStorage／indexedDB／chrome.storage 仍由 verify 禁止；修改位置模組須重審來源摘要與 storage 攻擊自測。
 
 ## 怎麼工作
 
@@ -110,3 +110,11 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 `npm test` 新增 composer 回歸：九語五顆時段、可信點擊才開、圖示失效／歧義拒絕、受控節點重建、失敗整組還原、連用三次與既有親按成功觀察。新的年份均 2027+。原 writer 59 自測保留，新增 5 個直接相關 composer 來源／接收者／信任／改名攻擊為 64，其他守門數量不變。e2e 只追加本入口的 320px 不重疊、連用三次、僅圖示每次點一次、input/change 與完整讀回、缺圖示／缺視窗／還原、確認／排程／Post／submit=0；原情境除版本期望外不改，網路守衛原樣。
 
 找不到圖示顯示停用提示；未找到新視窗零填值；writer 失敗沿用整組還原及還原不完整提示。只准代點圖示，不能代點關閉：若 X 已打開視窗，錯誤後仍保留原欄位讓使用者自行關閉，不能偷偷按取消或改 X DOM 來關掉。這是「不留半填狀態」的界線。
+
+## 排程總覽 0.2.0
+
+- 任一 x.com 頁打開 Dagaz 即可看已讀 Scheduled 列表：本地時間（含星期）、內文前 100 code point、時間先後、總數、最近一則倒數、最後同步時間。「尚未同步／已確認空／已過期」必須分開，不得把沒載入當成沒有排程。點列或「前往 Scheduled 同步」只做既有固定 `location.assign`，不編輯、不刪、不重排、不開排程視窗、不點 Post／Schedule／Confirm。
+- 新固定 key `xsched.probe.overview` 只在 `probe/position.js`：空 `{s,n:0}` 或 `{s,n,i:[{t,p}…]}`，最多 80 則、p≤100、TTL 24h；原六個 key 與 lastScheduled 數字 schema 不變。診斷／骨架仍不含本文。
+- `npm test` 新增 `test/overview.test.mjs` 與 content 快取／SPA／reload／過期／缺快取回歸；版本 0.2.0。既有斷言除版本字串外不改。
+- `npm run verify` 原規則與自測數量下限不減；position／content 摘要更新；storage 自測只追加 overview 攻擊（37→47）。
+- `npm run e2e` 只追加總覽情境（排序、空快取、過期、SPA 不清空、reload、拖動／開合）；不點總覽列以免增加 Scheduled 頂層導覽。截圖 `docs/v1.0-overview020-*.png`。

@@ -8,16 +8,18 @@ await import('../probe/reader.js');
 await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 await import('../probe/quick.js');
+await import('../probe/overview.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
 const uiSource = readFileSync(new URL('../probe/ui.js', import.meta.url), 'utf8');
 const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
+const overviewSource = readFileSync(new URL('../probe/overview.js', import.meta.url), 'utf8');
 function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com', startReady = true) {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
   document.documentElement.lang = lang;
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.1.6';
+  let manifest = '0.2.0';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -55,6 +57,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   vm.runInContext(uiSource, context);
   context.XSCHED_UI = { ...ui, createAuthorLink: context.XSCHED_UI.createAuthorLink };
   vm.runInContext(positionSource, context);
+  vm.runInContext(overviewSource, context);
   vm.runInContext(source, context); if (startReady) flush();
   const host = () => document.getElementById('xsched-probe-root');
   const shadow = () => host().shadowRoot;
@@ -330,10 +333,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.6 (manifest 0.1.6)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.2.0 (manifest 0.2.0)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.6 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.2.0 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -342,7 +345,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.6/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.2\.0/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -540,7 +543,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.6/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.2\.0/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -891,3 +894,100 @@ test('P1(e) composer full load restores xsched.probe.panelOpen; missing value de
  assert.equal(api.loadOpen(),null);
  assert.equal(api.saveOpen(true),false);
 });
+test('0.2.0 overview cache sorts, survives SPA/reload, and never treats missing as empty',()=>{
+ const clock=()=>new Date(2028,0,1,8);
+ const f=fixture('/compose/post/unsent/scheduled','en','../fixtures/overview-multi.html',clock);
+ assert.equal(f.host().dataset.xschedCount,'3');
+ const snap=JSON.parse(f.stored.get('xsched.probe.overview'));
+ assert.equal(snap.n,3);
+ assert.deepEqual(snap.i.map(row=>row.t),[new Date(2028,0,1,9).getTime(),new Date(2028,1,6,12,30).getTime(),new Date(2028,2,1,21).getTime()]);
+ assert.equal(Array.from(snap.i[2].p).length,100);
+ assert.ok(!f.host().dataset.xschedDiag.includes('Synthetic overview'));
+ f.location.pathname='/home';f.poll();f.click('.shortcut');
+ const rows=[...f.shadow().querySelectorAll('.overview-row')];
+ assert.equal(f.shadow().querySelector('.overview-root').dataset.xschedOverviewStatus,'ready');
+ assert.deepEqual(rows.map(row=>row.querySelector('.overview-when').textContent),['2028-01-01 09:00 (Sat)','2028-02-06 12:30 (Sun)','2028-03-01 21:00 (Wed)']);
+ assert.deepEqual(rows.map(row=>row.querySelector('.overview-preview').textContent),[snap.i[0].p,snap.i[1].p,snap.i[2].p]);
+ assert.equal(f.shadow().querySelector('.count').textContent,'xsched 探針：非 Scheduled 頁');
+ assert.equal(f.shadow().querySelectorAll('.time').length,0);
+ f.click('.overview-row',false);
+ assert.deepEqual(f.navigated,[]);
+ f.click('.overview-row');
+ assert.deepEqual(f.navigated,['https://x.com/compose/post/unsent/scheduled']);
+ const reload=fixture('/home','en','../fixtures/home.html',clock,undefined,undefined,f.stored);
+ reload.click('.shortcut');
+ assert.equal(reload.shadow().querySelector('.overview-root').dataset.xschedOverviewStatus,'ready');
+ assert.equal(reload.shadow().querySelectorAll('.overview-row').length,3);
+ assert.deepEqual(JSON.parse(reload.stored.get('xsched.probe.overview')),snap);
+});
+test('0.2.0 missing overview is not empty; expired cache prompts sync; empty list is explicit',()=>{
+ const missing=fixture('/home','en','../fixtures/home.html');
+ missing.click('.shortcut');
+ assert.equal(missing.shadow().querySelector('.overview-root').dataset.xschedOverviewStatus,'missing');
+ assert.match(missing.shadow().querySelector('.overview-status').textContent,/not synced/i);
+ assert.ok(!/empty list confirmed/i.test(missing.shadow().querySelector('.overview-status').textContent));
+ const clock=()=>new Date(2028,0,1,8);
+ const stale={s:clock().getTime()-86400000-1,n:1,i:[{t:clock().getTime()+3600000,p:'Synthetic stale overview row'}]};
+ const expired=fixture('/home','en','../fixtures/home.html',clock,undefined,undefined,new Map([['xsched.probe.overview',JSON.stringify(stale)]]));
+ expired.click('.shortcut');
+ assert.equal(expired.shadow().querySelector('.overview-root').dataset.xschedOverviewStatus,'expired');
+ assert.match(expired.shadow().querySelector('.overview-status').textContent,/expired/i);
+ assert.equal(expired.shadow().querySelector('.overview-preview').textContent,'Synthetic stale overview row');
+ const empty=fixture('/compose/post/unsent/scheduled','en','../fixtures/empty.html',clock);
+ assert.deepEqual(JSON.parse(empty.stored.get('xsched.probe.overview')),{s:clock().getTime(),n:0});
+ empty.location.pathname='/home';empty.poll();empty.click('.shortcut');
+ assert.equal(empty.shadow().querySelector('.overview-root').dataset.xschedOverviewStatus,'empty');
+ assert.match(empty.shadow().querySelector('.overview-status').textContent,/empty list confirmed/i);
+ assert.ok(!empty.host().dataset.xschedDiag.includes('Nothing scheduled'));
+});
+test('0.2.0 overview toggle and panel drag do not clear the snapshot',()=>{
+ const clock=()=>new Date(2028,0,1,8);
+ const f=fixture('/compose/post/unsent/scheduled','en','../fixtures/overview-multi.html',clock);
+ const before=f.stored.get('xsched.probe.overview');
+ const panel=coordinates(f,'section'),button=coordinates(f,'.shortcut');
+ f.click('.shortcut');
+ f.location.pathname='/home';f.poll();
+ assert.equal(f.stored.get('xsched.probe.overview'),before);
+ f.click('.shortcut');
+ assert.equal(f.shadow().querySelectorAll('.overview-row').length,3);
+ f.pointer('pointerdown',panel.x+20,panel.y+14,{selector:'.panel-header'});
+ f.pointer('pointermove',panel.x+80,panel.y+40,{selector:'section'});
+ f.pointer('pointerup',panel.x+80,panel.y+40,{selector:'section'});
+ assert.equal(f.stored.get('xsched.probe.overview'),before);
+ assert.equal(f.shadow().querySelectorAll('.overview-row').length,3);
+ assert.deepEqual(coordinates(f,'.shortcut'),button);
+});
+test('0.2.0 three consecutive overlay walks keep the cached overview',()=>{
+ const clock=()=>new Date(2028,0,1,8);
+ const first=fixture('/compose/post/unsent/scheduled','en','../fixtures/overview-multi.html',clock);
+ const snap=first.stored.get('xsched.probe.overview');
+ let stored=first.stored;
+ const open = page => {
+  if (page.shadow().querySelector('.shortcut').getAttribute('aria-expanded') !== 'true') page.click('.shortcut');
+ };
+ for(let round=1;round<=3;round++) {
+  const page=fixture('/home','en','../fixtures/home.html',clock,undefined,undefined,stored);
+  open(page);
+  assert.equal(page.shadow().querySelectorAll('.overview-row').length,3,`walk ${round} open`);
+  page.click('.shortcut');
+  assert.equal(page.shadow().querySelector('section').style.display,'none',`walk ${round} closed`);
+  open(page);
+  assert.equal(page.shadow().querySelector('.overview-root').dataset.xschedOverviewStatus,'ready',`walk ${round} toggle`);
+  page.location.pathname='/compose/post';page.poll();
+  page.location.pathname='/home';page.poll();
+  open(page);
+  assert.equal(page.shadow().querySelectorAll('.overview-row').length,3,`walk ${round} SPA`);
+  const panel=coordinates(page,'section');
+  page.pointer('pointerdown',panel.x+20,panel.y+14,{selector:'.panel-header'});
+  page.pointer('pointermove',panel.x+70,panel.y+50,{selector:'section'});
+  page.pointer('pointerup',panel.x+70,panel.y+50,{selector:'section'});
+  assert.equal(page.shadow().querySelectorAll('.overview-row').length,3,`walk ${round} drag`);
+  stored=page.stored;
+  const reloaded=fixture('/home','en','../fixtures/home.html',clock,undefined,undefined,stored);
+  open(reloaded);
+  assert.equal(reloaded.shadow().querySelectorAll('.overview-row').length,3,`walk ${round} reload`);
+  assert.equal(reloaded.stored.get('xsched.probe.overview'),snap,`walk ${round} key`);
+  stored=reloaded.stored;
+ }
+});
+
