@@ -117,3 +117,11 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 - `npm test` 保留閘 0／快速時段全套，另測 `probe/overview.js` 的排序、12h 上下午、跨年、20 字預覽、九語、空輸入、snapshot 不含 body／key，以及 `probe/overview.js` 通過既有 verify 掃描。真 content VM 另測首頁空快取提示／goto、Scheduled 讀入後 SPA 到首頁仍顯示排序後的總覽、忙碌空列表不清快取、已確認空列表才清空，以及連續三次 empty→sync→SPA 走查。版本號 0.2.0。本環境 Node 22 不能把 `test/` 目錄當測試入口，`package.json` 的 test script 改為 `node --test test/*.mjs`（不斷言放寬）。
 - `npm run verify` 不放寬既有斷言與守門。新增 `probe/overview.js` 由原規則全掃，不豁免 click／scroll／storage／dispatchEvent。AUTHOR_CONTENT_SHA256 因 content 接線更新；ui／quick／position／composer 摘要不變。原 30 API／14 icon／9 SVG／66 leak／37 storage／64 writer／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測數量不減。
 - `npm run e2e` 保留全部舊情境與 0 擴充資源／背景請求；只把版本期望改成 0.2.0。新增總覽情境：空首頁提示＋goto、合成 2027+ 未排序列表的現場讀取、SPA 到 `/home` 後快取仍依時間排序且含 AM/PM／跨年／20 字前綴、診斷不含本文、連續走查 3 次。不點作者連結、不增加第二次 Scheduled 頂層導覽。截圖 `docs/v1.0-overview-*.png`；既有截圖不覆寫。fixture 一律示例資料。
+
+## 0.2.1 急修：彈出發文框快速時段＋排程後總覽立即更新
+
+- 根因（合成 fixture 重現）：首頁「為你推薦」彈出的發文 modal，按原生排程圖示後 X 把**同一個** aria-modal dialog 的內容換成排程 picker，編輯框被卸下。0.1.5 的等待迴圈一看到編輯框不在就報「找不到原生排程圖示」，picker 根本沒被填；確認後 X 重建新的編輯框／工具列，快速列的按鈕卻還綁著舊節點，下一次按也會失敗。選擇器本身沒有失效。修法：等待期間編輯框被卸下不算失敗，只看是否出現新 picker；「舊 dialog」只算按下前就已有 select 的 dialog；快速列每次 refresh 更新目前節點，點擊時以 scope／editor／icon 任一相同重新辨識，只點當下的原生圖示（`icon.click();` 仍是唯一代點）；同一 scope 內隱藏的重複圖示不再造成歧義（可見的兩個仍拒絕）。
+- 排程成功（沿用 quick.js 既有親按觀察）後，content 把該時間加進記憶體總覽，則數、倒數、列表立即更新，不必進 Scheduled。前 20 字取自使用者親按原生「排程」那一刻的發文框（composer 的被動 capture listener，只讀不點），只留在記憶體、每次觀察只交出一次、超過 10 分鐘作廢；不存本文、不發請求、不代按。未同步過時只顯示這一則並標示「可能不是完整列表」，不偽造最後同步時間；之後讀 Scheduled 仍以列表為準。狀態列在觀察到完成時改為「已觀察到排程完成」（BACKLOG 0.1.4 第 2 項）。
+- `npm test` 新增 `test/composer-modal.test.mjs`（modal 換內容仍填值、確認後重建再用第二次、親按確認＋排程被觀察且預覽為前 20 字、不可信點擊／非排程鈕不擷取、重繪後不綁舊節點、隱藏重複圖示）與 content 兩項（已同步總覽立即 +1 且同步時間不變；未同步時單則＋partial）。新 fixture `fixtures/quick-composer-modal.html` 全為假資料。舊斷言除版本號外不改。
+- `npm run verify` 規則與自測數量不變；COMPOSER_SOURCE_SHA256、AUTHOR_CONTENT_SHA256 同步。`npm run e2e` 追加 021 區塊：連續 3 次在首頁 modal 與 `/compose/post` 各按一個快速時段、時間真的改變、浮層開關與拖動、模擬使用者確認＋排程後總覽不進 Scheduled 就更新；舊情境除版本期望外不改，0 擴充請求。
+- 限制：只有「用快速時段填值後親按排程」會被觀察；完全手動在原生視窗選時間再排程，不會進總覽（需下一版）。真 X 的 modal 行為以合成 fixture 模擬，仍需老闆真機確認。

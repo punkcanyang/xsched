@@ -26,7 +26,7 @@ const DOCS = join(ROOT, "docs");
 const POSITION_SOURCE_SHA256 = "49cde823f66f1adb67c305ffb522c9a83115a006e730c9f201cfee564bd38170";
 
 // Exact-source exception only for the sole native select input/change writer.
-const COMPOSER_SOURCE_SHA256 = "cc29463b5d20b4cc40bbb73dcded8447b168588b75213d2271f8734133e65fa4";
+const COMPOSER_SOURCE_SHA256 = "968305bbb9ee5601f0a136c5b100da3e9d69a4eb85e1a00f3cd3d7b8c5695353";
 const COMPOSER_CLICK_STATEMENT = "  icon.click();";
 // All other activation, network, storage and markup rules still scan this file.
 const QUICK_SOURCE_SHA256 = "a35fb5c6b8480cf4b1dde3916443befa8e201d9dd980d446fa7f9b6c1c3772f8";
@@ -36,7 +36,7 @@ const QUICK_SOURCE_SHA256 = "a35fb5c6b8480cf4b1dde3916443befa8e201d9dd980d446fa7
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
 const AUTHOR_UI_SHA256 = "5eb978a06ed129bbb4345d3218fb108ce3fcf81cf3b5bbd219dadc66795736b0";
-const AUTHOR_CONTENT_SHA256 = "7cd18f21e8d0aede59cfd339c59f7f335a4d0f9f44625d225d6e4286426e47fa";
+const AUTHOR_CONTENT_SHA256 = "3884df1a9c8f4df6a255bd68cba39598e08d406baa71524ec77c6624395e3e64";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');

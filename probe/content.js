@@ -719,7 +719,7 @@ function render(report, items, explicitOpen = false) {
     const overviewHeading = textNode('strong', overviewLabels.heading, {display:'block', margin:'0', 'font-size':'12px', 'line-height':'1.3'});
     overviewHeading.className = 'overview-heading';
     overviewBox.append(overviewHeading);
-    if (overviewSyncedAt) {
+    if (overviewSyncedAt || overviewCache.length) {
       const countLine = textNode('p', overview.formatCount(overviewCache.length, document.documentElement.lang, navigator.language), {color:'#e7e9ea','font-size':'12px',margin:'0 0 2px'});
       countLine.className = 'overview-count';
       overviewBox.append(countLine);
@@ -729,9 +729,11 @@ function render(report, items, explicitOpen = false) {
         next.className = 'overview-next';
         overviewBox.append(next);
       }
-      const sync = textNode('p', `${overviewLabels.synced}: ${formatTime(new Date(overviewSyncedAt))}`, {color:'#8b98a5','font-size':'12px',margin:'0 0 4px'});
-      sync.className = 'overview-sync';
-      overviewBox.append(sync);
+      if (overviewSyncedAt) {
+        const sync = textNode('p', `${overviewLabels.synced}: ${formatTime(new Date(overviewSyncedAt))}`, {color:'#8b98a5','font-size':'12px',margin:'0 0 4px'});
+        sync.className = 'overview-sync';
+        overviewBox.append(sync);
+      }
     }
     const makeOverviewRow = (item) => {
       const row = css(document.createElement('div'), {padding:'6px 0','border-top':'1px solid #2f3336'});
@@ -847,11 +849,23 @@ function render(report, items, explicitOpen = false) {
   positionUI();
 }
 
+// An observed user Schedule joins the in-memory overview at once (time plus the
+// first 20 characters), so count, countdown and list need no Scheduled visit.
+// Memory only: nothing here is stored, sent or clicked. A later real Scheduled
+// read stays authoritative and replaces this list.
+function rememberScheduled(time, text) {
+  if (!Number.isSafeInteger(time) || time <= 0) return;
+  const item = { time: '', preview: overview.previewText(text), at: new Date(time), unparsed: false, sample: '' };
+  // Without a prior sync this one row is all we know, so mark the list partial.
+  if (!overviewSyncedAt) overviewStale = true;
+  overviewCache = overview.mergeSnapshots(overviewCache, [item]);
+}
 function refreshObservedCache() {
   const completed=quick.observeScheduling(document,Date.now());
   if(!completed)return false;
   quickStatus='scheduled';
   composer?.completed();
+  rememberScheduled(completed.time, composer?.takeDraft?.() || '');
   const previous=positionStore.loadCache() || lastCache;
   if(previous && previous.time>=completed.time) {lastCache=previous;return true;}
   const value={time:completed.time,readAt:Date.now(),source:2};

@@ -54,7 +54,9 @@ function findEntries(doc) {
       const editors=[...scope.querySelectorAll(COMPOSER_CONFIG.editor)].filter(editor=>!editor.closest(COMPOSER_CONFIG.excluded) && visible(editor,doc));
       if(editors.length>1)break;
       if(editors.length!==1)continue;
-      if(scope.querySelectorAll(COMPOSER_CONFIG.icon).length===1 && isPlainPost(doc,editors[0]))entries.push({scope,editor:editors[0],icon});
+      // A hidden duplicate toolbar copy does not make the visible icon ambiguous.
+      const usable=[...scope.querySelectorAll(COMPOSER_CONFIG.icon)].filter(node=>!node.closest(COMPOSER_CONFIG.excluded) && visible(node,doc));
+      if(usable.length===1 && usable[0]===icon && isPlainPost(doc,editors[0]))entries.push({scope,editor:editors[0],icon});
       break;
     }
   }
@@ -64,14 +66,41 @@ function findEntries(doc) {
 // never accepts arbitrary page controls; it revalidates the captured composer.
 function activateIcon(doc,entry,event) {
   if(!event?.isTrusted)return false;
-  const current=findEntries(doc).find(row=>row.scope===entry.scope && row.editor===entry.editor && row.icon===entry.icon);
+  // X re-renders the editor and toolbar (typing, returning from the picker),
+  // so a row's captured nodes go stale. Re-find the same composer by any of
+  // its proven nodes and click only the icon that is current right now.
+  const current=findEntries(doc).find(row=>row.scope===entry.scope || row.editor===entry.editor || row.icon===entry.icon);
   if(!current || !current.icon)return false;
   const icon=current.icon;
   icon.click();
   return true;
 }
+// The draft text at the user's own trusted Schedule click, kept in memory only
+// for the overview row (first 20 characters). Never stored or exported.
+function editorFor(doc,button) {
+  const usable=root=>[...root.querySelectorAll(COMPOSER_CONFIG.editor)].filter(editor=>!editor.closest(COMPOSER_CONFIG.excluded) && visible(editor,doc) && isPlainPost(doc,editor));
+  const surface=button.closest('[role="dialog"], [role="alertdialog"]');
+  const near=surface ? usable(surface) : [];
+  if(near.length===1)return near[0];
+  const all=usable(doc);
+  return all.length===1 ? all[0] : null;
+}
+function previewOf(editor) {
+  return Array.from(String(editor?.textContent || '').replace(/\s+/g,' ').trim()).slice(0,20).join('');
+}
 function create(doc,options) {
-  const rows=new Map();let active=false,epoch=0,status='',notice=null;
+  const rows=new Map();let active=false,epoch=0,status='',notice=null,draft=null,listening=false;
+  function capture(event) {
+    if(!event?.isTrusted)return;
+    const button=event.target?.closest?.(options.quick.COMPLETION_CONFIG.button);
+    if(!button || button.closest(COMPOSER_CONFIG.excluded))return;
+    const label=String(button.getAttribute('aria-label') || button.textContent || '').trim();
+    if(label.length>40 || !options.quick.COMPLETION_CONFIG.schedule.includes(label))return;
+    const editor=editorFor(doc,button);
+    if(editor)draft={text:previewOf(editor),at:Date.now()};
+  }
+  function listen(){if(listening)return;listening=true;doc.addEventListener('click',capture,true);}
+  function unlisten(){if(!listening)return;listening=false;doc.removeEventListener('click',capture,true);}
   function style(node,values){for(const name of Object.keys(values))node.style.setProperty(name,String(values[name]),'important');return node;}
   function text(result) {return strings(doc.documentElement.lang,doc.defaultView.navigator?.language)[result] || options.labels()[result] || options.labels().missing;}
   function report(result) {
@@ -87,19 +116,23 @@ function create(doc,options) {
     options.changed?.(result);refresh();
   }
   async function run(entry,event,id) {
+    if(!entry)return;
     if(!event?.isTrusted || active || options.quick.isFilling(doc))return;
     if(![...options.quick.SLOT_IDS,'random'].includes(id))return;
     const settings=options.settings();
     if(id==='random' && ((!settings.cache && !settings.empty) || !options.quick.validRange(settings.range))){report('noCache');return;}
     if(options.quick.detectControls(doc).counts.selects>0){report('dialogMissing');return;}
-    const existing=new Set(doc.querySelectorAll(options.quick.QUICK_CONFIG.dialog));
+    // In the modal composer X reuses the compose dialog and swaps its content
+    // to the picker. Only a dialog that already held fields counts as old.
+    const existing=new Set([...doc.querySelectorAll(options.quick.QUICK_CONFIG.dialog)].filter(dialog=>dialog.querySelector('select')));
     const generation=epoch;active=true;
     try {
       if(!activateIcon(doc,entry,event)){report('iconMissing');return;}
       report('opening');
       for(let attempt=0;attempt<COMPOSER_CONFIG.attempts;attempt++) {
         if(generation!==epoch)return;
-        if(!entry.scope.isConnected || !entry.editor.isConnected){report('iconMissing');return;}
+        // The modal composer unmounts its editor while the picker is open, so a
+        // removed composer is not a failure; only a missing picker is.
         const picker=options.quick.detectControls(doc);
         if(picker.ready && !existing.has(picker.dialog)) {
           const result=await options.quick.fillSlotResult(doc,id,new Date(),options.settings());
@@ -114,6 +147,7 @@ function create(doc,options) {
   }
   function refresh() {
     if(doc.defaultView.location?.hostname!=='x.com'){dispose();return;}
+    listen();
     const entries=findEntries(doc);
     // A missing icon still gets an inert explanatory row near a proven editor.
     if(!entries.length)for(const editor of [...doc.querySelectorAll(COMPOSER_CONFIG.editor)].slice(0,COMPOSER_CONFIG.maxIcons)) {
@@ -126,8 +160,9 @@ function create(doc,options) {
       if(!row?.host.isConnected) {
         const host=doc.createElement('div');host.className='xsched-composer-root';host.setAttribute('data-xsched-host','1');
         style(host,{display:'block',width:'100%','max-width':'100%','min-width':'0','box-sizing':'border-box',margin:'6px 0',flex:'0 0 auto'});
-        host.attachShadow({mode:'open'});entry.scope.append(host);row={host,signature:''};rows.set(entry.scope,row);
+        host.attachShadow({mode:'open'});entry.scope.append(host);row={host,signature:'',entry};rows.set(entry.scope,row);
       }
+      row.entry=entry; // buttons resolve the latest proven nodes at click time
       const labels=options.labels(),now=new Date(),settings=options.settings();
       const slots=options.quick.SLOT_IDS.map(id=>({id,label:options.slotLabel(id,options.quick.nextSlot(id,now),now)}));
       slots.push({id:'random',label:`${labels.random} ${settings.range.a}–${settings.range.b}`});
@@ -141,15 +176,18 @@ function create(doc,options) {
         button.textContent=slot.label;button.title=slot.label;button.setAttribute('aria-label',slot.label);
         button.disabled=!entry.icon || active || options.quick.isFilling(doc) || (slot.id==='random' && !settings.cache && !settings.empty);
         style(button,{'max-width':'100%','min-width':'0','box-sizing':'border-box','white-space':'normal','overflow-wrap':'anywhere',font:'11px system-ui',padding:'4px 6px',background:'#15202b',color:'#1d9bf0',border:'1px solid #536471','border-radius':'12px',cursor:'pointer'});
-        button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void run(entry,event,slot.id);});bar.append(button);
+        const owner=row;
+        button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void run(owner.entry,event,slot.id);});bar.append(button);
       }
       root.append(bar);
       const message=doc.createElement('div');message.setAttribute('role','status');message.textContent=!entry.icon ? text('iconMissing') : status ? text(status) : labels.heading;
       style(message,{font:'11px system-ui',color:'#8b98a5','overflow-wrap':'anywhere'});root.append(message);
     }
   }
-  function dispose(){epoch++;for(const row of rows.values())row.host.remove();rows.clear();notice?.remove();notice=null;status='';}
-  return {refresh,dispose,completed(){report('scheduled');}};
+  function dispose(){epoch++;for(const row of rows.values())row.host.remove();rows.clear();notice?.remove();notice=null;status='';draft=null;unlisten();}
+  // One draft per observed completion; stale captures (>10 min) are dropped.
+  function takeDraft(now=Date.now()){const value=draft;draft=null;return value && now-value.at>=0 && now-value.at<=10*60*1000 ? value.text : '';}
+  return {refresh,dispose,takeDraft,completed(){report('scheduled');}};
 }
-globalThis.XSCHED_COMPOSER={COMPOSER_CONFIG,OPEN_STRINGS,strings,findEntries,create};
+globalThis.XSCHED_COMPOSER={COMPOSER_CONFIG,OPEN_STRINGS,strings,findEntries,previewOf,create};
 })();
