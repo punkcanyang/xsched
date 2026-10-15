@@ -714,9 +714,9 @@ function render(report, items, explicitOpen = false) {
       slots.append(button);
     });
     const overviewLabels = overview.stringsFor(document.documentElement.lang, navigator.language);
-    const overviewBox = css(document.createElement('div'), {margin:'0 0 8px'});
+    const overviewBox = css(document.createElement('div'), {margin:'0'});
     overviewBox.className = 'overview';
-    const overviewHeading = textNode('strong', overviewLabels.heading, {display:'block', margin:'0 0 2px'});
+    const overviewHeading = textNode('strong', overviewLabels.heading, {display:'block', margin:'0', 'font-size':'12px', 'line-height':'1.3'});
     overviewHeading.className = 'overview-heading';
     overviewBox.append(overviewHeading);
     if (overviewSyncedAt) {

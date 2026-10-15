@@ -67,4 +67,9 @@
 
 ### 014 首屏高度
 
-外部 e2e 紅在 `014 just opened: full quick area, all five slots and interval save visible`。開層時 `positionUI()` 還沒寫入 height，flex 欄的 `.panel-body`（`min-height:0`）`clientHeight` 為 0，總覽高度被跳過，面板停在 2/3；總覽卻已插在快速區之前，把五個時段和間隔儲存擠出可見框。修正：先套用當前 size.height 再量測；`.overview` 只留摘要與第一列／空提示，其餘列放到快速區之後，避免完整列表撐高下限。既有 014 與第一屏總覽斷言未改。
+外部 e2e 紅在 `014 just opened: full quick area, all five slots and interval save visible`。開層時 `positionUI()` 還沒寫入 height，flex 欄的 `.panel-body`（`min-height:0`）`clientHeight` 為 0，總覽高度被跳過，面板停在 2/3；總覽卻已插在快速區之前，把五個時段和間隔儲存擠出可見框。修正：先套用當前 size.height 再量測；`.overview` 只留摘要與第一列／空提示，其餘列放到快速區之後；拿掉摘要底下 8px 邊距並收緊標題，讓 1280×600 視窗上限（568）仍放得下完整快速區。既有 014 與第一屏總覽斷言未改。
+
+開層未捲（014 `quick-real-numeric`、未同步摘要）實測：
+
+- 1280×820：總覽摘要 33px、快速區 337px、面板 592（高於 2/3=546）
+- 1280×600：總覽摘要 33px、快速區 337px、正文可見 378、面板 568（視窗上限）
