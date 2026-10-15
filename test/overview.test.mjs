@@ -67,6 +67,61 @@ test('nine languages include heading, last-sync, empty prompt, unknown and merid
   assert.match(O.STRINGS['zh-Hant'].empty, /去 Scheduled 頁同步一次/);
 });
 
+test('empty, unsynced and stale notices differ in all nine languages', () => {
+  for (const lang of Object.keys(O.STRINGS)) {
+    const labels = O.stringsFor(lang, 'en');
+    for (const key of ['unsynced', 'stale', 'count', 'next', 'passed', 'day', 'hour', 'minute']) {
+      assert.ok(labels[key] && labels[key].length, `${lang}.${key}`);
+    }
+    assert.notEqual(labels.empty, labels.unsynced, lang);
+    assert.notEqual(labels.empty, labels.stale, lang);
+    assert.notEqual(labels.unsynced, labels.stale, lang);
+    assert.match(labels.count, /\{n\}/);
+    assert.match(labels.next, /\{when\}/);
+    assert.match(labels.passed, /\{when\}/);
+  }
+  assert.equal(O.STRINGS['zh-Hant'].unsynced, '快取是空的。去 Scheduled 頁同步一次。');
+  assert.match(O.STRINGS['zh-Hant'].empty, /已同步，目前沒有排程/);
+});
+
+test('count and remaining time use the nearest future item, then the latest past item', () => {
+  const soon = item(new Date(2027, 1, 28, 8, 0), 'soon');
+  const later = item(new Date(2027, 2, 1, 12, 0), 'later');
+  const cached = O.snapshot([later, soon]);
+  assert.equal(O.formatCount(cached.length, 'en', 'en'), '2 scheduled');
+  assert.equal(O.formatCount(cached.length, 'zh-Hant', 'zh-Hant'), '共 2 則');
+  assert.equal(O.formatCount(0, 'ja', 'ja'), '0 件');
+  const before = new Date(2027, 1, 28, 6, 30);
+  assert.equal(O.formatRemaining(cached, before, 'en', 'en'), 'Next in 1h 30m');
+  assert.equal(O.formatRemaining(cached, before, 'zh-Hans', 'en'), '最近一则还有 1小时 30分');
+  const between = new Date(2027, 1, 28, 9, 0);
+  assert.equal(O.formatRemaining(cached, between, 'ko', 'ko'), '가장 가까운 일정까지 1일 3시간 0분');
+  const after = new Date(2027, 2, 2, 12, 0);
+  assert.equal(O.formatRemaining(cached, after, 'en', 'en'), 'Latest was 1d 0h 0m ago');
+  assert.equal(O.formatRemaining([], before, 'en', 'en'), '');
+  assert.equal(O.formatRemaining(cached, new Date(NaN), 'en', 'en'), '');
+});
+
+test('mergeSnapshots keeps rows missing from a shorter window and updates a changed preview', () => {
+  const long = O.snapshot([
+    item(new Date(2027, 1, 28, 8, 0), 'morning product note'),
+    item(new Date(2027, 2, 1, 12, 30), 'lunchtime fixture'),
+    item(new Date(2027, 2, 5, 20, 0), 'evening recap note'),
+  ]);
+  const short = O.snapshot([
+    item(new Date(2027, 2, 5, 20, 0), 'evening text changed!', { body: 'secret full body', key: 'must-not-copy' }),
+  ]);
+  const merged = O.mergeSnapshots(long, short);
+  assert.deepEqual(merged.map((row) => row.preview), ['morning product note', 'lunchtime fixture', 'evening text changed']);
+  assert.equal(merged.length, 3);
+  for (const row of merged) {
+    assert.equal(Object.hasOwn(row, 'body'), false);
+    assert.equal(Object.hasOwn(row, 'key'), false);
+  }
+  assert.deepEqual(O.mergeSnapshots(long, []).map((row) => row.preview), long.map((row) => row.preview));
+  assert.deepEqual(O.mergeSnapshots([], short).map((row) => row.preview), ['evening text changed']);
+});
+
 test('empty input stays empty and invalid dates are unparsed without invented times', () => {
   assert.deepEqual(O.snapshot([]), []);
   const copies = O.snapshot([item(new Date(NaN), 'fake'), item(undefined, 'also fake')]);

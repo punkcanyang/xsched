@@ -14,6 +14,7 @@ let quickRange = positionStore.loadRange() || {a:10,b:30};
 let lastCache = positionStore.loadCache();
 let overviewCache = [];
 let overviewSyncedAt = 0;
+let overviewStale = false;
 let cacheSignature = '';
 let quickSignature = "";
 let quickStatus = "";
@@ -507,7 +508,11 @@ function positionUI() {
   const chromeHeight=(panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
     +(panel.querySelector('.panel-actions')?.getBoundingClientRect().height || 0)+40;
   const quickControls=panel.querySelector('.quick-controls');
-  const measured=chromeHeight+32+(quickControls?.getBoundingClientRect().height || 0)+12;
+  // Measure intrinsic content before choosing/persisting the automatic anchor.
+  // Growing after placement makes reset choose a different default rectangle.
+  const body=panel.querySelector('.panel-body');
+  const overviewHeight=body?.clientHeight>0 ? (body.querySelector('.overview')?.getBoundingClientRect().height || 0) : 0;
+  const measured=chromeHeight+32+(quickControls?.getBoundingClientRect().height || 0)+12+(overviewHeight>0?overviewHeight+8:0);
   const nextMinimum=Math.max(panelMinimum,measured);
   if(nextMinimum>panelMinimum) {panelMinimum=nextMinimum;panelNeedsLayout=true;}
   size=panelSize(innerWidth,innerHeight,savedPanelHeight,panelMinimum);
@@ -601,7 +606,7 @@ function render(report, items, explicitOpen = false) {
   const strings = stringsFor(document.documentElement.lang, navigator.language);
   const now=new Date();
   const slotLabels=quick.SLOT_IDS.map(id=>globalThis.XSCHED_UI.slotLabel(id,quick.nextSlot(id,now),now,document.documentElement.lang,navigator.language));
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,slotLabels,overviewSyncedAt,overviewCache.map((item) => [item.time, item.preview, overview.formatItemTime(item, document.documentElement.lang, navigator.language)]),items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,slotLabels,overviewSyncedAt,overviewStale,overview.formatCount(overviewCache.length, document.documentElement.lang, navigator.language),overview.formatRemaining(overviewCache, now, document.documentElement.lang, navigator.language),overviewCache.map((item) => [item.time, item.preview, overview.formatItemTime(item, document.documentElement.lang, navigator.language)]),items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
     positionUI();
@@ -708,40 +713,51 @@ function render(report, items, explicitOpen = false) {
     const overviewLabels = overview.stringsFor(document.documentElement.lang, navigator.language);
     const overviewBox = css(document.createElement('div'), {margin:'0 0 8px'});
     overviewBox.className = 'overview';
-    const overviewHeading = textNode('strong', overviewLabels.heading);
+    const overviewHeading = textNode('strong', overviewLabels.heading, {display:'block', margin:'0 0 2px'});
     overviewHeading.className = 'overview-heading';
     overviewBox.append(overviewHeading);
-    const syncedAt = overviewSyncedAt || (lastCache && lastCache.source !== 2 ? lastCache.readAt : 0);
-    if (syncedAt) {
-      const sync = textNode('p', `${overviewLabels.synced}: ${formatTime(new Date(syncedAt))}`, {color:'#8b98a5','font-size':'12px',margin:'4px 0 8px'});
+    if (overviewSyncedAt) {
+      const countLine = textNode('p', overview.formatCount(overviewCache.length, document.documentElement.lang, navigator.language), {color:'#e7e9ea','font-size':'12px',margin:'0 0 2px'});
+      countLine.className = 'overview-count';
+      overviewBox.append(countLine);
+      const remaining = overview.formatRemaining(overviewCache, now, document.documentElement.lang, navigator.language);
+      if (remaining) {
+        const next = textNode('p', remaining, {color:'#e7e9ea','font-size':'12px',margin:'0 0 2px'});
+        next.className = 'overview-next';
+        overviewBox.append(next);
+      }
+      const sync = textNode('p', `${overviewLabels.synced}: ${formatTime(new Date(overviewSyncedAt))}`, {color:'#8b98a5','font-size':'12px',margin:'0 0 4px'});
       sync.className = 'overview-sync';
       overviewBox.append(sync);
     }
-    if (!report.onScheduled) {
-      if (!overviewCache.length) {
-        const empty = textNode('p', overviewLabels.empty, {color:'#ffd400','font-size':'12px',margin:'4px 0 8px'});
-        empty.className = 'overview-empty';
-        overviewBox.append(empty);
-      } else {
-        for (const item of overviewCache) {
-          const row = css(document.createElement('div'), {padding:'6px 0','border-top':'1px solid #2f3336'});
-          row.className = 'overview-row';
-          const time = textNode('div', overview.formatItemTime(item, document.documentElement.lang, navigator.language), {color:'#1d9bf0','font-weight':'680','word-break':'break-word'});
-          time.className = 'overview-time';
-          row.append(time);
-          if (item.unparsed) {
-            const sample = textNode('div', `時間樣本：${item.sample ? maskSample(item.sample) : "無可安全匯出的樣本"}`, {color:'#ffd400','font-size':'12px','word-break':'break-word'});
-            sample.className = 'overview-sample';
-            row.append(sample);
-          }
-          const preview = textNode('div', item.preview || overviewLabels.none, {'word-break':'break-word'});
-          preview.className = 'overview-preview';
-          row.append(preview);
-          overviewBox.append(row);
+    if (!overviewCache.length) {
+      const empty = textNode('p', overviewSyncedAt ? overviewLabels.empty : overviewLabels.unsynced, {color:'#ffd400','font-size':'12px',margin:'0'});
+      empty.className = 'overview-empty';
+      overviewBox.append(empty);
+    } else {
+      if (overviewStale) {
+        const stale = textNode('p', overviewLabels.stale, {color:'#ffd400','font-size':'12px',margin:'0 0 4px'});
+        stale.className = 'overview-stale';
+        overviewBox.append(stale);
+      }
+      for (const item of overviewCache) {
+        const row = css(document.createElement('div'), {padding:'6px 0','border-top':'1px solid #2f3336'});
+        row.className = 'overview-row';
+        const time = textNode('div', overview.formatItemTime(item, document.documentElement.lang, navigator.language), {color:'#1d9bf0','font-weight':'680','word-break':'break-word'});
+        time.className = 'overview-time';
+        row.append(time);
+        if (item.unparsed) {
+          const sample = textNode('div', `時間樣本：${item.sample ? maskSample(item.sample) : "無可安全匯出的樣本"}`, {color:'#ffd400','font-size':'12px','word-break':'break-word'});
+          sample.className = 'overview-sample';
+          row.append(sample);
         }
+        const preview = textNode('div', item.preview || overviewLabels.none, {'word-break':'break-word'});
+        preview.className = 'overview-preview';
+        row.append(preview);
+        overviewBox.append(row);
       }
     }
-    body.append(overviewBox);
+    body.insertBefore(overviewBox, quickControls);
     if (report.onScheduled) {
       const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" });
       hint.className = "hint";
@@ -865,24 +881,34 @@ function tick() {
   if (report.onScheduled) {
     if(report.items.length || (report.tab>0 && report.cell>0))listLoadedScope=report.scopeElement;
     const pending=pendingList(report);
+    if(pending && overviewCache.length)overviewStale=true;
     const replace = report.needsScroll === 0 && report.virtualized === 0;
     accumulated = mergeItems(accumulated, report.items, { replace });
     const times=accumulated.map(item=>item.at?.getTime()).filter(value=>Number.isSafeInteger(value) && value>0);
-    const signature=JSON.stringify([times,report.timeFail,report.empty,pending]);
+    const incomplete=report.needsScroll===1 || report.virtualized===1;
+    // Only the fresh window can revise a preview: the live accumulator also
+    // retains earlier text versions, whose keys intentionally differ.
+    const overviewSnap=overview.snapshot(incomplete ? report.items : accumulated);
+    const signature=JSON.stringify([overviewSnap.map(item=>[item.at?item.at.getTime():0,item.preview,item.unparsed?1:0,item.sample]),report.timeFail,report.empty,pending?1:0,incomplete?1:0]);
     if(signature!==cacheSignature) {
       cacheSignature=signature;
+      const remember=()=>{
+        // A short virtual window must not drop rows the user already scrolled into memory.
+        overviewCache=incomplete?overview.mergeSnapshots(overviewCache,overviewSnap):overviewSnap;
+        overviewSyncedAt=Date.now();
+        overviewStale=incomplete;
+      };
       if(times.length && report.timeFail===0 && !pending) {
         const value={time:Math.max(...times),readAt:Date.now(),source:1};
         if(positionStore.saveCache(value)){lastCache=value;emptyListConfirmed=false;}
-        overviewCache=overview.snapshot(accumulated);
-        overviewSyncedAt=Date.now();
-      } else if(report.empty && !times.length && !pending) {
+        remember();
+      } else if(report.empty && !times.length && !pending && !incomplete) {
         if(positionStore.clearCache()){lastCache=null;emptyListConfirmed=true;}
         overviewCache=[];
         overviewSyncedAt=Date.now();
+        overviewStale=false;
       } else if(!pending && times.length) {
-        overviewCache=overview.snapshot(accumulated);
-        overviewSyncedAt=Date.now();
+        remember();
       }
     }
   } else {
@@ -945,8 +971,9 @@ function start() {
     for (const record of records) {
       if (record.target === host || (host && host.contains && host.contains(record.target))) continue;
       // Appending our own host is not a page change. Shadow mutations never reach
-      // this observer; host attribute writes are excluded above.
-      if (record.type === "childList" && [...record.addedNodes, ...record.removedNodes].every((node) => node === host)) {
+      // this observer; host attribute writes are excluded above. An empty node
+      // list is not evidence that a record only concerns our host.
+      if (record.type === "childList" && record.addedNodes.length + record.removedNodes.length > 0 && [...record.addedNodes, ...record.removedNodes].every((node) => node === host)) {
         if ([...record.removedNodes].includes(host)) hostRemoved = true;
         continue;
       }

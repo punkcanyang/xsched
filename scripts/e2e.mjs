@@ -162,6 +162,9 @@ async function probeState(page) {
       overviewHeading: pick(".overview-heading"),
       overviewSync: pick(".overview-sync"),
       overviewEmpty: pick(".overview-empty"),
+      overviewCount: pick(".overview-count"),
+      overviewNext: pick(".overview-next"),
+      overviewStale: pick(".overview-stale"),
       overviewTimes: shadow ? [...shadow.querySelectorAll(".overview-time")].map((el) => el.textContent) : [],
       overviewPreviews: shadow ? [...shadow.querySelectorAll(".overview-preview")].map((el) => el.textContent) : [],
       hint: pick(".hint"),
@@ -1939,14 +1942,31 @@ async function main() {
       '2027-03-01 12:30 (Mon)',
       '2027-12-31 23:59 (Fri)',
     ];
-    async function showOverview() {
-      await page.evaluate(() => {
+    async function assertOverviewLeadVisible(label) {
+      const hit = await page.evaluate(() => {
         const body = document.getElementById('xsched-probe-root').shadowRoot.querySelector('.panel-body');
-        const overview = body && body.querySelector('.overview');
-        if (!body || !overview) return;
-        const delta = overview.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
-        body.scrollTop = Math.max(0, body.scrollTop + delta);
+        const lead = body && (body.querySelector('.overview-preview') || body.querySelector('.overview-empty'));
+        const heading = body && body.querySelector('.overview-heading');
+        if (!body || !lead || !heading) return { ok: false, reason: 'missing' };
+        const bounds = body.getBoundingClientRect();
+        const overlap = (el) => {
+          const rect = el.getBoundingClientRect();
+          const top = Math.max(bounds.top, rect.top);
+          const bottom = Math.min(bounds.bottom, rect.bottom);
+          const left = Math.max(bounds.left, rect.left);
+          const right = Math.min(bounds.right, rect.right);
+          return { height: bottom - top, width: right - left };
+        };
+        const leadBox = overlap(lead);
+        const headingBox = overlap(heading);
+        return {
+          ok: body.scrollTop === 0 && leadBox.height > 0 && leadBox.width > 0 && headingBox.height > 0 && headingBox.width > 0,
+          scroll: body.scrollTop,
+          lead: leadBox,
+          heading: headingBox,
+        };
       });
+      assert(hit.ok, `${label}: unscrolled overview lead intersects panel body ${JSON.stringify(hit)}`);
     }
     async function overviewWalk(index) {
       await open('home', '/home');
@@ -1959,8 +1979,12 @@ async function main() {
       assert(emptyOpen.count === 0 && emptyOpen.countText === 'xsched 探針：非 Scheduled 頁', '020 home count stays the live Scheduled read');
       assert(emptyOpen.overview === 0 && emptyOpen.overviewTimes.length === 0 && emptyOpen.times.length === 0, '020 empty cache has no overview rows');
       assert(emptyOpen.overviewEmpty.includes('Open Scheduled to sync once'), '020 empty prompt asks to sync once');
+      assert(emptyOpen.overviewEmpty.startsWith('Not synced yet'), '020 fresh page is unsynced, not a confirmed empty list');
+      assert(emptyOpen.overviewSync === '', '020 unsynced overview does not borrow another cache time');
+      assert(emptyOpen.overviewCount === '' && emptyOpen.overviewNext === '', '020 unsynced overview has no cached total or countdown');
       assert(emptyOpen.target === 'https://x.com/compose/post/unsent/scheduled', '020 empty state keeps the existing goto button');
-      if (index === 1) { await showOverview(); await page.screenshot({ path: join(DOCS, 'v1.0-overview-empty.png') }); }
+      await assertOverviewLeadVisible('020 empty');
+      if (index === 1) await page.screenshot({ path: join(DOCS, 'v1.0-overview-empty.png') });
 
       await open('overview');
       const live = await until(async () => {
@@ -1971,7 +1995,10 @@ async function main() {
       assert(live.overview === 5, '020 live read fills the in-memory overview cache');
       assert(live.overviewHeading === 'Scheduled overview', '020 heading is present on Scheduled');
       assert(live.overviewSync.startsWith('Last synced: 202'), '020 last sync time is a formatted date');
-      if (index === 1) { await showOverview(); await page.screenshot({ path: join(DOCS, 'v1.0-overview-scheduled.png') }); }
+      assert(live.overviewCount === '5 scheduled', '020 scheduled page shows the cached total');
+      assert(live.overviewNext.startsWith('Next in '), '020 scheduled page shows time until the nearest item');
+      await assertOverviewLeadVisible('020 scheduled');
+      if (index === 1) await page.screenshot({ path: join(DOCS, 'v1.0-overview-scheduled.png') });
 
       await page.evaluate(() => history.replaceState({}, '', '/home'));
       const cached = await until(async () => {
@@ -1986,11 +2013,69 @@ async function main() {
       assert(JSON.stringify(cachedOpen.overviewPreviews) === JSON.stringify(overviewPreviews), '020 previews are 20-character synthetic prefixes');
       assert(cachedOpen.overviewEmpty === '', '020 populated cache hides the empty prompt');
       assert(cachedOpen.overviewSync.startsWith('Last synced:'), '020 last sync remains after leaving Scheduled');
+      assert(cachedOpen.overviewCount === '5 scheduled', '020 cached home shows the cached total');
+      assert(cachedOpen.overviewNext.startsWith('Next in '), '020 cached home shows time until the nearest item');
+      assert(cachedOpen.overviewStale === '', '020 a complete read is not marked stale');
       assert(cachedOpen.target === 'https://x.com/compose/post/unsent/scheduled', '020 goto remains for a later resync');
       assert(!cachedOpen.diag.includes('Synthetic') && !cachedOpen.diag.includes('product note'), '020 diagnostics stay counts-only');
-      if (index === 1) { await showOverview(); await page.screenshot({ path: join(DOCS, 'v1.0-overview-cached-home.png') }); }
+      await assertOverviewLeadVisible('020 cached home');
+      if (index === 1) await page.screenshot({ path: join(DOCS, 'v1.0-overview-cached-home.png') });
     }
     for (let n = 1; n <= 3; n++) await overviewWalk(n);
+    // Review P1: re-read a text edit without changing its schedule, then revisit
+    // a short virtual window. Neither action may discard the longer memory cache.
+    await page.evaluate(() => history.replaceState({}, '', '/compose/post/unsent/scheduled'));
+    await until(async () => { const state = await probeState(page); return state.mode === 'scheduled' && state.count === 5; }, '020 revisit full list');
+    await page.evaluate(() => {
+      const cells = [...document.querySelectorAll('#sched-list [data-testid="cellInnerDiv"]')];
+      const morning = cells.find(cell => cell.textContent.includes('Synthetic morning'));
+      morning.querySelector('[data-testid="tweetText"]').textContent = 'Rewritten morning note still scheduled';
+    });
+    const edited = await until(async () => {
+      const state = await probeState(page);
+      return state.overviewPreviews[0] === 'Rewritten morning no' ? state : null;
+    }, '020 same-time preview edit re-read');
+    assert(edited.overview === 5 && JSON.stringify(edited.overviewTimes) === JSON.stringify(overviewTimes), '020 text edit refreshes the preview without changing count or times');
+    await page.evaluate(() => history.replaceState({}, '', '/home'));
+    await until(async () => (await probeState(page)).mode === 'other', '020 leave before short window');
+    await page.evaluate(() => {
+      const list = document.getElementById('sched-list');
+      const keep = list.firstElementChild;
+      for (const cell of [...list.children]) if (cell !== keep) cell.remove();
+      list.style.transform = 'translateY(8px)';
+      keep.querySelector('[data-testid="tweetText"]').textContent = 'Short window replacement note';
+      history.replaceState({}, '', '/compose/post/unsent/scheduled');
+    });
+    const short = await until(async () => {
+      const state = await probeState(page);
+      return state.mode === 'scheduled' && state.count === 1 && state.overviewStale ? state : null;
+    }, '020 short virtual window keeps full cache');
+    assert(short.overview === 5 && short.overviewCount === '5 scheduled', '020 one-row virtual snapshot retains all five cached posts');
+    assert(JSON.stringify(short.overviewTimes) === JSON.stringify(overviewTimes), '020 short window preserves every cached date');
+    assert(JSON.stringify(short.overviewPreviews) === JSON.stringify(['Rewritten morning no', 'Synthetic lunchtime ', 'Short window replace', 'Synthetic year-end f', 'Synthetic new year m']), '020 short window updates current text without restoring an old preview');
+    await page.evaluate(() => history.replaceState({}, '', '/home'));
+    await until(async () => (await probeState(page)).mode === 'other', '020 cached short window home');
+    await assertOverviewLeadVisible('020 incomplete cache');
+    await page.screenshot({path:join(DOCS,'v1.0-overview-incomplete.png')});
+
+    // A loaded, non-virtual empty list is distinct from an unsynced full reload.
+    await page.evaluate(() => {
+      const list = document.getElementById('sched-list');
+      list.style.transform = '';
+      while (list.firstChild) list.removeChild(list.firstChild);
+      const empty = document.createElement('p');
+      empty.textContent = 'Nothing scheduled yet.';
+      list.append(empty);
+      history.replaceState({}, '', '/compose/post/unsent/scheduled');
+    });
+    const confirmed = await until(async () => {
+      const state = await probeState(page);
+      return state.mode === 'scheduled' && state.overview === 0 && state.overviewCount === '0 scheduled' ? state : null;
+    }, '020 confirmed empty overview');
+    assert(confirmed.overviewEmpty.startsWith('Cache is empty: synced') && confirmed.overviewSync.startsWith('Last synced:'), '020 confirmed empty has its own notice and a real overview synchronization time');
+    assert(confirmed.overviewNext === '' && confirmed.overviewStale === '', '020 confirmed empty clears countdown and stale notice');
+    await assertOverviewLeadVisible('020 confirmed empty');
+    await page.screenshot({path:join(DOCS,'v1.0-overview-confirmed-empty.png')});
     console.log('  ✓ 020: empty prompt, live list, SPA cache, AM/PM/cross-year sort, three consecutive walkthroughs');
 
     // ── network discipline ─────────────────────────────────────────────────────
