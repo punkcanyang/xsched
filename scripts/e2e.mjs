@@ -386,7 +386,7 @@ async function main() {
       return s.count === 2 && s.expanded === 'true' ? s : null;
     }, 'shortcut Scheduled defaults open');
     assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
-    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.2.0 (manifest 0.2.0)', 'diagnostic first line includes both versions');
+    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.2.1 (manifest 0.2.1)', 'diagnostic first line includes both versions');
     await checkAuthorLink('Scheduled author');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-author-link-scheduled.png') });
     await checkNative('desktop scheduled open');
@@ -462,14 +462,14 @@ async function main() {
       chrome.runtime.getManifest = () => ({version: '0.0.2'});
     ` });
     await until(async () => (await probeState(page)).version.includes('⚠ 版本不符'), 'manifest mismatch warning');
-    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.2.0 / manifest 0.0.2'), 'diagnostic mismatch warning');
+    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.2.1 / manifest 0.0.2'), 'diagnostic mismatch warning');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-version-mismatch.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: `chrome.runtime.getManifest = () => { throw new Error('Extension context invalidated. private account'); };` });
     await until(async () => (await probeState(page)).version.includes('擴充已重新載入'), 'context invalidated warning');
     assert(!(await probeState(page)).diag.includes('private account'), 'runtime exception is never copied into diagnostic');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-runtime-invalidated.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: 'chrome.runtime.getManifest = globalThis.__originalManifest;' });
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.2.0 (manifest 0.2.0)'), 'runtime warning clears');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.2.1 (manifest 0.2.1)'), 'runtime warning clears');
 
     // Reproduce an actual 0.0.2 reader/content session in another isolated world.
     // Historical sources are read from the task's base commit, never downloaded.
@@ -484,7 +484,7 @@ async function main() {
     await until(async () => (await probeState(page)).diag.startsWith('xsched-gate0 v0.0.2'), 'actual old host visible');
     const takeover = await network.send('Runtime.evaluate', { contextId: versionContext, expression: readFileSync(join(PROBE, 'content.js'), 'utf8') });
     assert(!takeover.exceptionDetails, 'new script reinjection avoids top-level const collisions');
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.2.0'), 'new script takes over old UI');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.2.1'), 'new script takes over old UI');
     await sleep(1200); // legacy poll has run repeatedly
     assert(await page.evaluate(() => document.querySelectorAll('#xsched-probe-root').length === 1 && [...document.querySelectorAll('[data-xsched-retired]')].every((el) => el.getBoundingClientRect().height === 0)), 'one active UI; legacy stays connected and hidden');
     await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
@@ -778,7 +778,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched probe v0\.2\.0 \(manifest 0\.2\.0\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.2\.1 \(manifest 0\.2\.1\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
@@ -874,7 +874,7 @@ async function main() {
     const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
     const skeleton = skeletonCopies.result.value[0];
-    assert(/^xsched-skeleton v0\.2\.0 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(/^xsched-skeleton v0\.2\.1 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
     for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture", "punkcan", "https://x.com/punkcan"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
@@ -892,7 +892,7 @@ async function main() {
       const s = await probeState(page);
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
-    assert(/^xsched-skeleton v0\.2\.0 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    assert(/^xsched-skeleton v0\.2\.1 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
     const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
     await select.asElement().click();
     await select.dispose();
@@ -1257,7 +1257,7 @@ async function main() {
       const initial=await until(async()=>{
         const state=await probeState(page);
         return state.present && state.mounted==='1' && state.mode==='other'
-          && state.diag.startsWith('xsched probe v0.2.0 (manifest 0.2.0)\n') ? state : null;
+          && state.diag.startsWith('xsched probe v0.2.1 (manifest 0.2.1)\n') ? state : null;
       },'quick picker first diagnostic rendered: '+name);
       assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
       await installQuickClock(contextId);
@@ -1293,7 +1293,7 @@ async function main() {
       assert(filled.status==='Fields filled; not scheduled yet','fill is not reported as scheduled');
       if(id==='lunch')await page.screenshot({path:join(DOCS,'v1.0-quick014-slot-filled.png')});
     }
-    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.2.0'),'new diagnostic available');
+    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.2.1'),'new diagnostic available');
     await network.send('Runtime.evaluate',{contextId:quickContext,expression:`globalThis.__quickCopies=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText(text){globalThis.__quickCopies.push(text);return Promise.resolve();}}});`});
     await clickShadow('[data-xsched-copy]');await clickShadow('[data-xsched-skeleton]');
     const exported=await network.send('Runtime.evaluate',{contextId:quickContext,expression:'globalThis.__quickCopies',returnByValue:true});
@@ -2077,6 +2077,74 @@ async function main() {
     await assertOverviewLeadVisible('020 confirmed empty');
     await page.screenshot({path:join(DOCS,'v1.0-overview-confirmed-empty.png')});
     console.log('  ✓ 020: empty prompt, live list, SPA cache, AM/PM/cross-year sort, three consecutive walkthroughs');
+
+    // ── 0.2.1: home modal composer and /compose/post quick slots; Schedule updates overview ─
+    // Synthetic fixtures only (2027+ clock). The extension clicks only the native
+    // schedule icon; Confirm and Schedule are Puppeteer clicks modelling the user.
+    const fix021Slots = [['morning', '9', '0', 'AM', '2028-01-01 09:00 (Sat) AM'], ['lunch', '12', '30', 'PM', '2028-01-01 12:30 (Sat) PM'], ['evening', '8', '0', 'PM', '2028-01-01 20:00 (Sat) PM']];
+    const fieldValues021 = () => page.evaluate(() => Object.fromEntries(['month', 'day', 'year', 'hour', 'minute', 'period'].map((key) => [key, document.getElementById('fake-select-' + key)?.value])));
+    async function slotClick021(rootSelector, id) {
+      const handle = await page.evaluateHandle(({ rootSelector, id }) => document.querySelector(rootSelector + ' .xsched-composer-root')?.shadowRoot.querySelector('[data-xsched-composer-slot="' + id + '"]'), { rootSelector, id });
+      try { await handle.asElement().click(); } finally { await handle.dispose(); }
+    }
+    const filled021 = () => page.evaluate(() => {
+      const notice = document.querySelector('.xsched-composer-notice')?.shadowRoot.querySelector('[role="status"]');
+      return notice?.textContent.includes('Fields filled') && document.getElementById('xsched-probe-root').dataset.xschedDiag.includes('fill=ok');
+    });
+    await page.setViewport({ width: 1280, height: 820 });
+    for (let walk = 1; walk <= 3; walk++) {
+      const [id, hour, minute, period, overviewTime] = fix021Slots[walk - 1];
+      await page.evaluate(() => { window.localStorage.removeItem('xsched.probe.panelPos'); window.localStorage.removeItem('xsched.probe.pos'); });
+      // (1) Home "For you" modal: the icon swaps the same dialog to the picker.
+      await open('quick-composer-modal', '/home');
+      const modalContext = await until(findExtensionContext, '021 modal isolated world ' + walk);
+      await installQuickClock(modalContext);
+      await until(() => page.evaluate(() => document.querySelector('#compose-modal .xsched-composer-root')?.shadowRoot.querySelector('[data-xsched-composer-slot="morning"]')?.textContent.includes('2028')), '021 modal composer slots mounted ' + walk);
+      if (walk === 1) await page.screenshot({ path: join(DOCS, 'v1.0-fix021-modal-composer.png') });
+      await slotClick021('#compose-modal', id);
+      await until(filled021, '021 modal ' + id + ' filled ' + walk);
+      const modalValues = await fieldValues021();
+      assert(modalValues.year === '2028' && modalValues.month === '1' && modalValues.day === '1' && modalValues.hour === hour && modalValues.minute === minute && modalValues.period === period, `021 modal ${id}: native time really changed ${JSON.stringify(modalValues)}`);
+      assert(await page.evaluate(() => !document.querySelector('#compose-modal [data-testid="tweetTextarea_0"]') && window.fixtureSend.icon === 1 && window.fixtureSend.inlineIcon === 0 && ['confirm', 'schedule', 'post', 'calendar', 'submit'].every((key) => window.fixtureSend[key] === 0)), '021 modal: picker replaced the editor, one modal icon activation, zero confirm/schedule/post/submit');
+      assert(!(await page.evaluate(() => document.querySelector('.xsched-composer-notice')?.shadowRoot.textContent || '')).includes('not found'), '021 modal never reports a missing icon');
+      if (walk === 1) await page.screenshot({ path: join(DOCS, 'v1.0-fix021-modal-filled.png') });
+      // Panel open/close and drag while the picker is up.
+      if ((await probeState(page)).expanded !== 'true') await toggle(true);
+      await reviewDragPanelTo(760, 60 + walk * 10);
+      await sleep(400);
+      const dragged = await panelRect();
+      assert(dragged.x === 760 && dragged.y === 60 + walk * 10, `021 panel dragged ${JSON.stringify(dragged)}`);
+      await toggle(false); await toggle(true);
+      const reopened = await panelRect();
+      assert(reopened.x === dragged.x && reopened.y === dragged.y, '021 panel reopens at the dragged point');
+      // The user confirms, then presses the composer's own Schedule button.
+      await page.click('#confirm');
+      await until(() => page.evaluate(() => Boolean(document.getElementById('modal-schedule'))), '021 composer rebuilt after Confirm ' + walk);
+      await page.click('#modal-schedule');
+      const updated = await until(async () => {
+        const state = await probeState(page);
+        return state.overview === 1 && state.overviewTimes.length === 1 ? state : null;
+      }, '021 overview updated after Schedule ' + walk);
+      assert(updated.overviewTimes[0] === overviewTime && updated.overviewPreviews[0] === 'A synthetic modal dr', `021 overview row has the dialog time and first 20 characters ${JSON.stringify([updated.overviewTimes, updated.overviewPreviews])}`);
+      assert(updated.overviewCount === '1 scheduled' && updated.overviewNext.startsWith('Next in') && updated.overviewSync === '' && updated.overviewStale !== '', '021 count and countdown update at once; unsynced list is marked partial, no fake sync time');
+      assert(await page.evaluate(() => location.pathname === '/home' && document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-status').textContent === 'Scheduling completion observed' && JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled') || 'null')?.source === 2), '021 status line updated without visiting Scheduled');
+      assert(await page.evaluate(() => Object.keys(window.localStorage).every((key) => !String(window.localStorage.getItem(key)).includes('synthetic modal'))), '021 draft text is never stored');
+      assert(await page.evaluate(() => window.fixtureSend.schedule === 1 && window.fixtureSend.submit === 0 && window.fixtureSend.post === 0), '021 only the simulated user Schedule click');
+      if (walk === 1) await page.screenshot({ path: join(DOCS, 'v1.0-fix021-overview-updated.png') });
+      // (2) /compose/post composer: a slot really changes the time.
+      await open('quick-composer', '/compose/post');
+      const postContext = await until(findExtensionContext, '021 compose/post isolated world ' + walk);
+      await installQuickClock(postContext);
+      await until(() => page.evaluate(() => document.querySelector('#fake-composer .xsched-composer-root')?.shadowRoot.querySelector('[data-xsched-composer-slot="morning"]')?.textContent.includes('2028')), '021 compose/post slots mounted ' + walk);
+      const before = await page.evaluate(() => window.fixtureSend.icon);
+      await slotClick021('#fake-composer', id);
+      await until(filled021, '021 compose/post ' + id + ' filled ' + walk);
+      const postValues = await fieldValues021();
+      assert(postValues.year === '2028' && postValues.month === '1' && postValues.day === '1' && postValues.hour === hour && postValues.minute === minute && postValues.period === period, `021 /compose/post ${id}: native time really changed ${JSON.stringify(postValues)}`);
+      assert(await page.evaluate((before) => window.fixtureSend.icon === before + 1 && ['confirm', 'schedule', 'post', 'calendar', 'submit'].every((key) => window.fixtureSend[key] === 0), before), '021 /compose/post: one icon activation and zero sends');
+      if (walk === 1) await page.screenshot({ path: join(DOCS, 'v1.0-fix021-compose-post-filled.png') });
+    }
+    console.log('  ✓ 021: modal composer and /compose/post slots change the time 3×; panel open/close/drag; Schedule updates overview without Scheduled');
 
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);
