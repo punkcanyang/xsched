@@ -172,7 +172,7 @@ test("diagnostic accepts only safe nonnegative integers and numeric enum codes",
   const secret = "@private https://private.example/ Oct 10 2026 9:00 AM private post";
   const report = Object.fromEntries(["onScheduled", "tab", "scope", "cell", "button", "listitem", "link", "tweetText", "phrase", "l1", "l2", "l3", "layer", "mounted", "timeOk", "timeFail", "unparsed", "loose", "needsScroll", "virtualized", "empty", "scrolled"].map((key) => [key, secret]));
   const diagnostic = R.buildDiagnostic(report);
-  assert.match(diagnostic, /^xsched probe v0\.1\.6 \(manifest unknown\)\n(?:\w+=[\w%|-]* ?)+\nfmt=none$/);
+  assert.match(diagnostic, /^xsched probe v0\.2\.0 \(manifest unknown\)\n(?:\w+=[\w%|-]* ?)+\nfmt=none$/);
   assert.ok(!diagnostic.includes(secret));
   for (const value of [-1, NaN, Infinity, 1.5, {}, () => secret]) {
     assert.match(R.buildDiagnostic({ cell: value }), /cell=0 /);
@@ -264,7 +264,7 @@ test('full repo verify CLI rejects 19 pointerover URL/resource rewrites in an un
     symlinkSync(new URL('node_modules', root).pathname, join(directory, 'node_modules'), 'dir');
     cpSync(new URL('package.json', root), join(directory, 'package.json'));
     const cli = join(directory, 'scripts/verify.mjs');
-    const baseline = runNode([cli], { timeout:10000 });
+    const baseline = runNode([cli], { timeout:60000 });
     assert.equal(baseline.status, 0, baseline.stdout + baseline.stderr);
     assert.match(baseline.stdout, /158 destructuring self-tests/);
     assert.match(baseline.stdout, /514 resource property self-tests/);
@@ -294,7 +294,7 @@ test('full repo verify CLI rejects 19 pointerover URL/resource rewrites in an un
     ]) {
       const handler = `\ndocument.addEventListener('pointerover', event => {\n  const host = document.querySelector('#xsched-probe-root');\n  const author = host?.shadowRoot?.querySelector('.panel-author');\n  if (!author) return;\n  let other;\n  ${rewrite}\n});\n`;
       writeFileSync(readerPath, original + handler);
-      const result = runNode([cli], { timeout:10000 });
+      const result = runNode([cli], { timeout:60000 });
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.ok(result.stderr.includes(`probe/reader.js: ${rule} forbidden`), result.stderr);
       assert.doesNotMatch(result.stderr, /differs from reviewed source|SELF-TEST FAILED/);

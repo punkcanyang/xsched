@@ -36,7 +36,7 @@ const QUICK_SOURCE_SHA256 = "a35fb5c6b8480cf4b1dde3916443befa8e201d9dd980d446fa7
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
 const AUTHOR_UI_SHA256 = "5eb978a06ed129bbb4345d3218fb108ce3fcf81cf3b5bbd219dadc66795736b0";
-const AUTHOR_CONTENT_SHA256 = "e59ef6f608a21c72b30f3af9b3d5b7a2478f84fd23f56c8fc35ac6c88801c8c9";
+const AUTHOR_CONTENT_SHA256 = "7cd18f21e8d0aede59cfd339c59f7f335a4d0f9f44625d225d6e4286426e47fa";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');

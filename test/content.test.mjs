@@ -8,6 +8,7 @@ await import('../probe/reader.js');
 await import('../probe/skeleton.js');
 await import('../probe/ui.js');
 await import('../probe/quick.js');
+await import('../probe/overview.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
 const uiSource = readFileSync(new URL('../probe/ui.js', import.meta.url), 'utf8');
 const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
@@ -17,7 +18,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.1.6';
+  let manifest = '0.2.0';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -41,7 +42,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   document.createElement = (...args) => { const el = create(...args); el.getBoundingClientRect = rect; return el; };
   const context = vm.createContext({
     XSCHED_READER: clock ? { ...reader, readSnapshot(doc, options) { return reader.readSnapshot(doc, { ...options, now: clock() }); } } : reader,
-    XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: ui, XSCHED_QUICK:clock ? {...globalThis.XSCHED_QUICK,fillSlot(doc,id){return globalThis.XSCHED_QUICK.fillSlot(doc,id,clock());},fillSlotResult(doc,id,ignored,options){return globalThis.XSCHED_QUICK.fillSlotResult(doc,id,clock(),options);}} : globalThis.XSCHED_QUICK,
+    XSCHED_SKELETON: globalThis.XSCHED_SKELETON, XSCHED_UI: ui, XSCHED_OVERVIEW: globalThis.XSCHED_OVERVIEW, XSCHED_QUICK:clock ? {...globalThis.XSCHED_QUICK,fillSlot(doc,id){return globalThis.XSCHED_QUICK.fillSlot(doc,id,clock());},fillSlotResult(doc,id,ignored,options){return globalThis.XSCHED_QUICK.fillSlotResult(doc,id,clock(),options);}} : globalThis.XSCHED_QUICK,
     Date:clock ? class extends Date {constructor(...args){super(...(args.length?args:[clock().getTime()]));}static now(){return clock().getTime();}} : Date,
     document, window, navigator: { language: 'en-US' }, location, innerWidth: 1100, innerHeight: 820,
     chrome: { runtime: { id: 'local-test', getManifest() { if (invalidated) throw new Error('private exception'); return { version: manifest }; } } },
@@ -330,10 +331,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.1.6 (manifest 0.1.6)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.2.0 (manifest 0.2.0)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.1.6 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.2.0 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -342,7 +343,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.1\.6/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.2\.0/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -540,7 +541,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.1\.6/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.2\.0/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -890,4 +891,239 @@ test('P1(e) composer full load restores xsched.probe.panelOpen; missing value de
  Object.defineProperty(invalid.context.window,'localStorage',{get(){throw new Error('blocked');}});
  assert.equal(api.loadOpen(),null);
  assert.equal(api.saveOpen(true),false);
+});
+
+test('empty overview cache on home shows the Scheduled sync prompt and existing goto button', () => {
+  const f = fixture('/home', 'zh-Hant');
+  f.click('.shortcut');
+  assert.equal(f.host().dataset.xschedCount, '0');
+  assert.equal(f.host().dataset.xschedOverview, '0');
+  assert.equal(f.shadow().querySelector('.count').textContent, 'xsched 探針：非 Scheduled 頁');
+  assert.equal(f.shadow().querySelectorAll('.time').length, 0);
+  assert.equal(f.shadow().querySelectorAll('.overview-time').length, 0);
+  assert.equal(f.shadow().querySelector('.overview-empty').textContent, '快取是空的。去 Scheduled 頁同步一次。');
+  assert.equal(f.shadow().querySelector('.overview-sync'), null);
+  assert.equal(f.shadow().querySelector('.overview-count'), null);
+  assert.equal(f.shadow().querySelector('[data-xsched-goto]').textContent, '前往 Scheduled');
+  assert.equal(f.shadow().querySelector('[data-xsched-goto]').dataset.xschedTarget, 'https://x.com/compose/post/unsent/scheduled');
+});
+
+test('Scheduled read fills in-memory overview; SPA home keeps sorted times and 20-char previews without changing count', () => {
+  const f = fixture('/compose/post/unsent/scheduled', 'en', '../fixtures/overview.html');
+  assert.equal(f.host().dataset.xschedCount, '5');
+  assert.equal(f.host().dataset.xschedOverview, '5');
+  assert.equal(f.shadow().querySelector('.overview-heading').textContent, 'Scheduled overview');
+  assert.match(f.shadow().querySelector('.overview-sync').textContent, /^Last synced: /);
+  assert.deepEqual([...f.shadow().querySelectorAll('.time')].map((el) => el.textContent), [
+    '2027-03-05 20:00 (Fri)',
+    '2027-02-28 08:00 (Sun)',
+    '2028-01-01 00:00 (Sat)',
+    '2027-03-01 12:30 (Mon)',
+    '2027-12-31 23:59 (Fri)',
+  ]);
+  f.location.pathname = '/home'; f.poll();
+  f.click('.shortcut');
+  assert.equal(f.host().dataset.xschedCount, '0');
+  assert.equal(f.host().dataset.xschedOverview, '5');
+  assert.equal(f.shadow().querySelector('.count').textContent, 'xsched 探針：非 Scheduled 頁');
+  assert.equal(f.shadow().querySelectorAll('.time').length, 0);
+  assert.deepEqual([...f.shadow().querySelectorAll('.overview-time')].map((el) => el.textContent), [
+    '2027-02-28 08:00 (Sun) AM',
+    '2027-03-01 12:30 (Mon) PM',
+    '2027-03-05 20:00 (Fri) PM',
+    '2027-12-31 23:59 (Fri) PM',
+    '2028-01-01 00:00 (Sat) AM',
+  ]);
+  assert.deepEqual([...f.shadow().querySelectorAll('.overview-preview')].map((el) => el.textContent), [
+    'Synthetic morning pr',
+    'Synthetic lunchtime ',
+    'Synthetic evening re',
+    'Synthetic year-end f',
+    'Synthetic new year m',
+  ]);
+  assert.equal(f.shadow().querySelector('.overview-empty'), null);
+  assert.equal(f.shadow().querySelector('.overview-stale'), null);
+  assert.equal(f.shadow().querySelector('.overview-count').textContent, '5 scheduled');
+  assert.match(f.shadow().querySelector('.overview-next').textContent, /^Next in \d/);
+  assert.ok(f.shadow().querySelector('[data-xsched-goto]'));
+  for (const leak of ['Synthetic morning', 'product note', 'decoy_handle', 'https://', '@local']) {
+    assert.ok(!f.host().dataset.xschedDiag.includes(leak), leak);
+  }
+});
+
+test('confirmed empty Scheduled list clears the overview cache; pending empty keeps it', () => {
+  const f = fixture('/compose/post/unsent/scheduled', 'en', '../fixtures/overview.html');
+  assert.equal(f.host().dataset.xschedOverview, '5');
+  const incoming = parseHTML(readFileSync(new URL('../fixtures/empty.html', import.meta.url), 'utf8')).document.querySelector('[role="dialog"]');
+  incoming.setAttribute('aria-busy', 'true');
+  f.document.querySelector('[role="dialog"]').replaceWith(incoming);
+  f.poll();
+  assert.equal(f.host().dataset.xschedOverview, '5', 'busy empty list must not drop the last overview snapshot');
+  incoming.removeAttribute('aria-busy');
+  f.mutate([{ type: 'attributes', target: incoming, addedNodes: [], removedNodes: [] }]);
+  assert.equal(f.host().dataset.xschedOverview, '0', 'known empty announcement clears overview');
+  f.location.pathname = '/home'; f.poll(); f.click('.shortcut');
+  assert.match(f.shadow().querySelector('.overview-empty').textContent, /Cache is empty/);
+  assert.match(f.shadow().querySelector('.overview-sync').textContent, /^Last synced: /);
+  assert.equal(f.shadow().querySelector('.overview-count').textContent, '0 scheduled');
+  assert.equal(f.shadow().querySelector('.overview-next'), null);
+  assert.equal(f.shadow().querySelector('.overview-stale'), null);
+});
+
+test('overview walkthrough: empty, Scheduled sync, SPA cache, three consecutive times', () => {
+  for (let n = 1; n <= 3; n++) {
+    const empty = fixture('/home', 'en', '../fixtures/home.html');
+    empty.click('.shortcut');
+    assert.equal(empty.host().dataset.xschedOverview, '0', `walk ${n} empty`);
+    assert.ok(empty.shadow().querySelector('.overview-empty'));
+    assert.equal(empty.shadow().querySelector('.overview-empty').textContent, 'Not synced yet. Open Scheduled to sync once.');
+    assert.equal(empty.shadow().querySelector('.overview-sync'), null);
+    assert.ok(empty.shadow().querySelector('[data-xsched-goto]'));
+    const scheduled = fixture('/compose/post/unsent/scheduled', 'en', '../fixtures/overview.html');
+    assert.equal(scheduled.host().dataset.xschedCount, '5', `walk ${n} live`);
+    assert.equal(scheduled.shadow().querySelectorAll('.preview').length, 5);
+    scheduled.location.pathname = '/home'; scheduled.poll(); scheduled.click('.shortcut');
+    assert.equal(scheduled.host().dataset.xschedCount, '0', `walk ${n} home count`);
+    assert.equal(scheduled.host().dataset.xschedOverview, '5', `walk ${n} cache`);
+    assert.equal(scheduled.shadow().querySelectorAll('.overview-time').length, 5);
+    assert.match(scheduled.shadow().querySelector('.overview-sync').textContent, /Last synced/);
+    assert.equal(scheduled.shadow().querySelector('.overview-count').textContent, '5 scheduled');
+    assert.match(scheduled.shadow().querySelector('.overview-next').textContent, /^Next in \d/);
+  }
+});
+
+test('unsynced overview does not borrow lastCache.readAt after a full reload', () => {
+  const stored = new Map([['xsched.probe.lastScheduled', JSON.stringify({ time: new Date(2027, 5, 1, 9).getTime(), readAt: new Date(2027, 5, 1, 10).getTime(), source: 1 })]]);
+  const f = fixture('/home', 'zh-Hans', '../fixtures/home.html', null, undefined, undefined, stored);
+  f.click('.shortcut');
+  assert.equal(f.host().dataset.xschedOverview, '0');
+  assert.equal(f.shadow().querySelector('.overview-sync'), null);
+  assert.equal(f.shadow().querySelector('.overview-count'), null);
+  assert.equal(f.shadow().querySelector('.overview-empty').textContent, '尚未同步。请到 Scheduled 页读一次。');
+  assert.match(f.shadow().querySelector('.quick-cache').textContent, /2027/);
+});
+
+test('overview cache updates when the first 20 characters change and the time does not', () => {
+  const f = fixture('/compose/post/unsent/scheduled', 'en', '../fixtures/overview.html');
+  const cell = [...f.document.querySelectorAll('[data-testid="cellInnerDiv"]')].find((el) => el.textContent.includes('Synthetic morning'));
+  cell.querySelector('[data-testid="tweetText"]').textContent = 'Rewritten morning note still scheduled';
+  const button = cell.querySelector('[role="button"]');
+  button.setAttribute('aria-label', button.getAttribute('aria-label').replace('Synthetic morning product note', 'Rewritten morning note still scheduled'));
+  f.mutate([{ type: 'childList', target: cell, addedNodes: [], removedNodes: [] }]);
+  assert.equal(f.host().dataset.xschedOverview, '5');
+  f.location.pathname = '/home';
+  f.poll();
+  f.click('.shortcut');
+  const previews = [...f.shadow().querySelectorAll('.overview-preview')].map((el) => el.textContent);
+  assert.equal(previews[0], 'Rewritten morning no');
+  assert.equal(previews.length, 5);
+  assert.equal(f.shadow().querySelector('.overview-stale'), null);
+  assert.match(f.shadow().querySelector('.overview-sync').textContent, /^Last synced: /);
+});
+
+test('a shorter virtual window does not replace a longer overview cache', () => {
+  const f = fixture('/compose/post/unsent/scheduled', 'en', '../fixtures/overview.html');
+  assert.equal(f.host().dataset.xschedOverview, '5');
+  assert.equal(f.shadow().querySelector('.overview-stale'), null);
+  f.location.pathname = '/home';
+  f.poll();
+  f.location.pathname = '/compose/post/unsent/scheduled';
+  const list = f.document.getElementById('sched-list');
+  const keep = list.querySelector('[data-testid="cellInnerDiv"]');
+  for (const cell of [...list.children]) if (cell !== keep) cell.remove();
+  keep.querySelector('[data-testid="tweetText"]').textContent = 'Short window replacement note';
+  keep.querySelector('[role="button"]').setAttribute('aria-label', 'Will send on Fri, Mar 5, 2027 at 8:00 PM Short window replacement note');
+  list.setAttribute('style', 'transform: translateY(8px)');
+  f.poll();
+  assert.equal(f.host().dataset.xschedCount, '1', 'live list follows the short window');
+  assert.equal(f.host().dataset.xschedOverview, '5', 'overview keeps the longer snapshot');
+  f.location.pathname = '/home';
+  f.poll();
+  f.click('.shortcut');
+  assert.deepEqual([...f.shadow().querySelectorAll('.overview-preview')].map((el) => el.textContent), [
+    'Synthetic morning pr',
+    'Synthetic lunchtime ',
+    'Short window replace',
+    'Synthetic year-end f',
+    'Synthetic new year m',
+  ]);
+  assert.match(f.shadow().querySelector('.overview-stale').textContent, /incomplete or the text changed/);
+  assert.equal(f.shadow().querySelector('.overview-count').textContent, '5 scheduled');
+});
+
+
+test('overview leads the unscrolled content before quick controls', () => {
+  for (const [path, file] of [['/home', '../fixtures/home.html'], ['/compose/post/unsent/scheduled', '../fixtures/overview.html']]) {
+    const f = fixture(path, 'en', file);
+    if (path === '/home') f.click('.shortcut');
+    const body = f.shadow().querySelector('.panel-body');
+    assert.equal(body.firstElementChild.className, 'overview');
+    assert.ok(body.firstElementChild.querySelector('.overview-heading'));
+    assert.ok(body.firstElementChild.querySelector('.overview-empty, .overview-preview'));
+    assert.equal(body.children[1].className, 'quick-controls');
+  }
+});
+
+test('virtual preview edits update one cached row and an empty virtual window cannot clear it', () => {
+  const f = fixture('/compose/post/unsent/scheduled', 'en', '../fixtures/overview.html');
+  const list = f.document.getElementById('sched-list');
+  list.style.transform = 'translateY(8px)';
+  const cell = [...list.children][1];
+  const text = cell.querySelector('[data-testid="tweetText"]');
+  text.textContent = 'Updated virtual text stays current';
+  f.mutate([{type:'childList', target:text, addedNodes:[...text.childNodes], removedNodes:[]}]);
+  assert.equal(f.host().dataset.xschedOverview, '5');
+  assert.equal(f.shadow().querySelector('.overview-preview').textContent, 'Updated virtual text');
+  assert.ok(f.shadow().querySelector('.overview-stale'));
+  for (const row of [...list.children]) row.remove();
+  f.mutate([{type:'childList', target:list, addedNodes:[], removedNodes:[cell]}]);
+  assert.equal(f.host().dataset.xschedOverview, '5');
+  assert.ok(f.shadow().querySelector('.overview-stale'));
+});
+
+test('automatic reset uses the same overview height before and after a stored-position reload', () => {
+  // Model intrinsic content and clipping, rather than a constant 44px box: the
+  // regression only occurs when overview + quick controls exceed the 2/3 floor.
+  function measuredFixture(stored) {
+    const f = fixture(undefined, 'en', '../fixtures/overview.html', null, undefined, undefined, stored, 'x.com', false);
+    const panel = f.shadow().querySelector('section');
+    function box(left, top, width, height) { return {x:left,y:top,left,top,width,height,right:left+width,bottom:top+height}; }
+    function rect() {
+      for (let el=this;el;el=el.parentElement) if (el.style.display==='none') return box(0,0,0,0);
+      const left=parseFloat(panel.style.left)||0,top=parseFloat(panel.style.top)||0;
+      const height=Math.min(parseFloat(panel.style.height)||546,parseFloat(panel.style.maxHeight)||788);
+      if (this===panel) return box(left,top,344,height);
+      if (this.className==='panel-body') return box(left+12,top+50,320,Math.max(0,height-100));
+      if (this.className==='overview') return box(left+12,top+50,320,200);
+      if (this.className==='quick-controls') return box(left+12,top+258,320,320);
+      if (this.className==='panel-header' || this.className==='panel-actions') return box(left+12,top,320,20);
+      return box(left,top,44,44);
+    }
+    panel.getBoundingClientRect=rect;
+    const create=f.document.createElement.bind(f.document);
+    f.document.createElement=(...args)=>{
+      const el=create(...args);el.getBoundingClientRect=rect;
+      Object.defineProperty(el,'clientHeight',{get(){return this.className==='panel-body'?rect.call(this).height:0;}});
+      return el;
+    };
+    f.flush();
+    return f;
+  }
+  const stored=new Map();
+  const initial=measuredFixture(stored);
+  const defaults=coordinates(initial,'section');
+  const defaultButton=coordinates(initial);
+  assert.ok(parseFloat(defaults.height)>Math.floor(820*2/3),'overview content must exercise the larger minimum');
+  stored.set('xsched.probe.pos',JSON.stringify({x:500,y:100}));
+  stored.set('xsched.probe.panelPos',JSON.stringify({x:100,y:80}));
+  const reloaded=measuredFixture(stored);
+  assert.notDeepEqual(coordinates(reloaded,'section'),defaults);
+  reloaded.click('[data-xsched-reset-position]');
+  for(let n=0;n<3;n++) {
+    reloaded.poll();
+    assert.deepEqual(coordinates(reloaded),defaultButton);
+    assert.deepEqual(coordinates(reloaded,'section'),defaults);
+    assert.equal(stored.has('xsched.probe.pos'),false);
+    assert.equal(stored.has('xsched.probe.panelPos'),false);
+  }
 });
