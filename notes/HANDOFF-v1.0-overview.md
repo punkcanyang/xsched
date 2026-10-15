@@ -64,3 +64,7 @@
 新增一個直接相關 content 回歸：用總覽加快速區超過 2/3 預設高度的幾何模型，記錄初始矩形、載入手動位置、重設並連續 poll 三次，逐次確認雙矩形回復、位置 key 持續清空。
 
 實跑：`PATH=/home/box/.local/bin:$PATH npm test` 15/15 檔全過；content 54/54；`node scripts/verify.mjs` OK，1,410 個自測數量不變。指定 Chrome 的 `npm run e2e` 仍在本機 server 階段因 `listen EPERM: operation not permitted 127.0.0.1` 退出，0 個瀏覽器斷言；需外部完整重跑才能確認全綠。本次沒有改截圖，也沒有 commit／push。
+
+### 014 首屏高度
+
+外部 e2e 紅在 `014 just opened: full quick area, all five slots and interval save visible`。開層時 `positionUI()` 還沒寫入 height，flex 欄的 `.panel-body`（`min-height:0`）`clientHeight` 為 0，總覽高度被跳過，面板停在 2/3；總覽卻已插在快速區之前，把五個時段和間隔儲存擠出可見框。修正：先套用當前 size.height 再量測；`.overview` 只留摘要與第一列／空提示，其餘列放到快速區之後，避免完整列表撐高下限。既有 014 與第一屏總覽斷言未改。

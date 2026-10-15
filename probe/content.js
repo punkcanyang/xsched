@@ -503,7 +503,10 @@ function positionUI() {
   const wantsOpen = !(collapsed === null ? !lastReport?.onScheduled : collapsed);
   if (wantsOpen && panelAnchor && !panelNeedsLayout && hostMounted(host) && !panelVisible()) { scheduleRemount(); return; }
   let size=panelSize(innerWidth,innerHeight,savedPanelHeight,panelMinimum);
-  css(panel,{position:'fixed',right:'auto',bottom:'auto',width:`${size.width}px`,display:wantsOpen?'flex':'none'});
+  // Apply a real height before measuring. A display:flex column with no height
+  // leaves .panel-body at clientHeight 0 (min-height:0), so the first-screen
+  // overview would be skipped and later steal space from the quick area.
+  css(panel,{position:'fixed',right:'auto',bottom:'auto',width:`${size.width}px`,height:`${size.height}px`,display:wantsOpen?'flex':'none'});
   if (!wantsOpen) { shortcut.setAttribute('aria-expanded','false');return; }
   const chromeHeight=(panel.querySelector('.panel-header')?.getBoundingClientRect().height || 0)
     +(panel.querySelector('.panel-actions')?.getBoundingClientRect().height || 0)+40;
@@ -730,6 +733,22 @@ function render(report, items, explicitOpen = false) {
       sync.className = 'overview-sync';
       overviewBox.append(sync);
     }
+    const makeOverviewRow = (item) => {
+      const row = css(document.createElement('div'), {padding:'6px 0','border-top':'1px solid #2f3336'});
+      row.className = 'overview-row';
+      const time = textNode('div', overview.formatItemTime(item, document.documentElement.lang, navigator.language), {color:'#1d9bf0','font-weight':'680','word-break':'break-word'});
+      time.className = 'overview-time';
+      row.append(time);
+      if (item.unparsed) {
+        const sample = textNode('div', `時間樣本：${item.sample ? maskSample(item.sample) : "無可安全匯出的樣本"}`, {color:'#ffd400','font-size':'12px','word-break':'break-word'});
+        sample.className = 'overview-sample';
+        row.append(sample);
+      }
+      const preview = textNode('div', item.preview || overviewLabels.none, {'word-break':'break-word'});
+      preview.className = 'overview-preview';
+      row.append(preview);
+      return row;
+    };
     if (!overviewCache.length) {
       const empty = textNode('p', overviewSyncedAt ? overviewLabels.empty : overviewLabels.unsynced, {color:'#ffd400','font-size':'12px',margin:'0'});
       empty.className = 'overview-empty';
@@ -740,24 +759,15 @@ function render(report, items, explicitOpen = false) {
         stale.className = 'overview-stale';
         overviewBox.append(stale);
       }
-      for (const item of overviewCache) {
-        const row = css(document.createElement('div'), {padding:'6px 0','border-top':'1px solid #2f3336'});
-        row.className = 'overview-row';
-        const time = textNode('div', overview.formatItemTime(item, document.documentElement.lang, navigator.language), {color:'#1d9bf0','font-weight':'680','word-break':'break-word'});
-        time.className = 'overview-time';
-        row.append(time);
-        if (item.unparsed) {
-          const sample = textNode('div', `時間樣本：${item.sample ? maskSample(item.sample) : "無可安全匯出的樣本"}`, {color:'#ffd400','font-size':'12px','word-break':'break-word'});
-          sample.className = 'overview-sample';
-          row.append(sample);
-        }
-        const preview = textNode('div', item.preview || overviewLabels.none, {'word-break':'break-word'});
-        preview.className = 'overview-preview';
-        row.append(preview);
-        overviewBox.append(row);
-      }
+      overviewBox.append(makeOverviewRow(overviewCache[0]));
     }
     body.insertBefore(overviewBox, quickControls);
+    if (overviewCache.length > 1) {
+      const rest = css(document.createElement('div'), {margin:'0 0 8px'});
+      rest.className = 'overview-more';
+      for (const item of overviewCache.slice(1)) rest.append(makeOverviewRow(item));
+      body.insertBefore(rest, quickControls.nextSibling);
+    }
     if (report.onScheduled) {
       const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" });
       hint.className = "hint";
