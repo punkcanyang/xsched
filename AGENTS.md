@@ -118,6 +118,15 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 - `npm run verify` 不放寬既有斷言與守門。新增 `probe/overview.js` 由原規則全掃，不豁免 click／scroll／storage／dispatchEvent。AUTHOR_CONTENT_SHA256 因 content 接線更新；ui／quick／position／composer 摘要不變。原 30 API／14 icon／9 SVG／66 leak／37 storage／64 writer／22 author／160 URL／28 author boundary／158 解構／514 資源／308 CSS 自測數量不減。
 - `npm run e2e` 保留全部舊情境與 0 擴充資源／背景請求；只把版本期望改成 0.2.0。新增總覽情境：空首頁提示＋goto、合成 2027+ 未排序列表的現場讀取、SPA 到 `/home` 後快取仍依時間排序且含 AM/PM／跨年／20 字前綴、診斷不含本文、連續走查 3 次。不點作者連結、不增加第二次 Scheduled 頂層導覽。截圖 `docs/v1.0-overview-*.png`；既有截圖不覆寫。fixture 一律示例資料。
 
+## 0.2.2 小修：拿掉「明天 12:30」快速時段
+
+- 老闆真機回報：「明天 12:30」從來沒有正確設好，要求拿掉。發文框快速列與浮層都不再顯示 12:30；剩 9:00、20:00、下個工作日 9:00 與隨機。
+- 根因：**未找到（未確認）**。已查：12 點對應「12＋PM」（不是 0／AM）、分鐘 30 對到選項、上下午 select、四種選項編碼（numeric／padded／zero／period-values）、受控重繪、真結構骨架 fixture，單元與 e2e 全部通過，合成 fixture 重現不出來。沒有真機 12:30 的「複製診斷」就無法判斷 X 那邊在 12 點／30 分做了什麼（例如自動改上下午被讀回檢查還原）。寫入器不改，避免沒有證據的修改影響其他時段。
+- 做法：`quick.js` 新增 `VISIBLE_SLOT_IDS`（SLOT_IDS 去掉 lunch）；composer 快速列、composer 點擊白名單、浮層按鈕與標籤都用這份清單。浮層標籤與按鈕同一份清單、同一索引，不會錯位或出現空白按鈕。`nextSlot('lunch')` 仍在，只為保留 12 PM／:30 的回歸測試。
+- 遷移：快速時段沒有任何已存設定（storage 只有位置、開合、高度、隨機區間、最後排程時間），按鈕每次依固定清單重畫，所以舊使用者重新載入擴充後自然只剩四顆，沒有空白或壞掉的按鈕；不新增也不刪除 storage key。
+- 測試：UI 層原本點 12:30 或數 5 顆的斷言改成點剩下的時段／數 4 顆，斷言強度不變（同樣檢查年月日時分上下午、事件數、零代按）。12:30 的 12 PM／:30 證據改由測試直接呼叫 `XSCHED_QUICK.fillSlotResult(document,'lunch')`（e2e 在擴充 world；單元在 rebuilt picker），原 e2e「12:30 is twelve PM」與受控變體斷言原樣保留。新增：composer 隱藏 12:30 仍填 12／30／PM、浮層只有四顆且每顆標籤對自己的時段。014 完成觀察改用 20:00，「older」先前快取改 21 點，語意不變。
+- 限制：隨機時段仍可能落在 12:xx 或 :30。若真機失敗，讀回檢查會整組還原並在診斷列出哪一欄。
+
 ## 0.2.1 急修：彈出發文框快速時段＋排程後總覽立即更新
 
 - 根因（合成 fixture 重現）：首頁「為你推薦」彈出的發文 modal，按原生排程圖示後 X 把**同一個** aria-modal dialog 的內容換成排程 picker，編輯框被卸下。0.1.5 的等待迴圈一看到編輯框不在就報「找不到原生排程圖示」，picker 根本沒被填；確認後 X 重建新的編輯框／工具列，快速列的按鈕卻還綁著舊節點，下一次按也會失敗。選擇器本身沒有失效。修法：等待期間編輯框被卸下不算失敗，只看是否出現新 picker；「舊 dialog」只算按下前就已有 select 的 dialog；快速列每次 refresh 更新目前節點，點擊時以 scope／editor／icon 任一相同重新辨識，只點當下的原生圖示（`icon.click();` 仍是唯一代點）；同一 scope 內隱藏的重複圖示不再造成歧義（可見的兩個仍拒絕）。

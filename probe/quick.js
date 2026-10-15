@@ -22,6 +22,9 @@ const QUICK_CONFIG = Object.freeze({
   marginMs: 5 * 60 * 1000,
 });
 const SLOT_IDS = Object.freeze(['morning','lunch','evening','workday']);
+// 0.2.2: the 12:30 button is no longer shown (boss real-page report). nextSlot
+// still computes it so the 12 PM / :30 mapping keeps its regression tests.
+const VISIBLE_SLOT_IDS = Object.freeze(SLOT_IDS.filter(id=>id!=='lunch'));
 function validRange(range) {
   return range && Number.isSafeInteger(range.a) && Number.isSafeInteger(range.b) && range.a>0 && range.a<=range.b;
 }
@@ -575,5 +578,5 @@ function isFilling(doc) {return transactions.has(doc);}
 function diagnostic(counts) {
   return ['schedDialog','dateCtl','timeCtl','selects'].map(key=>`${key}=${Number.isSafeInteger(counts?.[key]) && counts[key]>=0 ? counts[key] : 0}`).join(' ');
 }
-globalThis.XSCHED_QUICK = {QUICK_CONFIG,COMPLETION_CONFIG,SLOT_IDS,nextSlot,randomSlot,validRange,detectControls,fillSlot,fillSlotResult,fieldValues,diagnostic,fillDiagnostic,isFilling,observeScheduling,stopSchedulingWatch,schedulingDiagnostic};
+globalThis.XSCHED_QUICK = {QUICK_CONFIG,COMPLETION_CONFIG,SLOT_IDS,VISIBLE_SLOT_IDS,nextSlot,randomSlot,validRange,detectControls,fillSlot,fillSlotResult,fieldValues,diagnostic,fillDiagnostic,isFilling,observeScheduling,stopSchedulingWatch,schedulingDiagnostic};
 })();

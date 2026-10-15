@@ -35,14 +35,14 @@ test('composer evidence requires a unique visible editor and exact non-submit ic
  const extra=f.document.querySelector(C.COMPOSER_CONFIG.editor).cloneNode(true);f.document.getElementById('fake-composer').append(extra);
  assert.equal(C.findEntries(f.document).length,0);assert.equal(f.window.fixtureSend.icon,0);
 });
-test('nine composer messages and wrapped shadow-only five slots; untrusted click never activates X',async()=>{
- useClock();for(const lang of Object.keys(U.STRINGS)){const f=setup();f.document.documentElement.lang=lang;f.controller.refresh();assert.equal(f.buttons().length,5);for(const b of f.buttons()){assert.equal(b.title,b.getAttribute('aria-label'));assert.ok(b.textContent);assert.equal(b.style.whiteSpace,'normal');}for(const key of ['opening','iconMissing','dialogMissing'])assert.ok(C.OPEN_STRINGS[lang][key]);f.buttons()[0].dispatchEvent(new f.window.Event('click'));await new Promise(resolve=>setTimeout(resolve,0));assert.equal(f.window.fixtureSend.icon,0);f.controller.dispose();}
+test('nine composer messages and wrapped shadow-only four slots (0.2.2: no 12:30); untrusted click never activates X',async()=>{
+ useClock();for(const lang of Object.keys(U.STRINGS)){const f=setup();f.document.documentElement.lang=lang;f.controller.refresh();assert.equal(f.buttons().length,4);assert.deepEqual([...f.buttons()].map(b=>b.dataset.xschedComposerSlot),['morning','evening','workday','random']);for(const b of f.buttons()){assert.equal(b.title,b.getAttribute('aria-label'));assert.ok(b.textContent);assert.equal(b.style.whiteSpace,'normal');}for(const key of ['opening','iconMissing','dialogMissing'])assert.ok(C.OPEN_STRINGS[lang][key]);f.buttons()[0].dispatchEvent(new f.window.Event('click'));await new Promise(resolve=>setTimeout(resolve,0));assert.equal(f.window.fixtureSend.icon,0);f.controller.dispose();}
 });
 test('walkthrough three consecutive composer uses open once each, fill controlled rebuilt fields, never confirm/send',async()=>{
  useClock();const f=setup();f.controller.refresh();
- for(const [id,hour,minute,period] of [['morning','9','0','AM'],['lunch','12','30','PM'],['evening','8','0','PM']]) {
+ for(const [id,day,hour,minute,period] of [['morning','1','9','0','AM'],['workday','3','9','0','AM'],['evening','1','8','0','PM']]) {
   f.run(id);const message=await done(f);assert.match(message,/filled/i);
-  assert.equal(f.document.getElementById('fake-select-year').value,'2028');assert.equal(f.document.getElementById('fake-select-month').value,'1');assert.equal(f.document.getElementById('fake-select-day').value,'1');
+  assert.equal(f.document.getElementById('fake-select-year').value,'2028');assert.equal(f.document.getElementById('fake-select-month').value,'1');assert.equal(f.document.getElementById('fake-select-day').value,day);
   assert.equal(f.document.getElementById('fake-select-hour').value,hour);assert.equal(f.document.getElementById('fake-select-minute').value,minute);assert.equal(f.document.getElementById('fake-select-period').value,period);
   assert.ok(f.window.fixtureRebuilds>=2);assert.match(Q.fillDiagnostic(f.document),/^fill=ok/);
   f.document.querySelector('[role="dialog"]').remove();f.controller.refresh();
@@ -51,13 +51,25 @@ test('walkthrough three consecutive composer uses open once each, fill controlle
  for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0,key);
  f.controller.dispose();Q.stopSchedulingWatch(f.document);
 });
+// 0.2.2: the 12:30 button is gone, but the writer must still map 12 noon to
+// "12 PM" and minute 30 on the rebuilding picker (random can land on 12:xx).
+test('0.2.2 no 12:30 button; hidden 12:30 PM fill still writes hour 12, minute 30, PM on the rebuilt picker',async()=>{
+ useClock();const f=setup();f.controller.refresh();
+ assert.equal([...f.buttons()].some(b=>b.dataset.xschedComposerSlot==='lunch'),false);
+ f.run('morning');assert.match(await done(f),/filled/i);
+ assert.equal(await Q.fillSlotResult(f.document,'lunch',new Date()),'filled');
+ for(const [key,value] of [['year','2028'],['month','1'],['day','1'],['hour','12'],['minute','30'],['period','PM']])assert.equal(f.document.getElementById('fake-select-'+key).value,value,key);
+ assert.match(Q.fillDiagnostic(f.document),/^fill=ok y=2028 m=1 d=1 h=12 min=30 period=PM/);
+ for(const key of ['confirm','schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0,key);
+ f.controller.dispose();Q.stopSchedulingWatch(f.document);
+});
 test('stale removed icon and missing dialog cause no field writes and clear busy state',async()=>{
  useClock();for(const mode of ['removed','no-dialog']){const f=setup();f.controller.refresh();if(mode==='removed')f.icon.remove();else f.window.fixtureMode='no-dialog';f.run('morning');const message=await done(f);assert.match(message,/not found|not detected/);assert.equal(f.window.fixtureSend.icon,mode==='removed'?0:1);assert.equal(f.window.fixtureSend.input,0);assert.equal(f.window.fixtureSend.change,0);assert.equal(f.window.fixtureSend.submit,0);f.controller.dispose();}
 });
 test('writer rejection restores all native values; success observation still requires trusted user Schedule',async()=>{
  useClock();const failed=setup();failed.window.fixtureMode='reject';failed.controller.refresh();failed.run('evening');const message=await done(failed);assert.match(message,/restored/i);for(const key of ['year','month','day','hour','minute'])assert.equal(failed.document.getElementById('fake-select-'+key).value,'');assert.equal(failed.document.getElementById('fake-select-period').value,'AM');assert.equal(failed.window.fixtureSend.schedule,0);failed.controller.dispose();
- const f=setup();f.controller.refresh();f.run('lunch');await done(f);assert.equal(Q.observeScheduling(f.document,now.getTime()),null);
- const event=new f.window.Event('click',{bubbles:true});Object.defineProperty(event,'isTrusted',{value:true});f.document.getElementById('schedule').textContent='Schedule';f.document.getElementById('schedule').dispatchEvent(event);f.document.querySelector('[role="dialog"]').remove();assert.equal(Q.observeScheduling(f.document,now.getTime()),null);assert.deepEqual(Q.observeScheduling(f.document,now.getTime()),{time:new NativeDate(2028,0,1,12,30).getTime()});assert.equal(f.window.fixtureSend.schedule,1);assert.equal(f.window.fixtureSend.submit,0);f.controller.dispose();
+ const f=setup();f.controller.refresh();f.run('evening');await done(f);assert.equal(Q.observeScheduling(f.document,now.getTime()),null);
+ const event=new f.window.Event('click',{bubbles:true});Object.defineProperty(event,'isTrusted',{value:true});f.document.getElementById('schedule').textContent='Schedule';f.document.getElementById('schedule').dispatchEvent(event);f.document.querySelector('[role="dialog"]').remove();assert.equal(Q.observeScheduling(f.document,now.getTime()),null);assert.deepEqual(Q.observeScheduling(f.document,now.getTime()),{time:new NativeDate(2028,0,1,20,0).getTime()});assert.equal(f.window.fixtureSend.schedule,1);assert.equal(f.window.fixtureSend.submit,0);f.controller.dispose();
 });
 test('quick slots stay on a new post and skip reply, quote, and status inline composers',()=>{
  const f=setup();f.controller.refresh();

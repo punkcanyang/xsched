@@ -46,9 +46,9 @@ test('modal composer: picker replaces the editor in the same dialog, slot still 
  trusted(f.window,f.document.getElementById('confirm'));await tick();
  assert.ok(f.document.getElementById('modal-schedule'));
  f.document.querySelector('.xsched-composer-notice').remove();f.controller.refresh();
- f.run(modal,'lunch');
+ f.run(modal,'workday');
  assert.match(await settle(f),/filled/i);
- assert.deepEqual(values(f),['2028','1','1','12','30','PM']);
+ assert.deepEqual(values(f),['2028','1','3','9','0','AM']);
  assert.equal(f.window.fixtureSend.icon,2);
  for(const key of ['schedule','post','calendar','submit'])assert.equal(f.window.fixtureSend[key],0,key);
  f.controller.dispose();Q.stopSchedulingWatch(f.document);
