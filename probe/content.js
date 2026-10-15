@@ -608,7 +608,7 @@ function render(report, items, explicitOpen = false) {
 
   const strings = stringsFor(document.documentElement.lang, navigator.language);
   const now=new Date();
-  const slotLabels=quick.SLOT_IDS.map(id=>globalThis.XSCHED_UI.slotLabel(id,quick.nextSlot(id,now),now,document.documentElement.lang,navigator.language));
+  const slotLabels=quick.VISIBLE_SLOT_IDS.map(id=>globalThis.XSCHED_UI.slotLabel(id,quick.nextSlot(id,now),now,document.documentElement.lang,navigator.language));
   const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,slotLabels,overviewSyncedAt,overviewStale,overview.formatCount(overviewCache.length, document.documentElement.lang, navigator.language),overview.formatRemaining(overviewCache, now, document.documentElement.lang, navigator.language),overviewCache.map((item) => [item.time, item.preview, overview.formatItemTime(item, document.documentElement.lang, navigator.language)]),items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
@@ -691,7 +691,8 @@ function render(report, items, explicitOpen = false) {
       schedule();
     });
     settings.append(saveRange);quickControls.append(settings);
-    [...quick.SLOT_IDS,'random'].forEach((id,index) => {
+    // Labels and buttons come from the same visible list, so no index can drift.
+    [...quick.VISIBLE_SLOT_IDS,'random'].forEach((id,index) => {
       const label = id==='random' ? `${labels.random} ${quickRange.a}–${quickRange.b}` : slotLabels[index];
       if(!label)return;
       const button = makeButton(label);

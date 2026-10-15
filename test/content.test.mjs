@@ -18,7 +18,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.2.1';
+  let manifest = '0.2.2';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -331,10 +331,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.2.1 (manifest 0.2.1)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.2.2 (manifest 0.2.2)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.2.1 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.2.2 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -343,7 +343,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.2\.1/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.2\.2/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -495,19 +495,19 @@ test('quick controls in real content: trusted fill only, nine-language status an
   try {
     f.click('.shortcut');
     assert.match(f.host().dataset.xschedDiag,/schedDialog=1 dateCtl=3 timeCtl=3 selects=6/);
-    assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,5);
+    assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,4);
     const before=[...f.document.querySelectorAll('select')].map(el=>el.value);
-    f.click('[data-xsched-slot="lunch"]',false);
+    f.click('[data-xsched-slot="evening"]',false);
     assert.deepEqual([...f.document.querySelectorAll('select')].map(el=>el.value),before);
     let change=0,send=0;
     f.document.addEventListener('change',()=>change++);
     for(const el of f.document.querySelectorAll('button,form'))for(const type of ['click','submit'])el.addEventListener(type,()=>send++);
-    f.click('[data-xsched-slot="lunch"]');await waitFill(f);f.flush();
+    f.click('[data-xsched-slot="evening"]');await waitFill(f);f.flush();
     assert.equal(f.document.querySelector('select[name=year]').value,'2028');
-    assert.equal(f.document.querySelector('select[name=minute]').value,'30');
+    assert.equal(f.document.querySelector('select[name=minute]').value,'0');
     assert.equal(change,6);assert.equal(send,0);
     assert.equal(f.shadow().querySelector('.quick-status').textContent,'已填入欄位；尚未排程');
-    assert.match(f.host().dataset.xschedDiag,/fill=ok y=2028 m=1 d=1 h=12 min=30 period=PM/);
+    assert.match(f.host().dataset.xschedDiag,/fill=ok y=2028 m=1 d=1 h=8 min=0 period=PM/);
     const copies=[];f.context.navigator.clipboard={writeText(value){copies.push(value);return Promise.resolve();}};
     f.click('[data-xsched-copy]');assert.equal(copies[0],f.host().dataset.xschedDiag,'copy includes safe successful fill summary');
     // DOM goes partial between render and click: preflight must re-read, not use stale selects.
@@ -541,7 +541,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.2\.1/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.2\.2/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -550,7 +550,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
   f.click('.shortcut');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'true');
   assert.equal(f.shadow().querySelector('section').style.display,'flex');
-  assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,5);
+  assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,4);
 });
 
 test('real picker wiring prefers document language, preserves counts, and exposes unavailable-year/rollback errors',async()=>{
@@ -668,7 +668,7 @@ test('0.1.4 saved tiny height and obstacle shortening cannot collapse quick cont
  const geometry={...globalThis.XSCHED_UI,collectObstacles(){return [{left:0,right:400,top:100,bottom:700}];}};
  const f=fixture('/compose/post','en','../fixtures/quick-dialog.html',clock,geometry,undefined,stored);f.click('.shortcut');
  const panel=f.shadow().querySelector('section'),before=coordinates(f,'section'),button=coordinates(f,'.shortcut');
- assert.equal(parseFloat(before.height),546);assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,5);
+ assert.equal(parseFloat(before.height),546);assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,4);
  f.click('[data-xsched-slot="morning"]');assert.equal(panel.style.height,before.height,'busy render does not shrink');
  await waitFill(f);f.poll();assert.equal(panel.style.height,before.height,'success/failure status does not shrink');
  assert.deepEqual(coordinates(f,'.shortcut'),button);assert.equal(stored.get('xsched.probe.panelHeight'),'{"height":80}','display clamp keeps saved preference');
@@ -691,7 +691,7 @@ test('short viewport caps saved full-height panel above native drawer without lo
   assert.equal(globalThis.XSCHED_UI.overlaps(rect,drawer),false);
   assert.equal(parseFloat(point.height),top-8-point.y);
   assert.equal(f.shadow().querySelector('.panel-body').style.overflow,'auto');
-  assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,5,'quick controls remain in the scrollable body');
+  assert.equal(f.shadow().querySelectorAll('[data-xsched-slot]').length,4,'quick controls remain in the scrollable body');
   f.click('.shortcut');f.click('.shortcut');f.poll();
   assert.deepEqual(coordinates(f,'section'),point,'toggle/poll must not expand back into the drawer');
   assert.deepEqual(buttonBefore(),button,'height clamp never moves the shortcut');
@@ -717,7 +717,7 @@ test('0.1.6 a stored panel point stays when a compose shell crushes the scroll s
  assert.deepEqual({x:coordinates(f,'section').x,y:coordinates(f,'section').y},{x:164,y:124});
 });
 test('0.1.4 observed completion updates max only, persists numeric source, and next list read replaces it',async()=>{
- const clock=()=>new Date(2027,11,31,21),target=new Date(2028,0,1,12,30).getTime();
+ const clock=()=>new Date(2027,11,31,21),target=new Date(2028,0,1,20,0).getTime();
  const prototype=parseHTML('<html></html>').document.defaultView.HTMLSelectElement.prototype,descriptor=Object.getOwnPropertyDescriptor(prototype,'value');
  Object.defineProperty(prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value ?? this.querySelector('option')?.value ?? '';},set(value){for(const option of this.querySelectorAll('option'))option.removeAttribute('selected');for(const option of this.querySelectorAll('option'))if(option.value===value)option.setAttribute('selected','');}});
  try {
@@ -725,7 +725,7 @@ test('0.1.4 observed completion updates max only, persists numeric source, and n
    const original=prior ? {time:prior,readAt:clock().getTime(),source:1} : null;
    const stored=new Map(original ? [['xsched.probe.lastScheduled',JSON.stringify(original)]] : []);
    const f=fixture('/compose/post','zh-Hant','../fixtures/quick-dialog.html',clock,undefined,undefined,stored);f.click('.shortcut');
-   f.click('[data-xsched-slot="lunch"]');await waitFill(f);
+   f.click('[data-xsched-slot="evening"]');await waitFill(f);
    assert.equal(stored.get('xsched.probe.lastScheduled'),original?JSON.stringify(original):undefined,'fill alone never advances cache');
    const native=f.document.getElementById('schedule');native.textContent='Schedule';
    const event=new f.document.defaultView.Event('click',{bubbles:true});Object.defineProperty(event,'isTrusted',{value:true});native.dispatchEvent(event);
@@ -824,7 +824,7 @@ test('P1(d) observed success changes filled status even when a later cache alrea
  const clock=()=>new Date(2027,11,31,21),stored=new Map([['xsched.probe.lastScheduled',JSON.stringify({time:new Date(2028,0,2,20).getTime(),readAt:clock().getTime(),source:1})]]);
  const prototype=parseHTML('<html></html>').document.defaultView.HTMLSelectElement.prototype,descriptor=Object.getOwnPropertyDescriptor(prototype,'value');
  Object.defineProperty(prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value ?? this.querySelector('option')?.value ?? '';},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===value);}});
- try {const f=fixture('/compose/post','en','../fixtures/quick-dialog.html',clock,undefined,undefined,stored);f.click('.shortcut');f.click('[data-xsched-slot="lunch"]');await waitFill(f);f.poll();
+ try {const f=fixture('/compose/post','en','../fixtures/quick-dialog.html',clock,undefined,undefined,stored);f.click('.shortcut');f.click('[data-xsched-slot="evening"]');await waitFill(f);f.poll();
   assert.match(f.shadow().querySelector('.quick-status').textContent,/not scheduled yet/);
   const button=f.document.getElementById('schedule');button.textContent='Schedule';const event=new f.document.defaultView.Event('click',{bubbles:true});Object.defineProperty(event,'isTrusted',{value:true});button.dispatchEvent(event);f.document.querySelector('[role="dialog"]').remove();f.poll();f.poll();
   assert.equal(f.shadow().querySelector('.quick-status').textContent,'Scheduling completion observed');
@@ -1178,4 +1178,20 @@ test('0.2.1 observed Schedule without a prior sync shows that one row as partial
     assert.equal(f.shadow().querySelector('.overview-empty'), null);
     assert.equal(f.shadow().querySelector('.quick-status').textContent, '已觀察到排程完成');
   });
+});
+
+// 0.2.2: the 12:30 quick slot is removed from the panel. Labels and buttons use
+// one list, so every remaining button keeps its own label (no blank or shifted one).
+test('0.2.2 panel shows morning, evening, workday, random only; each label matches its own slot',()=>{
+ const clock=()=>new Date(2027,11,31,21);
+ const f=fixture('/compose/post','en','../fixtures/quick-dialog.html',clock);f.click('.shortcut');
+ const buttons=[...f.shadow().querySelectorAll('[data-xsched-slot]')];
+ assert.deepEqual(buttons.map(b=>b.dataset.xschedSlot),['morning','evening','workday','random']);
+ const Q=globalThis.XSCHED_QUICK,U=globalThis.XSCHED_UI;
+ for(const button of buttons.slice(0,3)){
+  const id=button.dataset.xschedSlot;
+  assert.equal(button.textContent,U.slotLabel(id,Q.nextSlot(id,clock()),clock(),'en','en'),id);
+ }
+ assert.ok(buttons.every(b=>b.textContent.trim()),'no empty button');
+ assert.ok(buttons.every(b=>!/12:30/.test(b.textContent)),'no 12:30 button');
 });

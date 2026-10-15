@@ -118,7 +118,7 @@ function create(doc,options) {
   async function run(entry,event,id) {
     if(!entry)return;
     if(!event?.isTrusted || active || options.quick.isFilling(doc))return;
-    if(![...options.quick.SLOT_IDS,'random'].includes(id))return;
+    if(![...options.quick.VISIBLE_SLOT_IDS,'random'].includes(id))return;
     const settings=options.settings();
     if(id==='random' && ((!settings.cache && !settings.empty) || !options.quick.validRange(settings.range))){report('noCache');return;}
     if(options.quick.detectControls(doc).counts.selects>0){report('dialogMissing');return;}
@@ -164,7 +164,7 @@ function create(doc,options) {
       }
       row.entry=entry; // buttons resolve the latest proven nodes at click time
       const labels=options.labels(),now=new Date(),settings=options.settings();
-      const slots=options.quick.SLOT_IDS.map(id=>({id,label:options.slotLabel(id,options.quick.nextSlot(id,now),now)}));
+      const slots=options.quick.VISIBLE_SLOT_IDS.map(id=>({id,label:options.slotLabel(id,options.quick.nextSlot(id,now),now)}));
       slots.push({id:'random',label:`${labels.random} ${settings.range.a}–${settings.range.b}`});
       const signature=JSON.stringify([slots,status,active,Boolean(settings.cache),Boolean(settings.empty),Boolean(entry.icon),options.quick.isFilling(doc),labels.heading]);
       if(row.signature===signature && row.host.shadowRoot.childNodes.length)continue;
