@@ -25,3 +25,6 @@
 4. `previewOf` 先壓縮連續空白再切 20 字，Scheduled 讀取的 `previewText` 不壓，兩邊前 20 字可能不同。
 5. 同一分鐘兩則：`mergeSnapshots` 以時間為鍵，第二則換掉預覽、則數不加（既有規則）。
 6. 「同一個 dialog 節點事先沒有 select、內容換成 picker」的分支沒有獨立 fixture 鎖住（現有 fixture 是插入新的內層 dialog）。
+
+## 0.2.2 複審第 1 輪 P2（Grok 4.7 high，APPROVE；本輪不修）
+1. `probe/ui.js` 九語 `QUICK_STRINGS.slots` 第二格仍是 `12:30`。畫面不讀這個陣列（標籤由 `slotLabel` 依實際時間組成），`test/quick.test.mjs` 仍要求長度 4。之後若用索引對 `VISIBLE_SLOT_IDS` 會錯位，要一起改。
