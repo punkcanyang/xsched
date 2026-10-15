@@ -73,3 +73,5 @@
 
 - 1280×820：總覽摘要 33px、快速區 337px、面板 592（高於 2/3=546）
 - 1280×600：總覽摘要 33px、快速區 337px、正文可見 378、面板 568（視窗上限）
+
+本輪完整驗證：`npm test` 263/263；`node scripts/verify.mjs` OK（自測數量不減）；`CHROME_PATH=/tmp/cft/chrome/linux-155.0.8059.39/chrome-linux64/chrome` + `env -u DISPLAY` e2e **1583 斷言**全綠（含 014 首屏完整快速區與 020 未捲動總覽）。無關 `docs/v1.0-quick014-*` 已還原；總覽截圖改為未捲動第一屏。
