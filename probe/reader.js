@@ -23,7 +23,7 @@
 (() => {
 "use strict";
 
-const PROBE_VERSION = "0.2.3";
+const PROBE_VERSION = "0.3.0";
 
 // Tab labels that mean "Scheduled". en / ja are from public sources; zh-Hant, zh-Hans
 // and ko are *guesses* (no public source found) and are marked as such in GATE0.md.
@@ -822,6 +822,7 @@ globalThis.XSCHED_READER = {
   isIsolatedTimeElement,
   findScheduledTab,
   readSnapshot,
+  parseRow: parseElement,
   mergeItems,
   buildDiagnostic,
   maskSample,

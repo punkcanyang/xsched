@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<!-- Synthetic 2028 Scheduled list/editor. No account or real post data. -->
+<html lang="en"><meta charset="utf-8"><title>Calendar fixture</title>
+<style>
+body{margin:16px;background:#000;color:#e7e9ea;font:15px/1.4 system-ui} [role=dialog]{max-width:520px;padding:12px;border:1px solid #536471}
+[data-testid=cellInnerDiv]>button{display:block;width:100%;background:#15202b;color:white;padding:12px;border:1px solid #536471;text-align:left}
+#fixture-editor{position:fixed;top:16px;left:16px;background:#15202b;z-index:10}
+</style><body>
+<div role="dialog" aria-label="Unsent posts"><div role="tablist"><div role="tab" aria-selected="true">Scheduled</div></div><div id="sched-list">
+<div data-testid="cellInnerDiv"><button type="button" role="button" data-example="late"><span>Will send on Sat, Jan 1, 2028 at 9:45 AM</span><span data-testid="tweetText">Example later scheduled note with extra text</span></button></div>
+<div data-testid="cellInnerDiv"><button type="button" role="button" data-example="next"><span>Will send on Sun, Jan 2, 2028 at 8:00 PM</span><span data-testid="tweetText">Example next day scheduled note with extra text</span></button></div>
+
+</div></div>
+<div role="dialog" id="fixture-editor" hidden><h2>Native editor fixture</h2><div data-testid="tweetTextarea_0" role="textbox" contenteditable="true"></div><button type="button" data-send="update">Update</button><button type="button" data-send="schedule">Schedule</button><button type="button" data-send="delete">Delete</button><button type="button" data-send="post">Post</button></div>
+<script>
+window.fixtureCalendar={rows:[],update:0,schedule:0,delete:0,post:0};
+for(const row of document.querySelectorAll('[data-example]'))row.addEventListener('click',()=>{
+ window.fixtureCalendar.rows.push(row.dataset.example);
+ const editor=document.getElementById('fixture-editor');editor.hidden=false;editor.dataset.editing=row.dataset.example;
+ editor.querySelector('[role=textbox]').textContent=row.querySelector('[data-testid=tweetText]').textContent;
+});
+for(const button of document.querySelectorAll('[data-send]'))button.addEventListener('click',()=>window.fixtureCalendar[button.dataset.send]++);
+</script></body></html>

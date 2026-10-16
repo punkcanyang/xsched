@@ -94,6 +94,9 @@ async function until(fn, label, timeout = 15000) {
 }
 
 // ── fixture server ─────────────────────────────────────────────────────────────
+// Only new calendar scenarios select which synthetic list a fixed user-requested
+// Scheduled navigation returns. Never redirect or change the production target.
+let scheduledFixture = 'en';
 function serveFixture(req, res) {
   let url;
   try {
@@ -107,7 +110,7 @@ function serveFixture(req, res) {
     return;
   }
   const name = url.searchParams.get("fixture")
-    || (url.pathname === "/home" ? "home" : "en");
+    || (url.pathname === "/home" ? "home" : url.pathname === '/compose/post/unsent/scheduled' ? scheduledFixture : "en");
   if (!/^[a-zA-Z-]+$/.test(name) && name !== 'quick013-scheduled') {
     res.writeHead(400).end("bad fixture");
     return;
@@ -386,7 +389,7 @@ async function main() {
       return s.count === 2 && s.expanded === 'true' ? s : null;
     }, 'shortcut Scheduled defaults open');
     assert(scheduled.shortcut && scheduled.panelVisible, 'Scheduled mounts Dagaz path and open panel');
-    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.2.3 (manifest 0.2.3)', 'diagnostic first line includes both versions');
+    assert(scheduled.diag.split('\n')[0] === 'xsched probe v0.3.0 (manifest 0.3.0)', 'diagnostic first line includes both versions');
     await checkAuthorLink('Scheduled author');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-author-link-scheduled.png') });
     await checkNative('desktop scheduled open');
@@ -462,14 +465,14 @@ async function main() {
       chrome.runtime.getManifest = () => ({version: '0.0.2'});
     ` });
     await until(async () => (await probeState(page)).version.includes('⚠ 版本不符'), 'manifest mismatch warning');
-    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.2.3 / manifest 0.0.2'), 'diagnostic mismatch warning');
+    assert((await probeState(page)).diag.split('\n')[0].includes('script 0.3.0 / manifest 0.0.2'), 'diagnostic mismatch warning');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-version-mismatch.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: `chrome.runtime.getManifest = () => { throw new Error('Extension context invalidated. private account'); };` });
     await until(async () => (await probeState(page)).version.includes('擴充已重新載入'), 'context invalidated warning');
     assert(!(await probeState(page)).diag.includes('private account'), 'runtime exception is never copied into diagnostic');
     await page.screenshot({ path: join(DOCS, 'v1.0-quick014-runtime-invalidated.png') });
     await network.send('Runtime.evaluate', { contextId: versionContext, expression: 'chrome.runtime.getManifest = globalThis.__originalManifest;' });
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.2.3 (manifest 0.2.3)'), 'runtime warning clears');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.3.0 (manifest 0.3.0)'), 'runtime warning clears');
 
     // Reproduce an actual 0.0.2 reader/content session in another isolated world.
     // Historical sources are read from the task's base commit, never downloaded.
@@ -484,7 +487,7 @@ async function main() {
     await until(async () => (await probeState(page)).diag.startsWith('xsched-gate0 v0.0.2'), 'actual old host visible');
     const takeover = await network.send('Runtime.evaluate', { contextId: versionContext, expression: readFileSync(join(PROBE, 'content.js'), 'utf8') });
     assert(!takeover.exceptionDetails, 'new script reinjection avoids top-level const collisions');
-    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.2.3'), 'new script takes over old UI');
+    await until(async () => (await probeState(page)).diag.startsWith('xsched probe v0.3.0'), 'new script takes over old UI');
     await sleep(1200); // legacy poll has run repeatedly
     assert(await page.evaluate(() => document.querySelectorAll('#xsched-probe-root').length === 1 && [...document.querySelectorAll('[data-xsched-retired]')].every((el) => el.getBoundingClientRect().height === 0)), 'one active UI; legacy stays connected and hidden');
     await page.evaluate(() => document.getElementById('xsched-probe-root').remove());
@@ -778,7 +781,7 @@ async function main() {
     await copyButton.dispose();
     const copied = await network.send("Runtime.evaluate", { contextId: extensionContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(copied.result.value.length === 1, "exactly one clipboard call after user click");
-    assert(/^xsched probe v0\.2\.3 \(manifest 0\.2\.3\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
+    assert(/^xsched probe v0\.3\.0 \(manifest 0\.3\.0\)\nschedDialog=0 dateCtl=0 timeCtl=0 selects=0\nschedWatch=0 schedIntent=0\n(?:\w+=[\w%|.:-]* ?)+\nfmt=none$/.test(copied.result.value[0]), "copied diagnostic preserves counters and excludes uncertified legacy format text even if DOM dataset is tampered");
     console.log("  ✓ clipboard: user click only; copied counters cannot leak DOM dataset text");
 
     // ── 0.1: every selector broken → still mounted, 0 rows, masked samples ─────────
@@ -874,7 +877,7 @@ async function main() {
     const skeletonCopies = await network.send("Runtime.evaluate", { contextId: skeletonContext, expression: "globalThis.__fixtureCopies", returnByValue: true });
     assert(skeletonCopies.result.value.length === 1, `skeleton: expected one clipboard write, got ${skeletonCopies.result.value.length}`);
     const skeleton = skeletonCopies.result.value[0];
-    assert(/^xsched-skeleton v0\.2\.3 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
+    assert(/^xsched-skeleton v0\.3\.0 path=scheduled nodes=\d+\n/.test(skeleton), `skeleton header wrong: ${skeleton.slice(0, 90)}`);
     assert(skeleton.includes("role=dialog"), `skeleton must keep the allow-listed role enum:\n${skeleton.slice(0, 300)}`);
     for (const leak of ["Will send", "Oct 10", "9:00", "Local fixture", "morning product", "weekly recap", "Unsent posts", "Drafts", "fixture", "punkcan", "https://x.com/punkcan"]) {
       assert(!skeleton.includes(leak), `skeleton leaked "${leak}"`);
@@ -892,7 +895,7 @@ async function main() {
       const s = await probeState(page);
       return s.fallback ? s : null;
     }, "skeleton: clipboard-denied fallback textarea");
-    assert(/^xsched-skeleton v0\.2\.3 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
+    assert(/^xsched-skeleton v0\.3\.0 path=scheduled nodes=\d+/.test(fallbackState.fallback), "fallback textarea must hold the skeleton");
     const select = await page.evaluateHandle(() => document.getElementById('xsched-probe-root').shadowRoot.querySelector('[data-xsched-select]'));
     await select.asElement().click();
     await select.dispose();
@@ -1265,7 +1268,7 @@ async function main() {
       const initial=await until(async()=>{
         const state=await probeState(page);
         return state.present && state.mounted==='1' && state.mode==='other'
-          && state.diag.startsWith('xsched probe v0.2.3 (manifest 0.2.3)\n') ? state : null;
+          && state.diag.startsWith('xsched probe v0.3.0 (manifest 0.3.0)\n') ? state : null;
       },'quick picker first diagnostic rendered: '+name);
       assert(initial.expanded==='false' && initial.panelVisible===false,'quick picker starts rendered and closed before its single toggle: '+name);
       await installQuickClock(contextId);
@@ -1303,7 +1306,7 @@ async function main() {
       assert(filled.status==='Fields filled; not scheduled yet','fill is not reported as scheduled');
       if(id==='evening')await page.screenshot({path:join(DOCS,'v1.0-quick014-slot-filled.png')});
     }
-    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.2.3'),'new diagnostic available');
+    await until(async()=> (await probeState(page)).diag.startsWith('xsched probe v0.3.0'),'new diagnostic available');
     await network.send('Runtime.evaluate',{contextId:quickContext,expression:`globalThis.__quickCopies=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText(text){globalThis.__quickCopies.push(text);return Promise.resolve();}}});`});
     await clickShadow('[data-xsched-copy]');await clickShadow('[data-xsched-skeleton]');
     const exported=await network.send('Runtime.evaluate',{contextId:quickContext,expression:'globalThis.__quickCopies',returnByValue:true});
@@ -1980,6 +1983,9 @@ async function main() {
       assert(hit.ok, `${label}: unscrolled overview lead intersects panel body ${JSON.stringify(hit)}`);
     }
     async function overviewWalk(index) {
+      // 0.3.0 persists across full navigation. This walkthrough explicitly starts
+      // with no calendar data so the existing unsynced-state assertions still apply.
+      await page.evaluate(() => window.localStorage.removeItem('xsched.probe.calendar'));
       await open('home', '/home');
       const empty = await until(async () => {
         const state = await probeState(page);
@@ -2003,7 +2009,7 @@ async function main() {
         return state.count === 5 && state.mode === 'scheduled' && state.expanded === 'true' ? state : null;
       }, '020 overview fixture live list '+index);
       assert(JSON.stringify(live.times) === JSON.stringify(liveTimes), '020 live list keeps DOM order');
-      assert(live.overview === 5, '020 live read fills the in-memory overview cache');
+      assert(live.overview === 5, '020 live read fills the local overview cache');
       assert(live.overviewHeading === 'Scheduled overview', '020 heading is present on Scheduled');
       assert(live.overviewSync.startsWith('Last synced: 202'), '020 last sync time is a formatted date');
       assert(live.overviewCount === '5 scheduled', '020 scheduled page shows the cached total');
@@ -2062,6 +2068,7 @@ async function main() {
       return state.mode === 'scheduled' && state.count === 1 && state.overviewStale ? state : null;
     }, '020 short virtual window keeps full cache');
     assert(short.overview === 5 && short.overviewCount === '5 scheduled', '020 one-row virtual snapshot retains all five cached posts');
+    assert(await page.evaluate(()=>{const saved=JSON.parse(window.localStorage.getItem('xsched.probe.calendar'));return saved.items.length===5 && saved.partial===true;}),'030 short virtual snapshot also retains five persisted posts');
     assert(JSON.stringify(short.overviewTimes) === JSON.stringify(overviewTimes), '020 short window preserves every cached date');
     assert(JSON.stringify(short.overviewPreviews) === JSON.stringify(['Rewritten morning no', 'Synthetic lunchtime ', 'Short window replace', 'Synthetic year-end f', 'Synthetic new year m']), '020 short window updates current text without restoring an old preview');
     await page.evaluate(() => history.replaceState({}, '', '/home'));
@@ -2085,6 +2092,7 @@ async function main() {
     }, '020 confirmed empty overview');
     assert(confirmed.overviewEmpty.startsWith('Cache is empty: synced') && confirmed.overviewSync.startsWith('Last synced:'), '020 confirmed empty has its own notice and a real overview synchronization time');
     assert(confirmed.overviewNext === '' && confirmed.overviewStale === '', '020 confirmed empty clears countdown and stale notice');
+    assert(await page.evaluate(()=>{const saved=JSON.parse(window.localStorage.getItem('xsched.probe.calendar'));return saved.items.length===0 && saved.partial===false && saved.syncedAt>0;}),'030 complete empty synchronization removes old persisted posts');
     await assertOverviewLeadVisible('020 confirmed empty');
     await page.screenshot({path:join(DOCS,'v1.0-overview-confirmed-empty.png')});
     console.log('  ✓ 020: empty prompt, live list, SPA cache, AM/PM/cross-year sort, three consecutive walkthroughs');
@@ -2105,7 +2113,7 @@ async function main() {
     await page.setViewport({ width: 1280, height: 820 });
     for (let walk = 1; walk <= 3; walk++) {
       const [id, day, hour, minute, period, overviewTime] = fix021Slots[walk - 1];
-      await page.evaluate(() => { window.localStorage.removeItem('xsched.probe.panelPos'); window.localStorage.removeItem('xsched.probe.pos'); });
+      await page.evaluate(() => { window.localStorage.removeItem('xsched.probe.panelPos'); window.localStorage.removeItem('xsched.probe.pos'); window.localStorage.removeItem('xsched.probe.calendar'); });
       // (1) Home "For you" modal: the icon swaps the same dialog to the picker.
       await open('quick-composer-modal', '/home');
       const modalContext = await until(findExtensionContext, '021 modal isolated world ' + walk);
@@ -2139,9 +2147,22 @@ async function main() {
       assert(updated.overviewTimes[0] === overviewTime && updated.overviewPreviews[0] === 'A synthetic modal dr', `021 overview row has the dialog time and first 20 characters ${JSON.stringify([updated.overviewTimes, updated.overviewPreviews])}`);
       assert(updated.overviewCount === '1 scheduled' && updated.overviewNext.startsWith('Next in') && updated.overviewSync === '' && updated.overviewStale !== '', '021 count and countdown update at once; unsynced list is marked partial, no fake sync time');
       assert(await page.evaluate(() => location.pathname === '/home' && document.getElementById('xsched-probe-root').shadowRoot.querySelector('.quick-status').textContent === 'Scheduling completion observed' && JSON.parse(window.localStorage.getItem('xsched.probe.lastScheduled') || 'null')?.source === 2), '021 status line updated without visiting Scheduled');
-      assert(await page.evaluate(() => Object.keys(window.localStorage).every((key) => !String(window.localStorage.getItem(key)).includes('synthetic modal'))), '021 draft text is never stored');
+      assert(await page.evaluate(() => {
+        const saved=JSON.parse(window.localStorage.getItem('xsched.probe.calendar'));
+        return saved.version===1 && saved.syncedAt===0 && saved.partial===true && saved.items.length===1
+          && Object.keys(saved).sort().join('|')==='items|partial|syncedAt|version'
+          && saved.items[0].preview==='A synthetic modal dr' && typeof saved.items[0].time==='number'
+          && Object.keys(saved.items[0]).sort().join('|')==='preview|time'
+          && Object.keys(window.localStorage).every(key=>key==='xsched.probe.calendar' || !String(window.localStorage.getItem(key)).includes('synthetic modal'));
+      }), '021 only the authorized calendar key stores the 20-character preview, not the full draft');
       assert(await page.evaluate(() => window.fixtureSend.schedule === 1 && window.fixtureSend.submit === 0 && window.fixtureSend.post === 0), '021 only the simulated user Schedule click');
       if (walk === 1) await page.screenshot({ path: join(DOCS, 'v1.0-fix021-overview-updated.png') });
+      if (walk===1) {
+        await page.reload({waitUntil:'domcontentloaded'});
+        const restored=await until(async()=>{const state=await probeState(page);return state.overview===1?state:null;},'030 observed Schedule survives full reload');
+        if(restored.expanded!=='true')await toggle(true);
+        assert((await probeState(page)).overviewPreviews[0]==='A synthetic modal dr','030 observed preview survives reload');
+      }
       // (2) /compose/post composer: a slot really changes the time.
       await open('quick-composer', '/compose/post');
       const postContext = await until(findExtensionContext, '021 compose/post isolated world ' + walk);
@@ -2157,6 +2178,82 @@ async function main() {
     }
     console.log('  ✓ 021: modal composer and /compose/post slots change the time 3×; panel open/close/drag; Schedule updates overview without Scheduled');
 
+    // ── 0.3.0: persisted calendar, day groups, month grid, one-use native row edit ─
+    async function clickCalendar(selector) {
+      const handle=await page.evaluateHandle(selector=>document.getElementById('xsched-probe-root')?.shadowRoot.querySelector(selector),selector);
+      try { const element=handle.asElement();assert(Boolean(element),'030 calendar control exists: '+selector);await element.scrollIntoView();await element.click(); }
+      finally { await handle.dispose(); }
+    }
+    const calendarState=()=>page.evaluate(()=>{
+      const shadow=document.getElementById('xsched-probe-root')?.shadowRoot;
+      return {days:[...shadow.querySelectorAll('.calendar-day')].map(el=>el.dataset.calendarDate),
+        times:[...shadow.querySelectorAll('.calendar-view .calendar-time')].map(el=>el.textContent),
+        gaps:[...shadow.querySelectorAll('.calendar-view .calendar-gap')].map(el=>el.textContent),
+        cells:shadow.querySelectorAll('.calendar-full [role="gridcell"]').length,
+        status:shadow.querySelector('.calendar-status')?.textContent||'',old:shadow.querySelector('.calendar-old')?.textContent||''};
+    });
+    async function openCalendarPanel() {
+      const state=await until(async()=>{const state=await probeState(page);return state.present && state.mode && state.diag.startsWith('xsched probe v0.3.0')?state:null;},'030 panel mounted');
+      if(state.expanded!=='true')await toggle(true);
+    }
+    await page.setViewport({width:1280,height:820});
+    await open('calendar');
+    await until(async()=>(await probeState(page)).overview===3,'030 three synthetic schedules synchronized');
+    const storedCalendar=await page.evaluate(()=>window.localStorage.getItem('xsched.probe.calendar'));
+    assert(JSON.parse(storedCalendar).items.length===3 && JSON.parse(storedCalendar).items.every(item=>Object.keys(item).sort().join('|')==='preview|time' && typeof item.time==='number' && Array.from(item.preview).length<=20),'030 persisted schema has only bounded previews and numeric times');
+    await open('home','/home');await openCalendarPanel();
+    assert((await probeState(page)).overview===3 && (await probeState(page)).overviewSync.startsWith('Last synced:'),'030 full navigation restores persisted overview and synchronization time');
+    await page.reload({waitUntil:'domcontentloaded'});await openCalendarPanel();
+    assert((await probeState(page)).overview===3 && await page.evaluate(raw=>window.localStorage.getItem('xsched.probe.calendar')===raw,storedCalendar),'030 home reload restores exact snapshot without background synchronization');
+    await clickCalendar('.calendar-toggle');
+    const groupedCalendar=await calendarState();
+    assert(JSON.stringify(groupedCalendar.days)===JSON.stringify(['2028-01-01','2028-01-02']),'030 calendar groups local dates');
+    assert(JSON.stringify(groupedCalendar.times)===JSON.stringify(['09:00','09:45','20:00']),'030 calendar sorts within each date');
+    assert(JSON.stringify(groupedCalendar.gaps)===JSON.stringify(['—','45 minutes since previous','2055 minutes since previous']),'030 minute gaps include the preceding day');
+    await clickCalendar('.calendar-expand');
+    assert((await calendarState()).cells===42,'030 full calendar has a seven-column, six-week day grid');
+    assert(await page.evaluate(()=>{
+      const full=document.getElementById('xsched-probe-root').shadowRoot.querySelector('.calendar-full');const r=full.getBoundingClientRect();
+      return r.left===0 && r.top===0 && r.width===innerWidth && r.height===innerHeight && getComputedStyle(full.querySelector('.calendar-grid')).gridTemplateColumns.split(' ').length===7
+        && [...full.querySelectorAll('[data-calendar-date="2028-01-01"] .calendar-time')].map(el=>el.textContent).join('|')==='09:00|09:45';
+    }),'030 full overlay fills the viewport, with sorted entries inside day cells');
+    await page.screenshot({path:join(DOCS,'v0.3.0-calendar-month.png')});
+    await page.keyboard.press('Escape');assert((await calendarState()).cells===0,'030 Escape closes full calendar');
+    await clickCalendar('.calendar-expand');await clickCalendar('.calendar-close');assert((await calendarState()).cells===0,'030 close button closes full calendar');
+    // A calendar item on home requests only the same fixed Scheduled navigation.
+    scheduledFixture='calendar';
+    const fixedScheduled='https://x.com/compose/post/unsent/scheduled';
+    navigations.add(fixedScheduled);userNavigations.add(fixedScheduled);
+    await clickCalendar('.calendar-view [data-calendar-time="'+new Date(2028,0,1,9).getTime()+'"]');
+    await until(()=>page.evaluate(()=>document.getElementById('fixture-editor')?.dataset.editing==='early'),'030 first item opens its native editor after fixed navigation');
+    assert(await page.evaluate(()=>JSON.stringify(window.fixtureCalendar.rows)==='["early"]' && ['update','schedule','delete','post'].every(key=>window.fixtureCalendar[key]===0) && window.sessionStorage.getItem('xsched.probe.calendarTarget')===null),'030 first row is clicked exactly once; no Update/Schedule/Delete/Post; target consumed');
+    await open('calendar');await until(async()=>(await probeState(page)).overview===3,'030 second list synchronized');await openCalendarPanel();
+    await clickCalendar('.calendar-expand');
+    await clickCalendar('.calendar-full [data-calendar-date="2028-01-01"] .calendar-entry:nth-of-type(2)');
+    await until(()=>page.evaluate(()=>document.getElementById('fixture-editor')?.dataset.editing==='late'),'030 different full-grid item opens the other native editor');
+    assert(await page.evaluate(()=>JSON.stringify(window.fixtureCalendar.rows)==='["late"]' && ['update','schedule','delete','post'].every(key=>window.fixtureCalendar[key]===0)),'030 second item clicks only its own row, once, with zero send/delete controls');
+    await open('calendar-ambiguous');await until(async()=>(await probeState(page)).overview===4,'030 ambiguous fixture read');await openCalendarPanel();await clickCalendar('.calendar-toggle');
+    await clickCalendar('.calendar-view [data-calendar-time="'+new Date(2028,0,1,9).getTime()+'"]');
+    assert(await page.evaluate(()=>window.fixtureCalendar.rows.length===0 && ['update','schedule','delete','post'].every(key=>window.fixtureCalendar[key]===0) && [...document.querySelectorAll('[data-example]')].filter(el=>{const style=getComputedStyle(el);return style.outlineColor==='rgb(255, 212, 0)' && style.outlineStyle==='solid' && style.outlineWidth==='3px';}).length===2),'030 ambiguous match highlights exactly two candidates and activates nothing');
+    assert((await calendarState()).status.includes('Multiple matching'),'030 ambiguous status explains manual selection');
+    await open('home','/home');await openCalendarPanel();await clickCalendar('.calendar-toggle');scheduledFixture='calendar-missing';
+    await clickCalendar('.calendar-view [data-calendar-time="'+new Date(2028,0,1,9).getTime()+'"]');
+    await until(async()=>(await calendarState()).status.includes('No matching'),'030 missing match explains manual search');
+    assert(await page.evaluate(()=>location.pathname==='/compose/post/unsent/scheduled' && window.fixtureCalendar.rows.length===0 && ['update','schedule','delete','post'].every(key=>window.fixtureCalendar[key]===0) && window.sessionStorage.getItem('xsched.probe.calendarTarget')===null),'030 no match stays on Scheduled, consumes target, and clicks nothing');
+    scheduledFixture='en';
+    // Synthetic 2027 sync timestamp and future clock for the 24-hour boundary.
+    await page.evaluate(()=>{const saved=JSON.parse(window.localStorage.getItem('xsched.probe.calendar'));saved.syncedAt=new Date(2027,11,30,20).getTime();window.localStorage.setItem('xsched.probe.calendar',JSON.stringify(saved));});
+    await open('home','/home');await openCalendarPanel();
+    await installQuickClock(await until(findExtensionContext,'030 stale isolated context'));
+    await until(async()=>(await calendarState()).old.includes('24 hours'),'030 expired snapshot prompts Scheduled resynchronization');
+    assert((await probeState(page)).overviewSync.includes('2027-12-30 20:00') && (await probeState(page)).target===fixedScheduled,'030 old data retains its real sync time and the existing goto');
+    await clickCalendar('.calendar-toggle');await clickCalendar('.calendar-clear');
+    await until(async()=>(await probeState(page)).overview===0,'030 clear empties memory');
+    assert(await page.evaluate(()=>window.localStorage.getItem('xsched.probe.calendar')===null),'030 clear removes the fixed calendar key');
+    await page.reload({waitUntil:'domcontentloaded'});await openCalendarPanel();
+    assert((await probeState(page)).overview===0 && (await probeState(page)).overviewSync==='','030 cleared data stays absent after reload');
+    console.log('  ✓ 030: persistent calendar, groups/gaps, full month grid, close/Escape, two precise native edits, ambiguous/missing, 24h notice, clear, observed Schedule persistence');
+
     // ── network discipline ─────────────────────────────────────────────────────
     assert(denied.length === 0, `unexpected request(s) blocked: ${denied.join(", ")}`);
     for (const event of requests) {
@@ -2165,10 +2262,10 @@ async function main() {
     // The overlay only exists if the content script ran, which only happens if the
     // extension was loaded from probe/.
     assert(sawOverlay, "extension content script never ran (overlay never appeared)");
-    assert(requests.filter((event) => event.type === "Document" && event.request.url === 'https://x.com/compose/post/unsent/scheduled').length === 1, 'exactly one explicitly clicked goto navigation; no repeated automatic navigation');
+    assert(requests.filter((event) => event.type === "Document" && event.request.url === 'https://x.com/compose/post/unsent/scheduled').length === 3, 'exactly one goto plus two explicit calendar-item navigations; no repeated automatic navigation');
     const resources = requests.filter((event) => hasExtensionInitiator(event.initiator) && !(event.type === "Document" && userNavigations.has(event.request.url)));
     assert(resources.length === 0, 'zero extension resource/background requests (clicked goto is page navigation)');
-    console.log(`  ✓ network: ${requests.length} local fixture/favicon/page navigation request(s); 0 extension resource/background requests; 1 user-triggered goto navigation`);
+    console.log(`  ✓ network: ${requests.length} local fixture/favicon/page navigation request(s); 0 extension resource/background requests; 1 goto and 2 user-triggered calendar navigations`);
 
     assert(!consoleLogs.some((entry) => entry.startsWith("pageerror ")), "no uncaught page/content-script errors");
     console.log(`\ne2e: OK — ${assertions} assertions`);

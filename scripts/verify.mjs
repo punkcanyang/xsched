@@ -24,6 +24,19 @@ const DOCS = join(ROOT, "docs");
 // Fixed numeric keys, plus the authorized JSON boolean xsched.probe.panelOpen.
 // Any edit requires review and an explicit digest update; filename alone grants nothing.
 const POSITION_SOURCE_SHA256 = "49cde823f66f1adb67c305ffb522c9a83115a006e730c9f201cfee564bd38170";
+// 0.3.0 authorization: one versioned calendar key and one expiring edit target.
+// Only these exact expressions in the exact root module bypass storage checks.
+const CALENDAR_STORE_SHA256 = "5e394d070ca104eea87e07213a2aabbf6a4d65f0ab5c2b8c65ec18185fdd1746";
+const CALENDAR_SOURCE_SHA256 = "b5d05d04d981b6e09fa26f905ad74acad5787cac5e4a6e788c9a9a8d480e2909";
+const CALENDAR_CLICK_STATEMENT = "    row.click();";
+const CALENDAR_STORAGE_EXPRESSIONS = [
+  'window.localStorage.getItem(DATA_KEY)',
+  'window.localStorage.setItem(DATA_KEY, raw)',
+  'window.localStorage.removeItem(DATA_KEY)',
+  'window.sessionStorage.getItem(TARGET_KEY)',
+  'window.sessionStorage.setItem(TARGET_KEY, JSON.stringify(copy))',
+  'window.sessionStorage.removeItem(TARGET_KEY)',
+];
 
 // Exact-source exception only for the sole native select input/change writer.
 const COMPOSER_SOURCE_SHA256 = "dca9657183432618fe19aed35a6ad8a07788ed7823d693858f9c83a079027f3c";
@@ -36,7 +49,7 @@ const QUICK_SOURCE_SHA256 = "9bbc9bebad90623f53527104a4c6e0d5297a4ddb577b0d4d8d8
 // aliases, fake documents, shadowed bindings and changes to the returned element.
 // Any edit to either module requires review before updating these digests.
 const AUTHOR_UI_SHA256 = "5eb978a06ed129bbb4345d3218fb108ce3fcf81cf3b5bbd219dadc66795736b0";
-const AUTHOR_CONTENT_SHA256 = "18c53ff1c04acc89677355eb947c0c60c6e5fd0c9c94b8b7669cc1f84308e02d";
+const AUTHOR_CONTENT_SHA256 = "f1b33b2625ec5c3c6608723229a9401da26182bca85ac0e296bfdbc54f6f94a8";
 const AUTHOR_LINK_SOURCE = `function createAuthorLink() {
   const link = document.createElement('a');
   if (link.tagName !== 'A') throw new Error('Expected author anchor');
@@ -395,6 +408,10 @@ export function scanSource(text, label, { positionModule = false, quickModule = 
   const digest = createHash('sha256').update(text).digest('hex');
   const auditedQuick = quickModule && label === 'probe/quick.js' && digest === QUICK_SOURCE_SHA256;
   const auditedComposer = label === 'probe/composer.js' && digest === COMPOSER_SOURCE_SHA256;
+  const auditedCalendarStore = label === 'probe/calendar-store.js' && digest === CALENDAR_STORE_SHA256;
+  const auditedCalendar = label === 'probe/calendar.js' && digest === CALENDAR_SOURCE_SHA256;
+  if (label === 'probe/calendar-store.js' && !auditedCalendarStore) errors.push(`${label}: calendar storage differs from reviewed source`);
+  if (label === 'probe/calendar.js' && !auditedCalendar) errors.push(`${label}: calendar activation differs from reviewed source`);
   if(label === 'probe/composer.js' && !auditedComposer)errors.push(`${label}: composer activation differs from reviewed source`);
   // Main 0.1.1 writes the field map through a nested computed index, not a
   // destructuring target. Omit only this statement in the exact audited module;
@@ -450,12 +467,21 @@ export function scanSource(text, label, { positionModule = false, quickModule = 
   // patterns; inspecting only a scalar `document = ...` misses that case.
   if (new RegExp(String.raw`\b(?:document|createElement)\s*(?:${targetEnd}${writeOperator}|[)}\]\s]*\b(?:of|in)\b)|\b(?:const|let|var|function|class)\s+document\b|\b(?:const|let|var)\s*[\[{][^;]*\bdocument\b`).test(canonical)) errors.push(`${label}: document/element factory mutation forbidden`);
   if (/\b(?:createAuthorLink|XSCHED_UI)\b/.test(canonical) && !auditedAuthorUi && !auditedAuthorContent) errors.push(`${label}: author factory references are restricted to reviewed UI/content`);
-  const activationChecked=auditedComposer ? text.replace(COMPOSER_CLICK_STATEMENT,'') : text;
+  const activationChecked=auditedComposer ? text.replace(COMPOSER_CLICK_STATEMENT,'') : auditedCalendar ? text.replace(CALENDAR_CLICK_STATEMENT,'') : text;
+  let storageChecked = text;
+  if (auditedCalendarStore) for (const expression of CALENDAR_STORAGE_EXPRESSIONS) storageChecked = storageChecked.replaceAll(expression, '0');
+  // canonicalSource is pure. Reuse each identical view rather than normalizing
+  // the entire module again for every banned rule (including boundary attacks).
+  const activationCanonical = activationChecked === text ? canonical : canonicalSource(activationChecked);
+  const storageCanonical = storageChecked === text ? canonical : canonicalSource(storageChecked);
   for (const rule of BANNED) {
     if (auditedQuick && rule.name === "native event dispatch outside audited writer") continue;
     if (auditedPosition && ['persistent storage','storage accessor/alias'].includes(rule.name)) continue;
     const authorAttribute = rule.name === 'resource attribute';
-    if (rule.re.test(authorAttribute ? checked : activationChecked) || rule.re.test(authorAttribute ? checkedCanonical : canonicalSource(activationChecked))) errors.push(`${label}: contains banned API "${rule.name}"`);
+    const storageRule = ['persistent storage','storage accessor/alias'].includes(rule.name);
+    const source = storageRule ? storageChecked : authorAttribute ? checked : activationChecked;
+    const normalized = storageRule ? storageCanonical : authorAttribute ? checkedCanonical : activationCanonical;
+    if (rule.re.test(source) || rule.re.test(normalized)) errors.push(`${label}: contains banned API "${rule.name}"`);
   }
   const navigation = canonical.replace(/\blocation\.assign\(["']https:\/\/x\.com\/compose\/post\/unsent\/scheduled["']\)/g, "");
   if (/\blocation\s*(?:=|\.\s*(?:assign|replace)\s*\(|\.\s*(?:href|pathname|search|hash)\s*=)/.test(navigation)) errors.push(`${label}: only the fixed Scheduled navigation is allowed`);
@@ -1215,7 +1241,49 @@ export function cssResourceSelfTest() {
   return cases.length;
 }
 
+export function calendarBoundarySelfTest() {
+  const store=readFileSync(join(PROBE,'calendar-store.js'),'utf8');
+  const calendar=readFileSync(join(PROBE,'calendar.js'),'utf8');
+  for (const [source,label] of [[store,'probe/calendar-store.js'],[calendar,'probe/calendar.js']]) {
+    if (scanSource(source,label).length) throw new Error('calendar self-test: audited source rejected');
+  }
+  const attacks = [
+    [store,'probe/renamed.js'],[store,'probe/nested/calendar-store.js'],
+    [calendar,'probe/renamed.js'],[calendar,'probe/nested/calendar.js'],
+    [store.replace("'xsched.probe.calendar'","'xsched.probe.other'"),'probe/calendar-store.js'],
+    [store.replace("'xsched.probe.calendarTarget'","'xsched.probe.otherTarget'"),'probe/calendar-store.js'],
+    [store.replace('copy.version !== 1','copy.version !== 2'),'probe/calendar-store.js'],
+    [store.replace('Array.from(copy.preview).length <= 20','true'),'probe/calendar-store.js'],
+    [store.replace('copy.expiresAt > now','true'),'probe/calendar-store.js'],
+    [store.replace('window.sessionStorage.removeItem(TARGET_KEY);','void 0;'),'probe/calendar-store.js'],
+    [store+'\nwindow.localStorage.setItem("secret", "body");','probe/calendar-store.js'],
+    [store+'\nwindow.sessionStorage.setItem("secret", "body");','probe/calendar-store.js'],
+    [store+'\nchrome.storage.local.set({body:"text"});','probe/calendar-store.js'],
+    [store+'\nfetch("https://example.invalid/");','probe/calendar-store.js'],
+    [calendar.replace(CALENDAR_CLICK_STATEMENT,'    row.click(); row.click();'),'probe/calendar.js'],
+    [calendar.replace('row.click();','row.submit();'),'probe/calendar.js'],
+    [calendar.replace('row.click();','document.querySelector("button").click();'),'probe/calendar.js'],
+    [calendar.replace('if (!event.isTrusted ||','if (false ||'),'probe/calendar.js'],
+    [calendar.replace('matches.length!==1','matches.length<1'),'probe/calendar.js'],
+    [calendar.replace('current.length!==1','current.length<1'),'probe/calendar.js'],
+    [calendar.replace('!report.tab ||',''),'probe/calendar.js'],
+    [calendar.replace('scope===doc.body','false'),'probe/calendar.js'],
+    [calendar.replace("node.closest('form') || node.disabled",'false'),'probe/calendar.js'],
+    [calendar.replace("node.getAttribute('type')!=='button'",'false'),'probe/calendar.js'],
+    [calendar.replace('const target=pending;pending=null;unmark();','const target=pending;unmark();'),'probe/calendar.js'],
+    [calendar+'\nform.requestSubmit();','probe/calendar.js'],
+    [calendar+'\nwindow.localStorage.setItem("secret","body");','probe/calendar.js'],
+    [calendar+'\nrow.dispatchEvent(new Event("change"));','probe/calendar.js'],
+    ['row.click();','probe/reader.js'],
+    ['window.sessionStorage.getItem("xsched.probe.calendarTarget");','probe/content.js'],
+    ['window.localStorage.getItem("xsched.probe.calendar");','probe/overview.js'],
+  ];
+  for (const [source,label] of attacks) if (!scanSource(source,label).length) throw new Error('calendar self-test: altered/renamed capability allowed');
+  return attacks.length;
+}
+
 function selfTest() {
+  const calendarCases = calendarBoundarySelfTest();
   const violations = [
     'location.assign("https://evil.example/")', 'location.replace("/home")', 'location = "/home"',
     'a.setAttributeNS(null, "href", "https://evil.example/")',
@@ -1305,7 +1373,7 @@ function selfTest() {
     for (const source of svgCases) if (!checkLogoSvg(source, "self-test SVG").length) throw new Error("self-test: missed unsafe SVG");
     if (checkLogoSvg(svg('<defs><clipPath id="local"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#local)"><path d="M0 0"/></g>')).length) throw new Error("self-test: rejected internal SVG clipPath");
     const attack = attackSelfTest();
-    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases, destructuring:destructuringCases, resource:resourceCases, css:cssCases };
+    return { source: violations.length, icons: iconCases.length, svg: svgCases.length, attack: attack.secrets, storage:storageCases, native:nativeCases, author:authorCases, url:urlCases, boundary:boundaryCases, destructuring:destructuringCases, resource:resourceCases, css:cssCases, calendar:calendarCases };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1336,7 +1404,7 @@ function main() {
     for (const problem of problems) console.error("  ✖ " + problem);
     process.exit(1);
   }
-  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary, ${selfTests.destructuring} destructuring self-tests; ${selfTests.resource} resource property self-tests; ${selfTests.css} CSS resource self-tests; no banned APIs, minimal permissions.`);
+  console.log(`verify: OK — ${scanned} files under probe/ and ${logos.scanned} Logo B SVGs scanned; ${selfTests.source} API bypass, ${selfTests.icons} icon, ${selfTests.svg} SVG, ${selfTests.attack} leak, ${selfTests.storage} storage, ${selfTests.native} native writer, ${selfTests.author} author-link, ${selfTests.url} URL mutation, ${selfTests.boundary} author boundary, ${selfTests.destructuring} destructuring self-tests; ${selfTests.resource} resource property self-tests; ${selfTests.css} CSS resource self-tests; ${selfTests.calendar} calendar boundary self-tests; no banned APIs, minimal permissions.`);
 }
 
 // Run static checks before executing even the two pure modules. A prohibited call
