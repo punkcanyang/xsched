@@ -1,3 +1,12 @@
+## 0.2.3：穩定 020 cached short window home（已修碼，待外部完整 e2e 連跑驗證）
+- 根因已用真 content VM 重現：`lastLocation` 原本只由 400ms poll 更新。上次 poll 讀 `/home` 後，測試刪列表節點並切 Scheduled，MutationObserver 的 60ms tick 先讀出短列表；若下一個 poll 前又用 `replaceState` 回 `/home`，poll 比較到兩次都是 `/home` 就不排 tick。`replaceState` 不產生 DOM mutation／popstate，之後一直重畫舊 Scheduled report，mode 卡住。不是等待不足，也不是 isolated world 的 URL 不同步。
+- 修法：只由 tick 記錄這次實際讀取的 URL，poll 比較目前 URL 與最後讀取 URL；初始化不先標成已讀。保留原 60ms／400ms、全部斷言、逾時及 verify 守門，沒有加重試或 CDP 喚醒。
+- 只新增一個直接相關測試：`test/content.test.mjs` 的 `URL polling follows a mutation-driven short Scheduled read between two home polls`，舊碼最後得到 `scheduled`（預期 `other`）而失敗；修正後一次正常 poll 即為 `other`／0 live rows，五則快取與不完整提示仍保留。資料／時鐘為合成 2027+。
+- 版本同步 0.2.3；既有測試只換版本期望字串，沒有改行為斷言。verify 只同步 content SHA；權限／網路／其他摘要不變。
+- 本機驗證：`npm test` 16/16 檔通過；單獨真 content VM 58/58 通過；`npm run verify` 通過，原 1,410 項自測全保留；`git diff --check` 通過。
+- 本機 Chrome e2e 在 fixture server 的 `listen EPERM: operation not permitted 127.0.0.1` 被沙箱擋住，未執行瀏覽器斷言；需外部完整連跑五次確認穩定性。
+- 未產生 docs 變更。依指示嘗試 `git checkout -- docs` 因 `.git/index.lock` 唯讀而失敗；`git clean -fdq docs` 成功，`git status --short --untracked-files=all -- docs` 為空。沒有 commit／push／切分支。
+
 
 ## 0.1.4 使用者走查（2026-10-11 21:31）發現的問題，不在本版範圍
 1. 浮層開著時，用 SPA 切到 Scheduled，但列表還沒載入（0 列）。這時 tick 裡的 `report.empty && !times.length` 會直接清掉快取，連「剛才排的」最後時間也一起清掉。要加防抖，或只在確定列表真的是空的時候才清。建議先在真機確認：X 在載入中時，會不會被讀成空列表。
@@ -28,3 +37,6 @@
 
 ## 0.2.2 複審第 1 輪 P2（Grok 4.7 high，APPROVE；本輪不修）
 1. `probe/ui.js` 九語 `QUICK_STRINGS.slots` 第二格仍是 `12:30`。畫面不讀這個陣列（標籤由 `slotLabel` 依實際時間組成），`test/quick.test.mjs` 仍要求長度 4。之後若用索引對 `VISIBLE_SLOT_IDS` 會錯位，要一起改。
+
+## 0.2.3 複審第 1 輪 P2（Grok 4.7 high，APPROVE；本輪不修）
+1. 新回歸測試先改 pathname 再 mutate，鎖住「tick 讀到 Scheduled 後 poll 誤判沒變」，但沒鎖 e2e 的微順序：observer 排程時 URL 仍是 /home、同一 turn 才 replaceState 到 Scheduled。若有人把 lastLocation 改成在 schedule() 當下寫，現有單元測試仍過、e2e 會回到失敗。可補一支「先 mutate 再改 pathname、再 flush」的測試。

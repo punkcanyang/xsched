@@ -890,12 +890,15 @@ function pendingList(report) {
 function tick() {
   refreshObservedCache();
   const pathname = location.pathname || "";
+  // Track the URL actually read, including ticks triggered before the next poll.
+  // Otherwise /home -> Scheduled (mutation tick) -> /home can look unchanged.
+  lastLocation = `${pathname}${location.search || ""}`;
   const report = readSnapshot(document, { pathname });
   const detected = quick.detectControls(document);
   const detectedSignature = JSON.stringify([detected.counts,detected.ready,detected.reason]);
   if (detectedSignature !== quickSignature && !quick.isFilling(document) && !quick.fillDiagnostic(document)) quickStatus = "";
   quickSignature = detectedSignature;
-  const next = `${pathname}${location.search || ""}|${report.onScheduled}`;
+  const next = `${lastLocation}|${report.onScheduled}`;
   if (next !== session || scopeElement !== report.scopeElement) {cacheSignature = '';listLoadedScope=null;if(report.onScheduled)emptyListConfirmed=false;}
   if (next !== session || scopeElement !== report.scopeElement || (report.empty && report.items.length === 0)) {
     session = next;
@@ -971,7 +974,6 @@ function pollLocation() {
   positionUI();
   const now = `${location.pathname || ""}${location.search || ""}`;
   if (now !== lastLocation) {
-    lastLocation = now;
     schedule();
   }
   if (!host || !host.isConnected) scheduleRemount();
@@ -1020,7 +1022,6 @@ function start() {
   window.addEventListener("popstate", schedule);
   window.addEventListener("resize", onResize);
   pollId = window.setInterval(pollLocation, POLL_MS);
-  lastLocation = `${location.pathname || ""}${location.search || ""}`;
   ensureHost();
   schedule();
 }

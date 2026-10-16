@@ -18,7 +18,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.2.2';
+  let manifest = '0.2.3';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -331,10 +331,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.2.2 (manifest 0.2.2)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.2.3 (manifest 0.2.3)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.2.2 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.2.3 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -343,7 +343,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.2\.2/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.2\.3/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -541,7 +541,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.2\.2/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.2\.3/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -1051,6 +1051,37 @@ test('a shorter virtual window does not replace a longer overview cache', () => 
   assert.equal(f.shadow().querySelector('.overview-count').textContent, '5 scheduled');
 });
 
+
+test('URL polling follows a mutation-driven short Scheduled read between two home polls', () => {
+  const f = fixture('/compose/post/unsent/scheduled', 'en', '../fixtures/overview.html', () => new Date(2027, 0, 1));
+  f.location.pathname = '/home';
+  f.poll();
+  assert.equal(f.host().dataset.xschedMode, 'other');
+
+  // Match e2e 020: enter a short virtual window via a DOM mutation before the
+  // next 400ms URL poll. The mutation's 60ms tick already renders Scheduled.
+  const list = f.document.getElementById('sched-list');
+  const removed = [...list.children].slice(1);
+  for (const cell of removed) cell.remove();
+  list.style.transform = 'translateY(8px)';
+  f.location.pathname = '/compose/post/unsent/scheduled';
+  f.mutate([{ type: 'childList', target: list, addedNodes: [], removedNodes: removed }]);
+  assert.equal(f.host().dataset.xschedMode, 'scheduled');
+  assert.equal(f.host().dataset.xschedCount, '1');
+  assert.equal(f.host().dataset.xschedOverview, '5');
+
+  // replaceState itself produces no DOM mutation or popstate. One normal poll
+  // must notice this return even though its previous sample was also /home.
+  f.location.pathname = '/home';
+  f.poll();
+  assert.equal(f.host().dataset.xschedMode, 'other');
+  assert.equal(f.host().dataset.xschedCount, '0');
+  assert.equal(f.host().dataset.xschedOverview, '5');
+  f.click('.shortcut');
+  assert.equal(f.shadow().querySelectorAll('.time').length, 0);
+  assert.equal(f.shadow().querySelectorAll('.overview-time').length, 5);
+  assert.ok(f.shadow().querySelector('.overview-stale'));
+});
 
 test('overview leads the unscrolled content before quick controls', () => {
   for (const [path, file] of [['/home', '../fixtures/home.html'], ['/compose/post/unsent/scheduled', '../fixtures/overview.html']]) {

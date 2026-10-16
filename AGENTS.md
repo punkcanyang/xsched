@@ -111,6 +111,15 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 
 找不到圖示顯示停用提示；未找到新視窗零填值；writer 失敗沿用整組還原及還原不完整提示。只准代點圖示，不能代點關閉：若 X 已打開視窗，錯誤後仍保留原欄位讓使用者自行關閉，不能偷偷按取消或改 X DOM 來關掉。這是「不留半填狀態」的界線。
 
+## 0.2.3：SPA URL 讀取與輪詢競態修正
+
+- 根因：`lastLocation` 只記錄上一次 400ms poll 的 URL。`/home` → DOM 變動並切 Scheduled → MutationObserver 的 60ms tick 先讀取短列表 → 下一次 poll 前 `replaceState` 回 `/home`，poll 見 URL 與舊樣本相同就不再排 tick。`replaceState` 沒有 DOM mutation／popstate，mode 因而長期停在 Scheduled；不是 tick 節流過慢或 Chrome isolated world 必須被 CDP 喚醒。
+- 修法：`probe/content.js` 由 tick 記錄實際讀取的 pathname＋search，poll 只比較當前 URL 與這份記錄；start 不把尚未讀取的 URL 當作已讀。原 60ms 節流／400ms poll、重掛、快取與零送出規則保留。不加重試、不拉長等待、不改 fixture 或 e2e 步驟。產品行為只修正快速往返 SPA 時使用舊 report 的問題，既有行為斷言無須修改。
+- `npm test` 只新增一個直接相關真 content VM 回歸：`URL polling follows a mutation-driven short Scheduled read between two home polls`。固定先讀完整五則、poll 到首頁、DOM mutation 讀短虛擬窗口（中間不 poll）、再回首頁；舊碼最後是 `scheduled` 而失敗，修正後一次 poll 即為 `other`／0 live rows，五則總覽與不完整提示保留。新增時鐘／資料均 2027+，不新增測試重試。
+- 版本為 0.2.3，package／lockfile／manifest／reader／skeleton／README 及 test／e2e 版本期望同步，含 regex 跳脫。`scripts/verify.mjs` 只更新 AUTHOR_CONTENT_SHA256，其他摘要、規則與全部自測數量不變；不增權限、storage、網路請求或花費。
+- 本機 `npm test` 16/16 檔、單獨 content VM 58/58、`npm run verify`（1,410 項原自測）與 `git diff --check` 通過。
+- 本機 `npm run e2e` 在 fixture server 的 `listen EPERM: operation not permitted 127.0.0.1` 被沙箱擋住，未執行瀏覽器斷言，不能宣稱完整 e2e 已通過；待外部連續完整跑五次。e2e 產物照指示還原／清理 docs，既有截圖不帶入本版。
+
 ## 排程總覽 0.2.0
 
 - 只做總覽。老闆在任何 x.com 頁面打開 Dagaz，就能看到上次讀 Scheduled 列表留下的記憶體快取：依時間排序的日期、時分、上下午、跨年與前 20 字摘要，以及最後同步時間。快取是空的時候顯示「去 Scheduled 頁同步一次」的提示，並沿用既有固定 `location.assign` 按鈕。整頁重新整理後快取清空，需再同步。不把本文、帳號或網址寫進 localStorage；不新增 storage key 或權限。
