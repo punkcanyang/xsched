@@ -37,3 +37,6 @@
 
 ## 0.2.2 複審第 1 輪 P2（Grok 4.7 high，APPROVE；本輪不修）
 1. `probe/ui.js` 九語 `QUICK_STRINGS.slots` 第二格仍是 `12:30`。畫面不讀這個陣列（標籤由 `slotLabel` 依實際時間組成），`test/quick.test.mjs` 仍要求長度 4。之後若用索引對 `VISIBLE_SLOT_IDS` 會錯位，要一起改。
+
+## 0.2.3 複審第 1 輪 P2（Grok 4.7 high，APPROVE；本輪不修）
+1. 新回歸測試先改 pathname 再 mutate，鎖住「tick 讀到 Scheduled 後 poll 誤判沒變」，但沒鎖 e2e 的微順序：observer 排程時 URL 仍是 /home、同一 turn 才 replaceState 到 Scheduled。若有人把 lastLocation 改成在 schedule() 當下寫，現有單元測試仍過、e2e 會回到失敗。可補一支「先 mutate 再改 pathname、再 flush」的測試。
