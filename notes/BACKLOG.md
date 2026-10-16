@@ -47,3 +47,8 @@
 
 ## 0.2.3 複審第 1 輪 P2（Grok 4.7 high，APPROVE；本輪不修）
 1. 新回歸測試先改 pathname 再 mutate，鎖住「tick 讀到 Scheduled 後 poll 誤判沒變」，但沒鎖 e2e 的微順序：observer 排程時 URL 仍是 /home、同一 turn 才 replaceState 到 Scheduled。若有人把 lastLocation 改成在 schedule() 當下寫，現有單元測試仍過、e2e 會回到失敗。可補一支「先 mutate 再改 pathname、再 flush」的測試。
+
+## 0.3.0 複審第 1 輪 P2（Grok 4.7 high，APPROVE；本輪不修）
+1. `probe/calendar.js` 建立時 `takeTarget()` 接受 sessionStorage 裡任何合 schema、兩分鐘內的目標。x.com 頁面腳本可先寫入 `xsched.probe.calendarTarget`，下一頁載入時就可能對恰好一列點一次（只開編輯器，不送出）。可改為記憶體內 nonce／只接受本擴充剛寫入的目標。
+2. HANDOFF 表格的 `test/content.test.mjs:1243–1247` 行號已移到約 `:1295–1299`。
+3. 全頁月格固定週日起始；zh／ja／ko／de／fr 常見週一起始未做。
