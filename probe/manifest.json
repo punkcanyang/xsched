@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "xsched quick slots",
-  "version": "0.2.3",
-  "description": "X native schedule field helper with a cached schedule overview; never confirms or sends. No permissions or network; numeric positions, height, interval and last schedule time stored locally.",
+  "version": "0.3.0",
+  "description": "X native schedule helper and local calendar. Stores schedule times and 20-character previews; opens a uniquely matching native row only on request. Never confirms, deletes or sends. No permissions or background network.",
   "content_scripts": [
     {
       "matches": [
@@ -17,6 +17,8 @@
         "quick.js",
         "composer.js",
         "overview.js",
+        "calendar-store.js",
+        "calendar.js",
         "content.js"
       ],
       "run_at": "document_idle"

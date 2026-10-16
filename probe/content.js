@@ -10,11 +10,14 @@ const { stringsFor, createAuthorLink, placement, collectObstacles, clampPosition
 const positionStore = globalThis.XSCHED_POSITION;
 const quick = globalThis.XSCHED_QUICK;
 const overview = globalThis.XSCHED_OVERVIEW;
+const calendarStore = globalThis.XSCHED_CALENDAR_STORE;
+const restoredCalendar = calendarStore?.load();
 let quickRange = positionStore.loadRange() || {a:10,b:30};
 let lastCache = positionStore.loadCache();
-let overviewCache = [];
-let overviewSyncedAt = 0;
-let overviewStale = false;
+let overviewCache = restoredCalendar ? overview.snapshot(restoredCalendar.items.map(item=>({at:new Date(item.time),preview:item.preview}))) : [];
+let overviewSyncedAt = restoredCalendar?.syncedAt || 0;
+let overviewStale = restoredCalendar?.partial || false;
+let calendarStorageFailed = false;
 let cacheSignature = '';
 let quickSignature = "";
 let quickStatus = "";
@@ -83,6 +86,19 @@ const composer = globalThis.XSCHED_COMPOSER?.create(document,{
   settings:()=>({cache:lastCache,range:quickRange,empty:emptyListConfirmed}),
   changed(result){quickStatus=result;schedule();},
 });
+const calendar = calendarStore && globalThis.XSCHED_CALENDAR?.create(document, {
+  reader:globalThis.XSCHED_READER, store:calendarStore, changed:schedule,
+  clearData() {
+    calendarStorageFailed=!calendarStore.clear();
+    overviewCache=[];overviewSyncedAt=0;overviewStale=false;
+    calendar.reset();lastRender='';schedule();
+  },
+});
+function persistOverview() {
+  if (!calendarStore) return;
+  const items=overviewCache.filter(overview.validTime).map(item=>({time:item.at.getTime(),preview:overview.previewText(item.preview)}));
+  calendarStorageFailed=!calendarStore.save({version:1,syncedAt:overviewSyncedAt,partial:overviewStale || items.length!==overviewCache.length,items});
+}
 
 function releaseDragCapture(active) {
   try { active.target.releasePointerCapture(active.id); } catch { /* already released or disconnected */ }
@@ -609,7 +625,7 @@ function render(report, items, explicitOpen = false) {
   const strings = stringsFor(document.documentElement.lang, navigator.language);
   const now=new Date();
   const slotLabels=quick.VISIBLE_SLOT_IDS.map(id=>globalThis.XSCHED_UI.slotLabel(id,quick.nextSlot(id,now),now,document.documentElement.lang,navigator.language));
-  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,slotLabels,overviewSyncedAt,overviewStale,overview.formatCount(overviewCache.length, document.documentElement.lang, navigator.language),overview.formatRemaining(overviewCache, now, document.documentElement.lang, navigator.language),overviewCache.map((item) => [item.time, item.preview, overview.formatItemTime(item, document.documentElement.lang, navigator.language)]),items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
+  const signature = JSON.stringify([diag, effectiveCollapsed, count, report.onScheduled, strings.shortcut, detected.ready, detected.reason, quick.isFilling(document), quickStatus, quickRange,lastCache,slotLabels,overviewSyncedAt,overviewStale,calendarStorageFailed,overviewSyncedAt && Date.now()-overviewSyncedAt>86400000,overview.formatCount(overviewCache.length, document.documentElement.lang, navigator.language),overview.formatRemaining(overviewCache, now, document.documentElement.lang, navigator.language),overviewCache.map((item) => [item.time, item.preview, overview.formatItemTime(item, document.documentElement.lang, navigator.language)]),items.map((item) => [item.time, item.preview, formatTime(item.at)])]);
   if (signature === lastRender && node.shadowRoot && node.shadowRoot.querySelector("section").firstChild) {
     writeDataset(node, report, count, diag);
     positionUI();
@@ -771,6 +787,7 @@ function render(report, items, explicitOpen = false) {
       for (const item of overviewCache.slice(1)) rest.append(makeOverviewRow(item));
       body.insertBefore(rest, quickControls.nextSibling);
     }
+    calendar?.mount(node.shadowRoot,overviewBox,body,quickControls.nextSibling,overviewCache,overviewSyncedAt,overviewStale,calendarStorageFailed);
     if (report.onScheduled) {
       const hint = textNode("p", "虛擬列表：請自己往下捲到底，數字才完整（本工具不會自動捲動）。", { color:"#ffd400", "font-size":"12px", margin:"0 0 8px" });
       hint.className = "hint";
@@ -850,16 +867,17 @@ function render(report, items, explicitOpen = false) {
   positionUI();
 }
 
-// An observed user Schedule joins the in-memory overview at once (time plus the
+// An observed user Schedule joins the local overview at once (time plus the
 // first 20 characters), so count, countdown and list need no Scheduled visit.
-// Memory only: nothing here is stored, sent or clicked. A later real Scheduled
+// Only time and the 20-character preview persist. A later real Scheduled
 // read stays authoritative and replaces this list.
 function rememberScheduled(time, text) {
   if (!Number.isSafeInteger(time) || time <= 0) return;
   const item = { time: '', preview: overview.previewText(text), at: new Date(time), unparsed: false, sample: '' };
   // Without a prior sync this one row is all we know, so mark the list partial.
   if (!overviewSyncedAt) overviewStale = true;
-  overviewCache = overview.mergeSnapshots(overviewCache, [item]);
+  if (!overviewCache.some(prior=>prior.at?.getTime()===time && prior.preview===item.preview)) overviewCache=overview.sortItems([...overviewCache,item]);
+  persistOverview();
 }
 function refreshObservedCache() {
   const completed=quick.observeScheduling(document,Date.now());
@@ -925,6 +943,7 @@ function tick() {
         overviewCache=incomplete?overview.mergeSnapshots(overviewCache,overviewSnap):overviewSnap;
         overviewSyncedAt=Date.now();
         overviewStale=incomplete;
+        persistOverview();
       };
       if(times.length && report.timeFail===0 && !pending) {
         const value={time:Math.max(...times),readAt:Date.now(),source:1};
@@ -935,6 +954,7 @@ function tick() {
         overviewCache=[];
         overviewSyncedAt=Date.now();
         overviewStale=false;
+        persistOverview();
       } else if(!pending && times.length) {
         remember();
       }
@@ -944,6 +964,7 @@ function tick() {
     cacheSignature='';
   }
   render(report, accumulated);
+  calendar?.process();
   composer?.refresh();
 }
 
@@ -964,6 +985,7 @@ function onScroll(event) {
 }
 
 function pollLocation() {
+  calendar?.expire();
   composer?.refresh();
   if(refreshObservedCache())schedule();
   const detected = quick.detectControls(document);
@@ -1050,6 +1072,7 @@ function stop() {
 function onPageShow(event) { if (event.persisted && !retired) start(); }
 globalThis.XSCHED_PROBE_SESSION = { dispose() {
   retired = true;
+  calendar?.dispose();
   stop();
   window.removeEventListener("pagehide", stop);
   window.removeEventListener("pageshow", onPageShow);

@@ -111,6 +111,18 @@ xsched：Chrome 擴充（MV3），改造 x.com 頁面，幫老闆操作 X 原生
 
 找不到圖示顯示停用提示；未找到新視窗零填值；writer 失敗沿用整組還原及還原不完整提示。只准代點圖示，不能代點關閉：若 X 已打開視窗，錯誤後仍保留原欄位讓使用者自行關閉，不能偷偷按取消或改 X DOM 來關掉。這是「不留半填狀態」的界線。
 
+## 0.3.0：持久化排程日曆與唯一原生列編輯入口
+
+- 老闆明確授權取代舊「只在記憶體／只存數字」的總覽限制：新根目錄 `probe/calendar-store.js` 可用 x.com 頁面自己的 localStorage 固定 key `xsched.probe.calendar`。schema 恰為 `{version:1,syncedAt,partial,items:[{time,preview}]}`；時間為有效正整數毫秒，`syncedAt` 可為 0（尚未實際同步；有項目時必須 partial），partial 為布林，每則只允許時間與最多 20 個 Unicode code points。最多 2,000 則、JSON 最長 1,000,000 UTF-16 單位，拒絕額外欄位／錯版本／非數字／壞 JSON，讀到壞資料即丟棄。不新增 storage 權限；原位置模組六個 key 及 schema 不變。
+- 同一新儲存模組可用 sessionStorage 固定 key `xsched.probe.calendarTarget`，schema 恰為 `{version:1,time,preview,expiresAt}`，有效期最多兩分鐘。只有可信日曆項目點擊可建立；整頁導覽後先移除再驗證／使用，成功、零列、多列都只嘗試一次，尚未掛上分頁／列表或 busy 時等待，現有 poll 清理過期目標；過期或儲存失敗不代點。其他模組的 storage／所有其他 key 仍禁止。
+- Scheduled 完整同步取代持久化快取、移除已發出／刪除列；短虛擬視窗合併而不丟舊列；載入中不清。親按排程成功的既有觀察立即加入並持久化時間＋前 20 字，不偽造列表同步時間；同分鐘不同預覽可保留。重新整理／隔日載入恢復，超過 24 小時提示沿用 goto Scheduled 同步。清除鈕刪日曆 key、記憶體與待編輯目標，不改既有數字設定；Scheduled 清除後不因同一 snapshot 的 poll 立即寫回。
+- `probe/calendar.js` 提供九語日期分組、組內時間排序與跨日的前一則分鐘差；全頁覆蓋層在同一 shadow root 內，為七欄六週月曆、可切月，Esc／關閉可退出。預覽用 textContent；日曆／目標／預覽不進診斷或骨架。
+- 唯一新代點例外：可信點日曆項目可導向既有固定 Scheduled URL，使用時間＋20 字找原生列。Scheduled 分頁、非 body 的列表 scope、可見／非 disabled、非 form／composer／背景 article 的 row button，以及唯一 tweetText 都在摘要鎖住的 calendar 模組內預檢；送出前重新辨識唯一相同節點，僅 `row.click();` 一次。0 列提示；≥2 只高亮候選，不 click／scroll。其餘 Update／Schedule／Delete／Post／submit 及鼠鍵事件派送全部禁止。reader 只額外導出既有只讀 parseRow，維持未鎖檔案的舊 CLI 攻擊測試。
+- verify 只新增兩個精確根目錄摘要：calendar-store 只移除六種固定 storage expression 再套原兩條 storage 規則，calendar 只移除唯一 `row.click();` 再套原 activation 規則。其他規則完整掃描；為避免 CLI 自測逾時，純 canonicalSource 的相同 view 改為每次 scanSource 只計算一次，所有 regex／判定與原逾時不變；content 摘要同步，position／quick／composer／ui 摘要不變。保留原 1,410 自測，另加 31 項 calendar 邊界攻擊，不能用新例外讓別處的 storage／click 通過。
+- 測試：`test/calendar030.test.mjs` 驗證嚴格儲存／壞資料／不可用儲存、一次性 TTL、九語／分組／分鐘差／閏月、全頁格子與關閉、可信點擊、兩個不同原生列各一次、零／多列高亮不點、原生列預檢與固定導覽；真 content VM 另測跨頁／reload／隔日／24h／清除及短快照→完整同步移除，既有親按成功測試追加持久化。新 fixture 全是假資料、2028 日期。
+- e2e 追加 calendar／calendar-ambiguous／calendar-missing 合成頁：恢復與 reload、日期／時間／分鐘差、42 格七欄與矩形、Esc／關閉、兩個不同編輯器且原生列各點一次、Update／Schedule／Delete／Post=0、零／多列、24h、清除及親按成功後 reload。舊 020／021 空快取前提改為明確清理新 key；只有兩條「完全不存文字」斷言改成僅授權 key／精確 schema／20 字，網路頂層導覽精確次數由 1 改為 3（原 goto＋兩次使用者點項目），資源／背景仍為 0。其餘行為斷言不變，版本期望同步 0.3.0。逐條行號見 `notes/HANDOFF-v1.0-calendar-030.md`。
+- 本環境 listen EPERM，沒有執行 Chrome e2e；須外部完整執行及獨立複審後才能 READY。沒有 commit／push／切分支；無新增權限、遠端請求或花費。
+
 ## 0.2.3：SPA URL 讀取與輪詢競態修正
 
 - 根因：`lastLocation` 只記錄上一次 400ms poll 的 URL。`/home` → DOM 變動並切 Scheduled → MutationObserver 的 60ms tick 先讀取短列表 → 下一次 poll 前 `replaceState` 回 `/home`，poll 見 URL 與舊樣本相同就不再排 tick。`replaceState` 沒有 DOM mutation／popstate，mode 因而長期停在 Scheduled；不是 tick 節流過慢或 Chrome isolated world 必須被 CDP 喚醒。

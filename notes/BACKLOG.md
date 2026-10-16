@@ -1,3 +1,10 @@
+## 0.3.0 排程日曆（實作完成，待外部 Chrome e2e／獨立複審）
+- 老闆已授權固定 localStorage 版本化日曆（時間＋最多 20 字＋同步時間／部分標記），及兩分鐘一次性的 sessionStorage 編輯目標；新模組各受 SHA 鎖定，不增加權限或網路 API。
+- 已做：切頁／整頁 reload／隔日恢復，24h 提示，日期分組／排序／分鐘差，七欄六週月曆與切月／Esc／關閉，唯一相符原生列只點一次，零／多列只提示／高亮，親按成功即持久化，部分視窗合併、完整同步移除舊項、清除資料。
+- 測試：完整 npm test 17/17 檔（content 60、calendar030 11）；verify 保留原 1,410＋新 31 項；e2e／新模組語法與 diff check 通過。未在 listen EPERM 沙箱跑 Chrome，所有新 e2e／實體命中與 0 資源背景請求待外部，沒有沿用歷史通過結果。
+- 三處既有行為斷言調整及版本／前提異動逐條見 `notes/HANDOFF-v1.0-calendar-030.md`；沒有改等待逾時或放寬其他守門。沒有 commit／push／切分支。
+- 限制：快取非即時；跨帳號需先清除再同步；未載入／同時間同 20 字碰撞不代點；未知時間不持久化。真 X 原生編輯器仍待老闆自己的 Chrome 確認。
+
 ## 0.2.3：穩定 020 cached short window home（已修碼，待外部完整 e2e 連跑驗證）
 - 根因已用真 content VM 重現：`lastLocation` 原本只由 400ms poll 更新。上次 poll 讀 `/home` 後，測試刪列表節點並切 Scheduled，MutationObserver 的 60ms tick 先讀出短列表；若下一個 poll 前又用 `replaceState` 回 `/home`，poll 比較到兩次都是 `/home` 就不排 tick。`replaceState` 不產生 DOM mutation／popstate，之後一直重畫舊 Scheduled report，mode 卡住。不是等待不足，也不是 isolated world 的 URL 不同步。
 - 修法：只由 tick 記錄這次實際讀取的 URL，poll 比較目前 URL 與最後讀取 URL；初始化不先標成已讀。保留原 60ms／400ms、全部斷言、逾時及 verify 守門，沒有加重試或 CDP 喚醒。

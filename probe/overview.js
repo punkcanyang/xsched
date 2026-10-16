@@ -1,5 +1,5 @@
-// Read-only schedule overview. Copies last Scheduled-list items in memory only.
-// Never stores post text, never clicks or scrolls X, never sends or opens the picker.
+// Pure schedule overview data and formatting. Persistence and row activation
+// live in the separate audited calendar modules.
 (() => {
 "use strict";
 const STRINGS = Object.freeze({

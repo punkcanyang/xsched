@@ -11,14 +11,16 @@ await import('../probe/quick.js');
 await import('../probe/overview.js');
 const source = readFileSync(new URL('../probe/content.js', import.meta.url), 'utf8');
 const uiSource = readFileSync(new URL('../probe/ui.js', import.meta.url), 'utf8');
+const calendarStoreSource = readFileSync(new URL('../probe/calendar-store.js', import.meta.url), 'utf8');
+const calendarSource = readFileSync(new URL('../probe/calendar.js', import.meta.url), 'utf8');
 const positionSource = readFileSync(new URL('../probe/position.js', import.meta.url), 'utf8');
-function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com', startReady = true) {
+function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file = '../fixtures/en.html', clock = null, ui = globalThis.XSCHED_UI, reader = globalThis.XSCHED_READER, stored = new Map(), hostname = 'x.com', startReady = true, session = new Map()) {
   const { document } = parseHTML(readFileSync(new URL(file, import.meta.url), 'utf8'));
   document.documentElement.lang = lang;
   const timers = new Map();
   const polls = new Map();
   let id = 0;
-  let manifest = '0.2.3';
+  let manifest = '0.3.0';
   let invalidated = false;
   const navigated = [];
   let mutationCallback;
@@ -28,6 +30,7 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   const window = {
     setTimeout(fn) { timers.set(++id, fn); return id; }, clearTimeout(key) { timers.delete(key); },
     setInterval(fn) { polls.set(++id, fn); return id; }, clearInterval(key) { polls.delete(key); },
+    sessionStorage:{getItem(key){return session.get(key)??null;},setItem(key,value){session.set(key,value);},removeItem(key){session.delete(key);}},
     location, localStorage:{ getItem(key) { return stored.get(key) ?? null; }, setItem(key,value) { stored.set(key,value); }, removeItem(key) { stored.delete(key); } },
     addEventListener(type,fn) { if (!listeners.has(type)) listeners.set(type,new Set()); listeners.get(type).add(fn); },
     removeEventListener(type,fn) { listeners.get(type)?.delete(fn); },
@@ -56,6 +59,8 @@ function fixture(pathname = '/compose/post/unsent/scheduled', lang = 'en', file 
   vm.runInContext(uiSource, context);
   context.XSCHED_UI = { ...ui, createAuthorLink: context.XSCHED_UI.createAuthorLink };
   vm.runInContext(positionSource, context);
+  vm.runInContext(calendarStoreSource, context);
+  vm.runInContext(calendarSource, context);
   vm.runInContext(source, context); if (startReady) flush();
   const host = () => document.getElementById('xsched-probe-root');
   const shadow = () => host().shadowRoot;
@@ -331,10 +336,10 @@ test('home has only closed shortcut; localized goto navigates fixed target despi
 });
 test('runtime version warning updates diagnostic/header and suppresses exception contents', () => {
   const f = fixture();
-  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.2.3 (manifest 0.2.3)');
+  assert.equal(f.host().dataset.xschedDiag.split('\n')[0], 'xsched probe v0.3.0 (manifest 0.3.0)');
   f.setManifest('0.0.2'); f.poll();
   assert.match(f.shadow().querySelector('.version').textContent, /⚠ 版本不符/);
-  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.2.3 \/ manifest 0.0.2/);
+  assert.match(f.host().dataset.xschedDiag.split('\n')[0], /script 0.3.0 \/ manifest 0.0.2/);
   f.invalidate(); f.poll();
   assert.match(f.host().dataset.xschedDiag.split('\n')[0], /擴充已重新載入，請重新整理頁面/);
   assert.ok(!f.host().dataset.xschedDiag.includes('private exception'));
@@ -343,7 +348,7 @@ test('reinjection disposes prior current session without duplicate UI or duplica
   const f = fixture();
   vm.runInContext(source, f.context); f.flush();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
-  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.2\.3/);
+  assert.match(f.host().dataset.xschedDiag, /^xsched probe v0\.3\.0/);
   f.host().remove(); f.poll();
   assert.equal(f.document.querySelectorAll('#xsched-probe-root').length, 1);
 });
@@ -541,7 +546,7 @@ test('quick fixture readiness: early toggle is ignored until first diagnostic, f
       static now(){return new __QuickRealDate(2027,11,31,21,0).getTime();}
     };`,f.context);
   f.click('.shortcut');f.flush();f.poll();
-  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.2\.3/);
+  assert.match(f.host().dataset.xschedDiag,/^xsched probe v0\.3\.0/);
   assert.equal(f.host().dataset.xschedMode,'other');assert.equal(f.host().dataset.xschedMounted,'1');
   assert.equal(f.shadow().querySelector('.shortcut').getAttribute('aria-expanded'),'false');
   assert.equal(f.shadow().querySelector('section').style.display,'none');
@@ -1083,6 +1088,55 @@ test('URL polling follows a mutation-driven short Scheduled read between two hom
   assert.ok(f.shadow().querySelector('.overview-stale'));
 });
 
+test('0.3.0 calendar persists a strict snapshot across full reload and next-day home, then clears both caches', () => {
+  let now = new Date(2027, 11, 31, 21);
+  const f=fixture('/compose/post/unsent/scheduled','en','../fixtures/calendar.html',()=>now);
+  const raw=f.stored.get('xsched.probe.calendar');
+  const saved=JSON.parse(raw);
+  assert.deepEqual(Object.keys(saved).sort(),['items','partial','syncedAt','version']);
+  assert.equal(saved.version,1);assert.equal(saved.items.length,3);assert.equal(saved.syncedAt,now.getTime());
+  assert.equal(saved.partial,false);
+  assert.ok(!raw.includes('with extra text'));
+  const home=()=>fixture('/home','en','../fixtures/home.html',()=>now,undefined,undefined,f.stored);
+  const reloaded=home();reloaded.click('.shortcut');
+  assert.equal(reloaded.host().dataset.xschedOverview,'3');
+  assert.match(reloaded.shadow().querySelector('.overview-sync').textContent,/2027-12-31 21:00/);
+  reloaded.click('.calendar-toggle');
+  assert.deepEqual([...reloaded.shadow().querySelectorAll('.calendar-day')].map(day=>day.dataset.calendarDate),['2028-01-01','2028-01-02']);
+  assert.deepEqual([...reloaded.shadow().querySelectorAll('.calendar-time')].map(el=>el.textContent),['09:00','09:45','20:00']);
+  assert.deepEqual([...reloaded.shadow().querySelectorAll('.calendar-gap')].map(el=>el.textContent),['—','45 minutes since previous','2055 minutes since previous']);
+  now=new Date(now.getTime()+86400001);
+  const nextDay=home();nextDay.click('.shortcut');
+  assert.equal(nextDay.host().dataset.xschedOverview,'3');
+  assert.match(nextDay.shadow().querySelector('.calendar-old').textContent,/24 hours/);
+  nextDay.click('.calendar-toggle');nextDay.click('.calendar-clear');nextDay.flush();
+  assert.equal(nextDay.host().dataset.xschedOverview,'0');
+  assert.equal(f.stored.has('xsched.probe.calendar'),false);
+  nextDay.poll();assert.equal(f.stored.has('xsched.probe.calendar'),false);
+  assert.equal(home().host().dataset.xschedOverview,'0');
+});
+
+test('0.3.0 partial snapshot survives reload but a complete sync removes deleted posts', () => {
+  const clock=()=>new Date(2027,11,31,21);
+  const f=fixture('/compose/post/unsent/scheduled','en','../fixtures/calendar.html',clock);
+  const list=f.document.getElementById('sched-list');
+  const removed=[...list.children].slice(1);for(const row of removed)row.remove();
+  list.style.transform='translateY(8px)';
+  f.mutate([{type:'childList',target:list,addedNodes:[],removedNodes:removed}]);
+  assert.equal(JSON.parse(f.stored.get('xsched.probe.calendar')).items.length,3);
+  assert.equal(JSON.parse(f.stored.get('xsched.probe.calendar')).partial,true);
+  const home=fixture('/home','en','../fixtures/home.html',clock,undefined,undefined,f.stored);home.click('.shortcut');
+  assert.equal(home.host().dataset.xschedOverview,'3');assert.ok(home.shadow().querySelector('.overview-stale'));
+  list.style.transform='';
+  f.mutate([{type:'childList',target:list,addedNodes:[],removedNodes:[]}]);
+  const complete=JSON.parse(f.stored.get('xsched.probe.calendar'));
+  assert.equal(complete.items.length,1);assert.equal(complete.partial,false);
+  assert.equal(f.host().dataset.xschedOverview,'1');
+  f.click('.calendar-toggle');f.click('.calendar-clear');f.flush();f.poll();
+  assert.equal(f.host().dataset.xschedOverview,'0');
+  assert.equal(f.stored.has('xsched.probe.calendar'),false,'Scheduled polling cannot immediately repopulate a cleared unchanged snapshot');
+});
+
 test('overview leads the unscrolled content before quick controls', () => {
   for (const [path, file] of [['/home', '../fixtures/home.html'], ['/compose/post/unsent/scheduled', '../fixtures/overview.html']]) {
     const f = fixture(path, 'en', file);
@@ -1186,7 +1240,11 @@ test('0.2.1 observed Schedule joins a synced overview immediately: count, countd
     assert.equal(f.shadow().querySelector('.overview-stale'), null);
     assert.equal(f.shadow().querySelector('.quick-status').textContent, 'Scheduling completion observed');
     assert.ok(!f.host().dataset.xschedDiag.includes('Synthetic'), 'diagnostics stay content-free');
-    assert.ok(![...f.stored.values()].some((value) => String(value).includes('Synthetic')), 'no text is stored');
+    const saved = JSON.parse(f.stored.get('xsched.probe.calendar'));
+    assert.equal(saved.items.length, 6);
+    assert.equal(saved.items[3].time, at, 'observed completion is persisted immediately');
+    assert.ok(saved.items.every(item => typeof item.time === 'number' && Array.from(item.preview).length <= 20 && Object.keys(item).sort().join() === 'preview,time'));
+    assert.ok([...f.stored.entries()].every(([key,value]) => key === 'xsched.probe.calendar' || !String(value).includes('Synthetic')), 'previews only enter the authorized calendar key');
     f.poll();
     assert.equal(f.host().dataset.xschedOverview, '6', 'one completion adds one row');
   });
