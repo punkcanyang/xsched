@@ -530,7 +530,8 @@ function positionUI() {
   // Measure intrinsic content before choosing/persisting the automatic anchor.
   // Growing after placement makes reset choose a different default rectangle.
   const body=panel.querySelector('.panel-body');
-  const overviewHeight=body?.clientHeight>0 ? (body.querySelector('.overview')?.getBoundingClientRect().height || 0) : 0;
+  const overviewBox=body?.querySelector('.overview');
+  const overviewHeight=body?.clientHeight>0 && body.firstElementChild===overviewBox ? (overviewBox?.getBoundingClientRect().height || 0) : 0;
   const measured=chromeHeight+32+(quickControls?.getBoundingClientRect().height || 0)+12+(overviewHeight>0?overviewHeight+8:0);
   const nextMinimum=Math.max(panelMinimum,measured);
   if(nextMinimum>panelMinimum) {panelMinimum=nextMinimum;panelNeedsLayout=true;}
@@ -780,12 +781,15 @@ function render(report, items, explicitOpen = false) {
       }
       overviewBox.append(makeOverviewRow(overviewCache[0]));
     }
-    body.insertBefore(overviewBox, quickControls);
+    // A native picker needs the entire quick area on its first screen. Restored
+    // calendar summaries/warnings can exceed the viewport cap, so keep them
+    // below the controls here; Scheduled and home still lead with the overview.
+    body.insertBefore(overviewBox, detected.ready ? quickControls.nextSibling : quickControls);
     if (overviewCache.length > 1) {
       const rest = css(document.createElement('div'), {margin:'0 0 8px'});
       rest.className = 'overview-more';
       for (const item of overviewCache.slice(1)) rest.append(makeOverviewRow(item));
-      body.insertBefore(rest, quickControls.nextSibling);
+      body.insertBefore(rest, detected.ready ? overviewBox.nextSibling : quickControls.nextSibling);
     }
     calendar?.mount(node.shadowRoot,overviewBox,body,quickControls.nextSibling,overviewCache,overviewSyncedAt,overviewStale,calendarStorageFailed);
     if (report.onScheduled) {

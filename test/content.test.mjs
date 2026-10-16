@@ -1149,6 +1149,58 @@ test('overview leads the unscrolled content before quick controls', () => {
   }
 });
 
+test('native picker keeps the full quick area visible ahead of a restored stale calendar', () => {
+  const clock=()=>new Date(2028,0,3,21);
+  for (const viewportHeight of [600,820]) {
+    const saved={version:1,syncedAt:new Date(2028,0,1,21).getTime(),partial:true,items:[
+      {time:new Date(2028,0,4,9).getTime(),preview:'Example morning'},
+      {time:new Date(2028,0,4,12).getTime(),preview:'Example noon'},
+    ]};
+    const stored=new Map([
+      ['xsched.probe.calendar',JSON.stringify(saved)],
+      ['xsched.probe.panelHeight','{"height":80}'],
+      ['xsched.probe.panelPos','{"x":16,"y":16}'],
+      ['xsched.probe.lastScheduled',JSON.stringify({time:saved.items[1].time,readAt:saved.syncedAt,source:1})],
+    ]);
+    const f=fixture('/compose/post','en','../fixtures/quick-real-numeric.html',clock,undefined,undefined,stored,'x.com',false);
+    const panel=f.shadow().querySelector('section');
+    // Model intrinsic heights and the actual DOM flow; Chrome owns physical hit
+    // testing. Restored summary/warnings cannot consume the quick area's slice.
+    function box(top,height) { return {left:16,right:360,top,bottom:top+height,width:344,height}; }
+    function rect() {
+      const top=parseFloat(panel.style.top)||16,height=parseFloat(panel.style.height)||Math.floor(viewportHeight*2/3);
+      if (this===panel) return box(top,height);
+      if (this.className==='panel-body') return box(top+50,height-100);
+      if (this.className==='panel-header'||this.className==='panel-actions') return box(top,20);
+      if (this.className==='overview') return box(top+50,260);
+      if (this.className==='quick-controls') return box(top+50+(this.previousElementSibling?.className==='overview'?268:0),350);
+      return box(top,44);
+    }
+    panel.getBoundingClientRect=rect;
+    const create=f.document.createElement.bind(f.document);
+    f.document.createElement=(...args)=>{
+      const el=create(...args);el.getBoundingClientRect=rect;
+      Object.defineProperty(el,'clientHeight',{get(){return this.className==='panel-body'?rect.call(this).height:0;}});
+      return el;
+    };
+    f.resize(1280,viewportHeight);f.click('.shortcut');
+    const body=f.shadow().querySelector('.panel-body'),area=body.querySelector('.quick-controls');
+    const q=area.getBoundingClientRect(),b=body.getBoundingClientRect(),p=panel.getBoundingClientRect();
+    assert.ok(q.top>=b.top&&q.bottom<=b.bottom,'entire quick area fits without scrolling');
+    assert.ok(p.height>=Math.floor(viewportHeight*2/3)&&p.height<=viewportHeight-32);
+    assert.equal(body.firstElementChild.className,'quick-controls');
+    assert.equal(area.querySelectorAll('button').length,5);
+    assert.equal(body.querySelectorAll('.overview-preview').length,2);
+    assert.ok(body.querySelector('.overview-sync'));
+    assert.ok(body.querySelector('.overview-stale'));
+    assert.ok(body.querySelector('.calendar-old'));
+    f.click('.calendar-toggle');f.flush();
+    assert.equal(f.shadow().querySelector('.panel-body').firstElementChild.className,'quick-controls','opening calendar keeps quick controls first');
+    assert.equal(stored.get('xsched.probe.calendar'),JSON.stringify(saved));
+    assert.equal(stored.get('xsched.probe.panelHeight'),'{"height":80}');
+  }
+});
+
 test('virtual preview edits update one cached row and an empty virtual window cannot clear it', () => {
   const f = fixture('/compose/post/unsent/scheduled', 'en', '../fixtures/overview.html');
   const list = f.document.getElementById('sched-list');

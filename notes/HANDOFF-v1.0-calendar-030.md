@@ -67,6 +67,14 @@
 - 按本任務說明，不在 listen EPERM 沙箱重跑 e2e。完整 Chrome e2e 與矩形／實體命中／0 資源背景請求證據須由外部跑；本輪未宣稱 Chrome 通過。外部產物清理照原流程，本機 docs 乾淨。
 - 待外部獨立 session 複審與建立 PR；尚未 STATUS READY。
 
+## 外部首輪 e2e：014 快速區首屏排版修正
+
+- 外部 `6856671` 的單元／verify 通過，完整 e2e 在 `014 just opened: full quick area, all four slots and interval save visible` 失敗。0.3.0 整頁載入會恢復總覽，原生選時視窗也沿用「總覽摘要＋同步時間／提示＋第一則在快速區前」；短視窗即使面板長到 viewport cap，也容不下兩者。
+- `content.js` 在原生 picker 完整可用時將快速區排在首位，總覽與日曆接在後面；高度下限只計入實際位於快速區前的總覽。首頁／Scheduled 保留總覽在前，快取與提示內容完整保留，未改高度上下限或儲存高度偏好。
+- 新增一項真 content VM 回歸，使用 2028 假資料、80px 儲存高度、過期且部分的持久化總覽，涵蓋 1280×600／1280×820 的可視範圍與日曆展開。套回修正前產品碼會以 `entire quick area fits without scrolling` 失敗。
+- verify 僅更新 content 的來源 SHA；e2e 腳本、既有斷言／步驟及 verify 規則完全不改。本輪完整 Chrome e2e 仍由外部重跑。
+- 本輪 `npm test`（17/17 檔）、`npm run verify`（全部原自測保留）、`node --check scripts/e2e.mjs` 與 `git diff --check` 均通過；未 commit、push 或切分支。
+
 ## 限制
 
 - 日曆是已讀列表的快取，不背景同步；虛擬列表須自行捲。發出／刪除直到完整同步才移除。
