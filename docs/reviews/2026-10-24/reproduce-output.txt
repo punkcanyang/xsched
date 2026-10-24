@@ -1,0 +1,2 @@
+{"case":"unsaved-input-after-countdown-tick","original":"10","typed":"123","after":"10","sameNode":false}
+{"case":"two-distinct-posts-same-minute-in-separate-windows","expectedDistinctPosts":2,"result":["Post B"]}

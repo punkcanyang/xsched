@@ -84,7 +84,7 @@
 
 - npm test：17 個測試檔通過，0 失敗；這個數字是檔案數，不是全部內部 assertion 數。
 - npm run verify：通過，包含既有 1,410 項及 31 項日曆邊界自測。
-- 新問題重現腳本：[reproduce.mjs](reproduce.mjs)，結果：[reproduce.log](reproduce.log)。
+- 新問題重現腳本：[reproduce.mjs](reproduce.mjs)，結果：[reproduce-output.txt](reproduce-output.txt)。
 - 元件走查腳本：[capture.mjs](capture.mjs)，焦點與尺寸觀察：[observations.json](observations.json)。
 - 完整擴充 E2E 未執行成功：Chromium 回報 `Loading of unpacked extensions is disabled by the administrator`。本次只另做獨立日曆元件頁測試；未更動瀏覽器政策、未登入 X。沒有以歷史截圖代替本次驗證。
 
