@@ -1,0 +1,55 @@
+{
+  "scope": "Production calendar.js + overview.js in isolated component fixture; no extension installed",
+  "steps": [
+    {
+      "step": "desktop",
+      "focus": {
+        "document": "DIV",
+        "shadow": "calendar-full"
+      }
+    },
+    {
+      "step": "after-next-month",
+      "focus": {
+        "document": "BODY",
+        "shadow": null
+      }
+    },
+    {
+      "step": "tab-after-month",
+      "focus": {
+        "document": "DIV",
+        "shadow": "calendar-previous"
+      }
+    },
+    {
+      "step": "escape",
+      "closed": true,
+      "focus": {
+        "document": "DIV",
+        "shadow": "calendar-expand"
+      }
+    }
+  ],
+  "narrow": {
+    "cellWidth": 50,
+    "entries": [
+      {
+        "width": 40,
+        "height": 185.078125,
+        "text": "09:00 範例：產品更新與功能介紹—"
+      },
+      {
+        "width": 40,
+        "height": 230.796875,
+        "text": "09:45 範例：第二則預排貼文與前一則相差 45 分鐘"
+      },
+      {
+        "width": 40,
+        "height": 211.203125,
+        "text": "20:00 範例：週末活動提醒與前一則相差 2055 分鐘"
+      }
+    ],
+    "gridScrollWidth": 390
+  }
+}
